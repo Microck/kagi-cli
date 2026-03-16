@@ -11,6 +11,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 - Ongoing documentation and release process improvements
 
+## [0.1.4]
+
+### Fixed
+
+- Tagged the release from the corrected commit so GitHub Releases and npm publication use the synchronized package metadata
+
 ## [0.1.3]
 
 ### Fixed
