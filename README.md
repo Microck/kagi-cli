@@ -74,10 +74,10 @@ this is the path most people will want.
 ```bash
 kagi auth set --session-token 'https://kagi.com/search?token=...'
 kagi auth check
-kagi search --pretty "rust lang"
-kagi search --lens 2 "rust lang"
-kagi assistant "reply with the word pear."
-kagi summarize --subscriber --url https://www.rust-lang.org/
+kagi search --pretty "obsidian cli daily notes workflow"
+kagi search --lens 2 "privacy focused note taking"
+kagi assistant "plan a private obsidian workflow for cafe work. give me 3 setup tips and a short checklist."
+kagi summarize --subscriber --url https://mullvad.net/en/browser
 ```
 
 `kagi auth set` saves the token in `.kagi.toml`, and it accepts either the raw token or the full session-link url.
@@ -96,8 +96,8 @@ if you use kagi's paid public api, add an api token as well:
 export KAGI_API_TOKEN='...'
 kagi auth check
 kagi summarize --url https://example.com
-kagi fastgpt "python 3.11"
-kagi enrich web "rust lang"
+kagi fastgpt "best practices for private browsing"
+kagi enrich web "obsidian cli plugins"
 ```
 
 ## what you can do
@@ -109,13 +109,29 @@ kagi enrich web "rust lang"
 - read public feeds like `kagi news` and `kagi smallweb` without any auth
 - use paid api commands like `fastgpt`, public `summarize`, and `enrich` when you have `KAGI_API_TOKEN`
 
+search looks good in the terminal when you want something human-readable instead of raw json:
+
+![search demo](images/demos/search.gif)
+
+subscriber summarize is one of the nicest session-token features:
+
+![summarize demo](images/demos/summarize.gif)
+
+assistant works well for quick planning-style prompts:
+
+![assistant demo](images/demos/assistant.gif)
+
+and public feeds still work without any auth:
+
+![news demo](images/demos/news.gif)
+
 some quick examples:
 
 ```bash
-kagi news --category world --limit 3
+kagi news --category tech --limit 3
 kagi smallweb --limit 3
-kagi search "rust lang"
-kagi search --pretty "rust lang"
+kagi search "obsidian cli plugins"
+kagi search --pretty "mullvad browser features"
 kagi news --list-categories
 kagi news --chaos
 ```
