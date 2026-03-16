@@ -16,6 +16,8 @@ jobs:
   publish:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - name: Checkout
@@ -34,7 +36,11 @@ jobs:
         run: |
           npm pack --dry-run
 
+      - name: Verify npm auth
+        if: vars.NPM_PUBLISH_ENABLED == 'true'
+        run: npm whoami
+
       - name: Publish package
         if: vars.NPM_PUBLISH_ENABLED == 'true'
         working-directory: npm
-        run: npm publish
+        run: npm publish --access public --provenance=false
