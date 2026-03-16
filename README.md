@@ -12,10 +12,17 @@ Agent-native CLI for Kagi subscribers. It defaults to structured JSON for automa
 
 ## Quickstart
 
-Install from source:
+Install the latest release:
 
 ```bash
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
+kagi --help
+```
+
+On Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.ps1 | iex
 kagi --help
 ```
 
@@ -46,22 +53,41 @@ kagi fastgpt "Python 3.11"
 
 ### Requirements
 
-- Rust and Cargo
 - A Kagi account token if you want authenticated commands
 
-### Build locally
+### Install the latest release
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.ps1 | iex
+```
+
+The installers place `kagi` in a user-local bin directory and download the correct asset for your platform from GitHub Releases.
+
+### Build locally from source
 
 ```bash
 cargo build --release
 ./target/release/kagi --help
 ```
 
-### Install from source
+### Install from source with Cargo
 
 ```bash
 cargo install --path .
 kagi --help
 ```
+
+### crates.io status
+
+Crates.io publishing is not wired yet because both `kagi` and `kagi-cli` are already taken there. GitHub Releases are the canonical install path for now.
 
 ## Usage
 
@@ -256,6 +282,7 @@ cargo test -q
 Repo notes:
 
 - Demo scripts live under `scripts/`
+- Release installers live in `scripts/install.sh` and `scripts/install.ps1`
 - Demo GIF regeneration steps live in [`docs/demos.md`](docs/demos.md)
 - API and product coverage notes live in [`docs/api-coverage.md`](docs/api-coverage.md)
 

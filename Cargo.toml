@@ -4,9 +4,23 @@ version = "0.1.0"
 edition = "2024"
 description = "Agent-native CLI for Kagi subscribers with JSON-first search output"
 license = "MIT"
+repository = "https://github.com/Microck/kagi-cli"
+homepage = "https://github.com/Microck/kagi-cli"
+documentation = "https://github.com/Microck/kagi-cli#readme"
 readme = "README.md"
 keywords = ["kagi", "search", "cli", "terminal", "json"]
 categories = ["command-line-utilities"]
+exclude = [
+  ".artifacts/*",
+  ".bg-shell/*",
+  ".env",
+  ".gsd/*",
+  ".kagi.toml",
+  "README_OUTLINE.md",
+  "opensrc/*",
+  "target/*",
+  "website/*",
+]
 
 [dependencies]
 clap = { version = "4.5.38", features = ["derive"] }

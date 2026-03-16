@@ -10,6 +10,7 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 ### Added
 
 - Repository publishing docs, community files, issue templates, and GitHub automation
+- Cross-platform GitHub Release packaging and install scripts for the native `kagi` binary
 
 ## [0.1.0]
 
