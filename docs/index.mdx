@@ -176,13 +176,13 @@ Consider the `kagi search` command. It demonstrates several design principles:
 
 ```bash
 # JSON output for automation
-*kagi* search "rust programming" | jq '.data[0].url'
+kagi search "rust programming" | jq '.data[0].url'
 
 # Pretty output for humans
-*kagi* search --pretty "rust programming"
+kagi search --pretty "rust programming"
 
 # Lens search for subscriber features
-*kagi* search --lens 2 "developer documentation"
+kagi search --lens 2 "developer documentation"
 ```
 
 Each variant uses the same underlying command but adapts output and capabilities based on flags and authentication. The command intelligently selects the appropriate transport (API vs session) and handles fallback automatically.
@@ -212,13 +212,13 @@ Ready to get started? Here's the recommended learning path:
 If you encounter issues or have questions:
 
 - **Documentation**: Search this documentation using the search bar above
-- **GitHub Issues**: Report bugs or request features at [github.com/Microck/*kagi*-cli](https://github.com/Microck/*kagi*-cli)
+- **GitHub Issues**: Report bugs or request features at [github.com/Microck/kagi-cli](https://github.com/Microck/kagi-cli)
 - **Troubleshooting**: Check the [troubleshooting guide](/guides/troubleshooting) for common issues
 - **Community**: Join discussions and share workflows with other users
 
 ## Contributing
 
-The *kagi* CLI is open source and welcomes contributions. See the [Contributing Guide](/project/development) for:
+The *kagi* CLI is open source and welcomes contributions. See the [Development Guide](/project/development) for:
 
 - Building from source
 - Development workflow
@@ -227,4 +227,4 @@ The *kagi* CLI is open source and welcomes contributions. See the [Contributing 
 
 ---
 
-*Last updated: March 2025 | *kagi* CLI v0.x.x*
+*Last updated: March 2026 | kagi CLI v0.1.6*

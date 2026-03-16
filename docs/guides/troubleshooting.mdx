@@ -36,10 +36,10 @@ When encountering any issue, follow these steps first:
 
 ```bash
 # macOS/Linux
-which *kagi* || find ~ -name "*kagi*" -type f 2>/dev/null
+which kagi || find ~ -name "kagi" -type f 2>/dev/null
 
 # Windows PowerShell
-Get-ChildItem -Recurse -Filter "*kagi*.exe" -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Filter "kagi.exe" -ErrorAction SilentlyContinue
 ```
 
 **2. Check if directory is in PATH:**
@@ -49,7 +49,7 @@ Get-ChildItem -Recurse -Filter "*kagi*.exe" -ErrorAction SilentlyContinue
 echo $PATH | tr ':' '\n' | grep -E '(local|bin)'
 
 # Windows PowerShell
-$env:PATH -split ';' | Select-String '*kagi*'
+$env:PATH -split ';' | Select-String 'kagi'
 ```
 
 **3. Add to PATH manually:**
@@ -73,10 +73,10 @@ source ~/.bashrc  # or ~/.zshrc
 
 ```bash
 # Make executable
-chmod +x ~/.local/bin/*kagi*
+chmod +x ~/.local/bin/kagi
 
 # Or reinstall via script which sets permissions automatically
-curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 ```
 
 ### Windows Defender / SmartScreen Blocks Installation
@@ -90,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/ins
 1. Click "More info"
 2. Click "Run anyway"
 3. Consider adding exclusion for the *kagi* directory
-4. Or use npm install as alternative: `npm install -g *kagi*-cli`
+4. Or use npm install as alternative: `npm install -g kagi-cli`
 
 ### Installation Script Fails
 
@@ -120,13 +120,13 @@ curl -fsSL https://raw.githubusercontent.com/... | sh
 **Download and run manually:**
 ```bash
 # Download script
-curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh -o install-*kagi*.sh
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh -o install-kagi.sh
 
 # Inspect (optional)
-cat install-*kagi*.sh
+cat install-kagi.sh
 
 # Run
-sh install-*kagi*.sh
+sh install-kagi.sh
 ```
 
 ## Authentication Issues
@@ -142,7 +142,7 @@ Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env
 
 ```bash
 # Check current status
-*kagi* auth status
+kagi auth status
 
 # Verify environment variable is set
 echo $KAGI_SESSION_TOKEN
@@ -160,13 +160,13 @@ env | grep KAGI
 export KAGI_SESSION_TOKEN='https://kagi.com/search?token=YOUR_TOKEN'
 
 # Verify
-*kagi* auth check
+kagi auth check
 ```
 
 **2. Set via config file:**
 
 ```bash
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Or manually
 cat > ./.kagi.toml << 'EOF'
@@ -224,7 +224,7 @@ Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_
 
 ```bash
 # Add API token
-*kagi* auth set --api-token 'your_api_token'
+kagi auth set --api-token 'your_api_token'
 
 # Or use environment variable
 export KAGI_API_TOKEN='your_api_token'
@@ -248,7 +248,7 @@ env | grep KAGI
 export -p | grep KAGI
 
 # Try explicit command
-KAGI_SESSION_TOKEN='token' *kagi* auth status
+KAGI_SESSION_TOKEN='token' kagi auth status
 ```
 
 **Common Causes:**
@@ -266,11 +266,11 @@ export KAGI_SESSION_TOKEN='token'
 ```bash
 # Wrong - subshell doesn't see it
 export KAGI_SESSION_TOKEN='token'
-bash -c '*kagi* auth status'
+bash -c 'kagi auth status'
 
 # Right - pass explicitly
-bash -c '*kagi* auth status'  # won't work
-KAGI_SESSION_TOKEN='token' bash -c '*kagi* auth status'  # works
+bash -c 'kagi auth status'  # won't work
+KAGI_SESSION_TOKEN='token' bash -c 'kagi auth status'  # works
 ```
 
 **3. Already set to empty:**
@@ -295,10 +295,10 @@ The CLI accepts both formats:
 
 ```bash
 # Full URL (recommended)
-*kagi* auth set --session-token 'https://kagi.com/search?token=abc123def456'
+kagi auth set --session-token 'https://kagi.com/search?token=abc123def456'
 
 # Just the token
-*kagi* auth set --session-token 'abc123def456'
+kagi auth set --session-token 'abc123def456'
 ```
 
 **Check URL format:**
@@ -320,7 +320,7 @@ echo 'https://kagi.com/search?token=abc123' | grep -o 'token=[^&]*'
 **1. Query is too specific:**
 ```bash
 # Try broader search
-*kagi* search "python"  # instead of "python 3.12.1 specific error on macOS"
+kagi search "python"  # instead of "python 3.12.1 specific error on macOS"
 ```
 
 **2. Rate limiting:**
@@ -334,7 +334,7 @@ echo 'https://kagi.com/search?token=abc123' | grep -o 'token=[^&]*'
 curl -I https://kagi.com
 
 # Try with timeout
-*kagi* search "test"  # should fail fast if network issue
+kagi search "test"  # should fail fast if network issue
 ```
 
 ### JSON Parse Errors
@@ -354,25 +354,25 @@ Error: failed to serialize search response
 **1. Update *kagi*:**
 ```bash
 # Check current version
-*kagi* --version
+kagi --version
 
 # Update to latest
-curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 ```
 
 **2. Test raw output:**
 ```bash
 # Check if output is valid JSON
-*kagi* search "test" | jq . > /dev/null && echo "Valid JSON"
+kagi search "test" | jq . > /dev/null && echo "Valid JSON"
 
 # If that fails, check what's happening
-*kagi* search "test" 2>&1 | head -20
+kagi search "test" 2>&1 | head -20
 ```
 
 **3. Clear any intermediaries:**
 ```bash
 # If using pipes, test direct output
-*kagi* search "test" > /tmp/test.json
+kagi search "test" > /tmp/test.json
 cat /tmp/test.json | jq .
 ```
 
@@ -412,10 +412,10 @@ echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf
 
 ```bash
 # Run with timeout
-timeout 30 *kagi* search "test"
+timeout 30 kagi search "test"
 
 # Check if process is stuck
-ps aux | grep *kagi*
+ps aux | grep kagi
 
 # Check network connections
 netstat -an | grep 443
@@ -426,7 +426,7 @@ netstat -an | grep 443
 **1. Interrupt and retry:**
 ```bash
 # Ctrl+C to cancel, then retry
-*kagi* search "test"
+kagi search "test"
 ```
 
 **2. Check network:**
@@ -441,7 +441,7 @@ openssl s_client -connect kagi.com:443
 **3. Try different command:**
 ```bash
 # Test with simple command
-*kagi* news --limit 1
+kagi news --limit 1
 ```
 
 ## Platform-Specific Issues
@@ -461,7 +461,7 @@ openssl s_client -connect kagi.com:443
 
 **2. Remove quarantine attribute:**
 ```bash
-xattr -d com.apple.quarantine $(which *kagi*)
+xattr -d com.apple.quarantine $(which kagi)
 ```
 
 **3. Disable Gatekeeper (not recommended):**
@@ -482,7 +482,7 @@ sudo spctl --master-disable
 
 **1. Check library dependencies:**
 ```bash
-ldd $(which *kagi*)
+ldd $(which kagi)
 
 # Look for "not found" entries
 ```
@@ -490,7 +490,7 @@ ldd $(which *kagi*)
 **2. Use musl build (static):**
 ```bash
 # Download musl version instead of gnu
-wget https://github.com/Microck/*kagi*-cli/releases/download/.../*kagi*-x86_64-unknown-linux-musl.tar.gz
+wget https://github.com/Microck/kagi-cli/releases/download/.../kagi-x86_64-unknown-linux-musl.tar.gz
 ```
 
 **3. Install missing libraries:**
@@ -539,7 +539,7 @@ powershell -ExecutionPolicy Bypass -File script.ps1
 export HTTPS_PROXY=http://proxy.company.com:8080
 export HTTP_PROXY=http://proxy.company.com:8080
 
-# Or specific to *kagi*
+# Or specific to kagi
 export https_proxy=http://proxy.company.com:8080
 ```
 
@@ -611,13 +611,13 @@ sudo ntpdate pool.ntp.org
 **1. Large result sets:**
 ```bash
 # Limit results
-*kagi* news --limit 5  # instead of --limit 100
+kagi news --limit 5  # instead of --limit 100
 ```
 
 **2. Piping large data:**
 ```bash
 # Avoid loading entire results into memory
-*kagi* search "test" | jq -r '.data[0:5]'  # limit early
+kagi search "test" | jq -r '.data[0:5]'  # limit early
 ```
 
 ### Binary Size Concerns
@@ -647,7 +647,7 @@ curl -v https://kagi.com/...  # test endpoints directly
 sudo tcpdump -i any host kagi.com
 
 # Trace execution
-strace -f *kagi* search "test" 2>&1 | grep -E '(connect|send|recv)'
+strace -f kagi search "test" 2>&1 | grep -E '(connect|send|recv)'
 ```
 
 ### Test Authentication Directly
@@ -668,22 +668,22 @@ curl -H "Authorization: Bearer $KAGI_API_TOKEN" \
 
 ```bash
 # 1. Binary works?
-*kagi* --help
+kagi --help
 
 # 2. Auth configured?
-*kagi* auth status
+kagi auth status
 
 # 3. Auth valid?
-*kagi* auth check
+kagi auth check
 
 # 4. Unauthenticated commands work?
-*kagi* news --limit 1
+kagi news --limit 1
 
 # 5. Session commands work?
-*kagi* search "test"
+kagi search "test"
 
 # 6. API commands work?
-*kagi* fastgpt "test"
+kagi fastgpt "test"
 ```
 
 ### Collect Debug Information
@@ -693,18 +693,18 @@ When reporting issues, include:
 ```bash
 # System info
 uname -a
-*kagi* --version
+kagi --version
 
 # Auth status (redact tokens!)
-*kagi* auth status | sed 's/token=.*/token=REDACTED/'
+kagi auth status | sed 's/token=.*/token=REDACTED/'
 
 # Test commands
 echo "=== Test 1: Help ==="
-*kagi* --help
+kagi --help
 echo "=== Test 2: News ==="
-*kagi* news --limit 1
+kagi news --limit 1
 echo "=== Test 3: Auth ==="
-*kagi* auth check 2>&1 || echo "Auth check failed"
+kagi auth check 2>&1 || echo "Auth check failed"
 ```
 
 ## Error Reference Quick Guide
@@ -723,7 +723,7 @@ echo "=== Test 3: Auth ==="
 
 If you've tried the solutions above and still have issues:
 
-1. **Check GitHub Issues:** [github.com/Microck/*kagi*-cli/issues](https://github.com/Microck/*kagi*-cli/issues)
+1. **Check GitHub Issues:** [github.com/Microck/kagi-cli/issues](https://github.com/Microck/kagi-cli/issues)
 2. **Search existing issues** for your error message
 3. **Create a new issue** with:
    - *kagi* version (`kagi --version`)
@@ -767,4 +767,4 @@ KAGI_SESSION_TOKEN='token'
 
 ---
 
-*Still stuck? Check the [GitHub Issues](https://github.com/Microck/*kagi*-cli/issues) or [Discussions](https://github.com/Microck/*kagi*-cli/discussions).*
+*Still stuck? Check the [GitHub Issues](https://github.com/Microck/kagi-cli/issues) or [Discussions](https://github.com/Microck/kagi-cli/discussions).*

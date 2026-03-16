@@ -23,7 +23,7 @@ This guide covers advanced patterns for integrating *kagi* CLI into scripts, aut
 ```bash
 #!/bin/bash
 
-if *kagi* search "test" > /dev/null 2>&1; then
+if kagi search "test" > /dev/null 2>&1; then
   echo "Search succeeded"
 else
   echo "Search failed"
@@ -35,13 +35,13 @@ fi
 
 ```bash
 # Only run second if first succeeds
-*kagi* news --limit 1 && echo "News OK"
+kagi news --limit 1 && echo "News OK"
 
 # Run second if first fails
-*kagi* auth check || echo "Auth failed"
+kagi auth check || echo "Auth failed"
 
 # Either/or
-*kagi* search "test" || *kagi* news --limit 1
+kagi search "test" || kagi news --limit 1
 ```
 
 ### JSON Processing with jq
@@ -65,44 +65,44 @@ sudo yum install jq
 
 **Extract single field:**
 ```bash
-*kagi* search "rust" | jq -r '.data[0].url'
+kagi search "rust" | jq -r '.data[0].url'
 ```
 
 **Extract multiple fields:**
 ```bash
-*kagi* search "rust" | jq -r '.data[] | "\(.title)\n\(.url)\n"'
+kagi search "rust" | jq -r '.data[] | "\(.title)\n\(.url)\n"'
 ```
 
 **Filter results:**
 ```bash
 # Get only organic results (t=0)
-*kagi* search "rust" | jq '.data | map(select(.t == 0))'
+kagi search "rust" | jq '.data | map(select(.t == 0))'
 
 # Results with snippets only
-*kagi* search "rust" | jq '.data | map(select(.snippet != ""))'
+kagi search "rust" | jq '.data | map(select(.snippet != ""))'
 ```
 
 **Count results:**
 ```bash
-*kagi* news --limit 10 | jq '.data | length'
+kagi news --limit 10 | jq '.data | length'
 ```
 
 **Transform output:**
 ```bash
 # Convert to CSV
-*kagi* search "rust" | jq -r '.data[] | [.title, .url] | @csv'
+kagi search "rust" | jq -r '.data[] | [.title, .url] | @csv'
 
 # Create markdown links
-*kagi* search "rust" | jq -r '.data[0:5] | .[] | "- [\(.title)](\(.url))"'
+kagi search "rust" | jq -r '.data[0:5] | .[] | "- [\(.title)](\(.url))"'
 ```
 
 **Nested extraction:**
 ```bash
 # From summarize output
-*kagi* summarize --url https://example.com | jq -r '.data.output'
+kagi summarize --url https://example.com | jq -r '.data.output'
 
 # From assistant output
-*kagi* assistant "Hello" | jq -r '.message.markdown'
+kagi assistant "Hello" | jq -r '.message.markdown'
 ```
 
 ## Automation Patterns
@@ -116,7 +116,7 @@ Schedule regular *kagi* operations:
 crontab -e
 
 # Daily at 9 AM
-0 9 * * * /home/user/bin/daily-brief.sh >> /home/user/logs/*kagi*-cron.log 2>&1
+0 9 * * * /home/user/bin/daily-brief.sh >> /home/user/logs/kagi-cron.log 2>&1
 
 # Hourly news check
 0 * * * * /home/user/bin/hourly-news.sh
@@ -135,11 +135,11 @@ crontab -e
 source ~/.bashrc
 
 # Or set variables explicitly
-export KAGI_SESSION_TOKEN="$HOME/.*kagi*-session-token"
+export KAGI_SESSION_TOKEN="$HOME/.kagi-session-token"
 export PATH="/home/user/.local/bin:$PATH"
 
-# Now run *kagi*
-*kagi* news --category tech --limit 10
+# Now run kagi
+kagi news --category tech --limit 10
 ```
 
 ### Systemd Timers (Linux)
@@ -147,20 +147,20 @@ export PATH="/home/user/.local/bin:$PATH"
 More reliable than cron for complex workflows:
 
 ```ini
-# ~/.config/systemd/user/*kagi*-news.service
+# ~/.config/systemd/user/kagi-news.service
 [Unit]
 Description=Kagi News Fetcher
 
 [Service]
 Type=oneshot
-Environment=KAGI_SESSION_TOKEN=/home/user/.*kagi*-session-token
-ExecStart=/home/user/.local/bin/*kagi* news --category tech --limit 10
-StandardOutput=append:/home/user/logs/*kagi*-news.log
-StandardError=append:/home/user/logs/*kagi*-news.log
+Environment=KAGI_SESSION_TOKEN=/home/user/.kagi-session-token
+ExecStart=/home/user/.local/bin/kagi news --category tech --limit 10
+StandardOutput=append:/home/user/logs/kagi-news.log
+StandardError=append:/home/user/logs/kagi-news.log
 ```
 
 ```ini
-# ~/.config/systemd/user/*kagi*-news.timer
+# ~/.config/systemd/user/kagi-news.timer
 [Unit]
 Description=Run Kagi News every hour
 
@@ -175,8 +175,8 @@ WantedBy=timers.target
 ```bash
 # Enable and start
 systemctl --user daemon-reload
-systemctl --user enable *kagi*-news.timer
-systemctl --user start *kagi*-news.timer
+systemctl --user enable kagi-news.timer
+systemctl --user start kagi-news.timer
 systemctl --user list-timers
 ```
 
@@ -185,16 +185,16 @@ systemctl --user list-timers
 macOS equivalent of systemd:
 
 ```xml
-<!-- ~/Library/LaunchAgents/com.user.*kagi*.news.plist -->
+<!-- ~/Library/LaunchAgents/com.user.kagi.news.plist -->
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.user.*kagi*.news</string>
+    <string>com.user.kagi.news</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/username/.local/bin/*kagi*</string>
+        <string>/Users/username/.local/bin/kagi</string>
         <string>news</string>
         <string>--category</string>
         <string>tech</string>
@@ -214,18 +214,18 @@ macOS equivalent of systemd:
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/username/logs/*kagi*-news.log</string>
+    <string>/Users/username/logs/kagi-news.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/username/logs/*kagi*-news.log</string>
+    <string>/Users/username/logs/kagi-news.log</string>
 </dict>
 </plist>
 ```
 
 ```bash
 # Load and start
-launchctl load ~/Library/LaunchAgents/com.user.*kagi*.news.plist
-launchctl start com.user.*kagi*.news
-launchctl list | grep *kagi*
+launchctl load ~/Library/LaunchAgents/com.user.kagi.news.plist
+launchctl start com.user.kagi.news
+launchctl list | grep kagi
 ```
 
 ## CI/CD Integration
@@ -233,7 +233,7 @@ launchctl list | grep *kagi*
 ### GitHub Actions
 
 ```yaml
-# .github/workflows/*kagi*-search.yml
+# .github/workflows/kagi-search.yml
 name: Kagi Search
 
 on:
@@ -247,16 +247,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install *kagi*
+      - name: Install kagi
         run: |
-          curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       
       - name: Run search
         env:
           KAGI_SESSION_TOKEN: ${{ secrets.KAGI_SESSION_TOKEN }}
         run: |
-          *kagi* search "latest AI developments" | jq '.' > search-results.json
+          kagi search "latest AI developments" | jq '.' > search-results.json
       
       - name: Upload results
         uses: actions/upload-artifact@v4
@@ -275,15 +275,15 @@ stages:
 variables:
   KAGI_SESSION_TOKEN: $KAGI_SESSION_TOKEN
 
-*kagi*_search:
+kagi_search:
   stage: search
   image: alpine:latest
   before_script:
     - apk add --no-cache curl jq
-    - curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+    - curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
-    - *kagi* news --category tech --limit 5 | jq '.' > news.json
+    - kagi news --category tech --limit 5 | jq '.' > news.json
   artifacts:
     paths:
       - news.json
@@ -299,22 +299,22 @@ variables:
 version: 2.1
 
 jobs:
-  *kagi*_job:
+  kagi_job:
     docker:
       - image: cimg/base:stable
     steps:
       - checkout
       - run:
-          name: Install *kagi*
+          name: Install kagi
           command: |
-            curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
             echo 'export PATH="$HOME/.local/bin:$PATH"' >> $BASH_ENV
       - run:
-          name: Run *kagi* commands
+          name: Run kagi commands
           environment:
             KAGI_SESSION_TOKEN: ${KAGI_SESSION_TOKEN}
           command: |
-            *kagi* search "documentation" > results.json
+            kagi search "documentation" > results.json
       - store_artifacts:
           path: results.json
 ```
@@ -328,8 +328,8 @@ FROM alpine:latest
 # Install dependencies
 RUN apk add --no-cache curl jq
 
-# Install *kagi*
-RUN curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+# Install kagi
+RUN curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 
 # Set PATH
 ENV PATH="/root/.local/bin:${PATH}"
@@ -338,14 +338,14 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY scripts/ /scripts/
 
 # Entry point
-ENTRYPOINT ["*kagi*"]
+ENTRYPOINT ["kagi"]
 ```
 
 ```yaml
 # docker-compose.yml
 version: '3.8'
 services:
-  *kagi*:
+  kagi:
     build: .
     environment:
       - KAGI_SESSION_TOKEN=${KAGI_SESSION_TOKEN}
@@ -362,20 +362,20 @@ Create domain-specific wrappers:
 
 ```bash
 #!/bin/bash
-# ~/bin/*kagi*-dev
-# Development-focused *kagi* wrapper
+# ~/bin/kagi-dev
+# Development-focused kagi wrapper
 
 set -e
 
 query="$1"
-[ -z "$query" ] && { echo "Usage: *kagi*-dev <query>"; exit 1; }
+[ -z "$query" ] && { echo "Usage: kagi-dev <query>"; exit 1; }
 
 echo "🔍 Searching dev resources..."
-*kagi* search --pretty "site:stackoverflow.com OR site:github.com OR site:docs.rs $query"
+kagi search --pretty "site:stackoverflow.com OR site:github.com OR site:docs.rs $query"
 
 echo ""
 echo "💡 Quick answer..."
-*kagi* fastgpt "$query"
+kagi fastgpt "$query"
 ```
 
 ### Shell Functions
@@ -384,23 +384,23 @@ Add to your `.bashrc` or `.zshrc`:
 
 ```bash
 # Search and open first result
-*kagi*-open() {
+kagi-open() {
   local url
-  url=$(*kagi* search "$1" | jq -r '.data[0].url')
+  url=$(kagi search "$1" | jq -r '.data[0].url')
   [ -n "$url" ] && open "$url" || echo "No results"
 }
 
 # Search with timestamped output
-*kagi*-save() {
+kagi-save() {
   local query="$1"
-  local file="*kagi*-$(date +%Y%m%d-%H%M%S).json"
-  *kagi* search "$query" > "$file"
+  local file="kagi-$(date +%Y%m%d-%H%M%S).json"
+  kagi search "$query" > "$file"
   echo "Saved to: $file"
 }
 
 # Quick summary of URL
-*kagi*-quick-summary() {
-  *kagi* summarize --subscriber --url "$1" --length headline | jq -r '.data.output'
+kagi-quick-summary() {
+  kagi summarize --subscriber --url "$1" --length headline | jq -r '.data.output'
 }
 ```
 
@@ -408,37 +408,37 @@ Add to your `.bashrc` or `.zshrc`:
 
 ```python
 #!/usr/bin/env python3
-# *kagi*_wrapper.py
+# kagi_wrapper.py
 
 import subprocess
 import json
 import sys
 
-def *kagi*_search(query):
-    """Run *kagi* search and return parsed JSON."""
+def kagi_search(query):
+    """Run kagi search and return parsed JSON."""
     result = subprocess.run(
-        ['*kagi*', 'search', query],
+        ['kagi', 'search', query],
         capture_output=True,
         text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"*kagi* failed: {result.stderr}")
+        raise RuntimeError(f"kagi failed: {result.stderr}")
     return json.loads(result.stdout)
 
-def *kagi*_summarize(url):
+def kagi_summarize(url):
     """Summarize a URL."""
     result = subprocess.run(
-        ['*kagi*', 'summarize', '--subscriber', '--url', url, '--length', 'overview'],
+        ['kagi', 'summarize', '--subscriber', '--url', url, '--length', 'overview'],
         capture_output=True,
         text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"*kagi* failed: {result.stderr}")
+        raise RuntimeError(f"kagi failed: {result.stderr}")
     return json.loads(result.stdout)
 
 # Example usage
 if __name__ == '__main__':
-    results = *kagi*_search(sys.argv[1])
+    results = kagi_search(sys.argv[1])
     for item in results['data'][:3]:
         print(f"{item['title']}: {item['url']}")
 ```
@@ -446,7 +446,7 @@ if __name__ == '__main__':
 ### Node.js Integration
 
 ```javascript
-// *kagi*-wrapper.js
+// kagi-wrapper.js
 const { execSync } = require('child_process');
 
 function kagiSearch(query) {
@@ -488,7 +488,7 @@ Generated: $(date)
 
 EOF
 
-*kagi* search "$QUERY" | jq -r '
+kagi search "$QUERY" | jq -r '
   .data[0:5] | 
   to_entries |
   map("### Result \(.key + 1)\n\n**Title:** \(.value.title)\n\n**URL:** \(.value.url)\n\n**Snippet:** \(.value.snippet)\n") |
@@ -502,7 +502,7 @@ echo "Report generated: $REPORT_FILE"
 
 ```bash
 # Convert search to RSS-like format
-*kagi* search "rust" | jq '{
+kagi search "rust" | jq '{
   "channel": {
     "title": "Kagi Search: rust",
     "items": [.data[] | {
@@ -514,7 +514,7 @@ echo "Report generated: $REPORT_FILE"
 }'
 
 # Create HTML page
-*kagi* search "rust" | jq -r '
+kagi search "rust" | jq -r '
   "<!DOCTYPE html><html><body><h1>Results</h1><ul>",
   (.data[] | "<li><a href=\(.url)>\(.title)</a><p>\(.snippet)</p></li>"),
   "</ul></body></html>"
@@ -523,7 +523,7 @@ echo "Report generated: $REPORT_FILE"
 # Create markdown table
 echo "| Title | URL |" > results.md
 echo "|-------|-----|" >> results.md
-*kagi* search "rust" | jq -r '.data[0:10] | .[] | "| \(.title) | \(.url) |"' >> results.md
+kagi search "rust" | jq -r '.data[0:10] | .[] | "| \(.title) | \(.url) |"' >> results.md
 ```
 
 ## Error Handling Strategies
@@ -532,7 +532,7 @@ echo "|-------|-----|" >> results.md
 
 ```bash
 #!/bin/bash
-# retry-*kagi*.sh
+# retry-kagi.sh
 
 COMMAND="$1"
 MAX_RETRIES=3
@@ -541,7 +541,7 @@ RETRY_DELAY=5
 for i in $(seq 1 $MAX_RETRIES); do
   echo "Attempt $i of $MAX_RETRIES..."
   
-  if *kagi* $COMMAND; then
+  if kagi $COMMAND; then
     echo "Success!"
     exit 0
   fi
@@ -566,12 +566,12 @@ QUERY="$1"
 
 # Try with session token
 if [ -n "$KAGI_SESSION_TOKEN" ]; then
-  *kagi* search "$QUERY" && exit 0
+  kagi search "$QUERY" && exit 0
 fi
 
 # Fallback to news
 if [ -z "$QUERY" ]; then
-  *kagi* news --limit 5
+  kagi news --limit 5
   exit 0
 fi
 
@@ -584,9 +584,9 @@ exit 1
 
 ```bash
 #!/bin/bash
-# *kagi*-with-logging.sh
+# kagi-with-logging.sh
 
-LOG_FILE="*kagi*-$(date +%Y%m%d).log"
+LOG_FILE="kagi-$(date +%Y%m%d).log"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
@@ -594,7 +594,7 @@ log() {
 
 log "Starting: $*"
 
-if *kagi* "$@" 2>&1 | tee -a "$LOG_FILE"; then
+if kagi "$@" 2>&1 | tee -a "$LOG_FILE"; then
   log "Success: $*"
 else
   log "Failed: $*"
@@ -620,7 +620,7 @@ for ((i=0; i<${#URLS[@]}; i+=BATCH_SIZE)); do
   echo "Processing batch $((i/BATCH_SIZE + 1))..."
   
   for url in "${batch[@]}"; do
-    *kagi* summarize --subscriber --url "$url" > "summaries/$(basename "$url").json" &
+    kagi summarize --subscriber --url "$url" > "summaries/$(basename "$url").json" &
   done
   
   wait  # Wait for batch to complete
@@ -634,7 +634,7 @@ done
 #!/bin/bash
 # Cache search results
 
-CACHE_DIR="$HOME/.cache/*kagi*"
+CACHE_DIR="$HOME/.cache/kagi"
 mkdir -p "$CACHE_DIR"
 
 search_with_cache() {
@@ -645,7 +645,7 @@ search_with_cache() {
   if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file"))) -lt 3600 ]; then
     cat "$cache_file"
   else
-    *kagi* search "$query" | tee "$cache_file"
+    kagi search "$query" | tee "$cache_file"
   fi
 }
 
@@ -661,7 +661,7 @@ search_with_cache "$1"
 # Secure token loading
 
 load_token() {
-  local token_file="$HOME/.*kagi*-session-token"
+  local token_file="$HOME/.kagi-session-token"
   
   # Check file permissions
   if [ "$(stat -c %a "$token_file" 2>/dev/null)" != "600" ]; then
@@ -757,7 +757,7 @@ export default async function Command(props: { arguments: { query: string } }) {
 hs.hotkey.bind({"cmd", "alt"}, "K", function()
   local query = hs.dialog.textPrompt("Kagi Search", "Enter search query:", "", "Search", "Cancel")
   if query ~= "" then
-    local output = hs.execute("*kagi* search '" .. query .. "' | jq -r '.data[0].url'")
+    local output = hs.execute("kagi search '" .. query .. "' | jq -r '.data[0].url'")
     hs.execute("open '" .. output:gsub("%s+$", "") .. "'")
   end
 end)

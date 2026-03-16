@@ -12,7 +12,7 @@ Read Kagi News from the public JSON endpoints. This command requires no authenti
 ## Synopsis
 
 ```bash
-*kagi* news [OPTIONS]
+kagi news [OPTIONS]
 ```
 
 ## Description
@@ -43,8 +43,8 @@ News category to fetch.
 
 **Example:**
 ```bash
-*kagi* news --category tech
-*kagi* news --category business --limit 5
+kagi news --category tech
+kagi news --category business --limit 5
 ```
 
 ### `--limit <COUNT>`
@@ -57,8 +57,8 @@ Number of stories to return.
 
 **Example:**
 ```bash
-*kagi* news --limit 5
-*kagi* news --category tech --limit 10
+kagi news --limit 5
+kagi news --category tech --limit 10
 ```
 
 ### `--lang <LANG>`
@@ -70,7 +70,7 @@ Language for news content.
 
 **Example:**
 ```bash
-*kagi* news --lang en
+kagi news --lang en
 ```
 
 ### `--list-categories`
@@ -79,7 +79,7 @@ List available news categories instead of fetching news.
 
 **Example:**
 ```bash
-*kagi* news --list-categories
+kagi news --list-categories
 ```
 
 Output shows available categories and their descriptions.
@@ -92,7 +92,7 @@ The chaos index measures the level of disruption and uncertainty in current news
 
 **Example:**
 ```bash
-*kagi* news --chaos
+kagi news --chaos
 ```
 
 ## Output Format
@@ -133,29 +133,29 @@ The chaos index measures the level of disruption and uncertainty in current news
 
 ```bash
 # Get world news (default)
-*kagi* news
+kagi news
 
 # Get tech news
-*kagi* news --category tech
+kagi news --category tech
 
 # Get 5 business stories
-*kagi* news --category business --limit 5
+kagi news --category business --limit 5
 ```
 
 ### Processing Output
 
 ```bash
 # Inspect the story payloads
-*kagi* news | jq '.stories'
+kagi news | jq '.stories'
 
 # Read category metadata
-*kagi* news | jq '.category'
+kagi news | jq '.category'
 
 # Read the latest batch metadata
-*kagi* news | jq '.latest_batch'
+kagi news | jq '.latest_batch'
 
 # Save to file
-*kagi* news --category tech > tech-news.json
+kagi news --category tech > tech-news.json
 ```
 
 ### Daily Briefing
@@ -169,7 +169,7 @@ echo "==============="
 for category in tech business science; do
   echo ""
   echo "${category^^}:"
-  *kagi* news --category "$category" --limit 3 | jq '.stories'
+  kagi news --category "$category" --limit 3 | jq '.stories'
 done
 ```
 
@@ -177,7 +177,7 @@ done
 
 ```bash
 # Check current news chaos level
-*kagi* news --chaos
+kagi news --chaos
 ```
 
 ## Exit Codes

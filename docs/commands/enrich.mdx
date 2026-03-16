@@ -10,7 +10,7 @@ Query Kagi's enrichment indexes (Teclis for web, TinyGem for news) for enhanced 
 ## Synopsis
 
 ```bash
-*kagi* enrich <SUBCOMMAND> [OPTIONS]
+kagi enrich <SUBCOMMAND> [OPTIONS]
 ```
 
 ## Description
@@ -36,7 +36,7 @@ Query the Teclis web enrichment index.
 
 **Example:**
 ```bash
-*kagi* enrich web "artificial intelligence"
+kagi enrich web "artificial intelligence"
 ```
 
 ### `enrich news`
@@ -45,7 +45,7 @@ Query the TinyGem news enrichment index.
 
 **Example:**
 ```bash
-*kagi* enrich news "climate change"
+kagi enrich news "climate change"
 ```
 
 ## Options
@@ -56,8 +56,8 @@ The search query for the enrichment index.
 
 **Example:**
 ```bash
-*kagi* enrich web "machine learning frameworks"
-*kagi* enrich news "tech industry layoffs"
+kagi enrich web "machine learning frameworks"
+kagi enrich news "tech industry layoffs"
 ```
 
 ## Output Format
@@ -109,26 +109,26 @@ The search query for the enrichment index.
 
 ```bash
 # Search web enrichment
-*kagi* enrich web "python web frameworks"
+kagi enrich web "python web frameworks"
 
 # Process results
-*kagi* enrich web "cloud computing" | jq -r '.data[].url'
+kagi enrich web "cloud computing" | jq -r '.data[].url'
 
 # Filter by domain
-*kagi* enrich web "kubernetes" | jq '.data | map(select(.domain == "kubernetes.io"))'
+kagi enrich web "kubernetes" | jq '.data | map(select(.domain == "kubernetes.io"))'
 ```
 
 ### News Enrichment
 
 ```bash
 # Search news enrichment
-*kagi* enrich news "artificial intelligence"
+kagi enrich news "artificial intelligence"
 
 # Get recent news on topic
-*kagi* enrich news "cryptocurrency regulation" | jq -r '.data[0:5] | .[].title'
+kagi enrich news "cryptocurrency regulation" | jq -r '.data[0:5] | .[].title'
 
 # Filter by date
-*kagi* enrich news "tech layoffs" | jq '.data | map(select(.published > "2024-01-01"))'
+kagi enrich news "tech layoffs" | jq '.data | map(select(.published > "2024-01-01"))'
 ```
 
 ### Research Workflow
@@ -144,11 +144,11 @@ echo "🔍 Researching: $TOPIC"
 echo ""
 
 echo "Web Resources:"
-*kagi* enrich web "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+kagi enrich web "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
 
 echo ""
 echo "News Coverage:"
-*kagi* enrich news "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+kagi enrich news "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
 ```
 
 ## Comparison with Standard Search

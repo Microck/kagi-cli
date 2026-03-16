@@ -30,7 +30,7 @@ The fastest way to verify *kagi* is working is to run commands that don't requir
 ### Test 1: Kagi News
 
 ```bash
-*kagi* news --category world --limit 3
+kagi news --category world --limit 3
 ```
 
 **Demo:**
@@ -54,7 +54,7 @@ The fastest way to verify *kagi* is working is to run commands that don't requir
 ### Test 2: Small Web Feed
 
 ```bash
-*kagi* smallweb --limit 3
+kagi smallweb --limit 3
 ```
 
 This fetches the latest posts from Kagi's Small Web curation.
@@ -74,13 +74,13 @@ Before moving to authenticated commands, let's verify the installation details:
 
 ```bash
 # Check version
-*kagi* --version
+kagi --version
 
 # View all available commands
-*kagi* --help
+kagi --help
 
 # Check which credentials are configured (if any)
-*kagi* auth status
+kagi auth status
 ```
 
 At this stage, `kagi auth status` will likely show:
@@ -118,7 +118,7 @@ export KAGI_SESSION_TOKEN='https://kagi.com/search?token=YOUR_TOKEN_HERE'
 **Verify it works:**
 
 ```bash
-*kagi* auth check
+kagi auth check
 ```
 
 Expected output:
@@ -132,7 +132,7 @@ auth check passed: session_token (env)
 Save the token to a config file:
 
 ```bash
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN_HERE'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN_HERE'
 ```
 
 This creates `./.kagi.toml` with your token. The CLI accepts either:
@@ -142,7 +142,7 @@ This creates `./.kagi.toml` with your token. The CLI accepts either:
 **Verify it works:**
 
 ```bash
-*kagi* auth status
+kagi auth status
 ```
 
 Expected output:
@@ -160,10 +160,10 @@ Now that you're authenticated, test the subscriber commands:
 
 ```bash
 # Basic search (uses session token)
-*kagi* search --pretty "rust programming language"
+kagi search --pretty "rust programming language"
 
 # Search with a lens (replace 2 with your lens index)
-*kagi* search --lens 2 "developer documentation"
+kagi search --lens 2 "developer documentation"
 ```
 
 **Search Demo:**
@@ -172,10 +172,10 @@ Now that you're authenticated, test the subscriber commands:
 
 ```bash
 # Test Assistant
-*kagi* assistant "What are the key features of Rust?"
+kagi assistant "What are the key features of Rust?"
 
 # Test subscriber Summarizer
-*kagi* summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
+kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
 ```
 
 **Assistant Demo:**
@@ -210,7 +210,7 @@ export KAGI_API_TOKEN='your_api_token_here'
 **Option B: Persistent Configuration**
 
 ```bash
-*kagi* auth set --api-token 'your_api_token_here'
+kagi auth set --api-token 'your_api_token_here'
 ```
 
 **Note:** If you previously set a session token, this will add the API token alongside it. Both can coexist.
@@ -219,16 +219,16 @@ export KAGI_API_TOKEN='your_api_token_here'
 
 ```bash
 # Test API authentication
-*kagi* auth check
+kagi auth check
 
 # Test public Summarizer
-*kagi* summarize --url https://example.com --engine cecil
+kagi summarize --url https://example.com --engine cecil
 
 # Test FastGPT
-*kagi* fastgpt "Explain quantum computing"
+kagi fastgpt "Explain quantum computing"
 
 # Test Enrichment
-*kagi* enrich web "artificial intelligence"
+kagi enrich web "artificial intelligence"
 ```
 
 ### Understanding Dual Token Setup
@@ -334,10 +334,10 @@ Now let's put it all together with practical workflows.
 # save as ~/bin/news-brief.sh
 
 echo "=== Technology News ==="
-*kagi* news --category tech --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
+kagi news --category tech --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
 
 echo "=== World News ==="
-*kagi* news --category world --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
+kagi news --category world --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
 ```
 
 Make it executable and run:
@@ -351,13 +351,13 @@ chmod +x ~/bin/news-brief.sh
 
 ```bash
 # Search for documentation
-*kagi* search --lens 2 "error handling rust" --pretty
+kagi search --lens 2 "error handling rust" --pretty
 
 # Summarize a relevant article
-*kagi* summarize --subscriber --url https://doc.rust-lang.org/book/ch09-00-error-handling.html --summary-type keypoints
+kagi summarize --subscriber --url https://doc.rust-lang.org/book/ch09-00-error-handling.html --summary-type keypoints
 
 # Ask Assistant for clarification
-*kagi* assistant "Explain the difference between Result and Option in Rust"
+kagi assistant "Explain the difference between Result and Option in Rust"
 ```
 
 ### Workflow 3: Content Pipeline
@@ -374,7 +374,7 @@ URLS=(
 
 for url in "${URLS[@]}"; do
   echo "Processing: $url"
-  *kagi* summarize --subscriber --url "$url" --length overview > "summary_$(basename $url).json"
+  kagi summarize --subscriber --url "$url" --length overview > "summary_$(basename $url).json"
 done
 ```
 
@@ -382,13 +382,13 @@ done
 
 ```bash
 # Quick answer without opening browser
-*kagi* fastgpt "What are the new features in Python 3.12?"
+kagi fastgpt "What are the new features in Python 3.12?"
 
 # Deep research with web enrichment
-*kagi* enrich web "Python 3.12 performance improvements"
+kagi enrich web "Python 3.12 performance improvements"
 
 # Search for specific implementation examples
-*kagi* search "python 3.12 generic types examples" --pretty
+kagi search "python 3.12 generic types examples" --pretty
 ```
 
 ## Common First Commands Reference
@@ -398,40 +398,40 @@ Here's a quick reference of useful commands organized by category:
 ### Information Commands
 
 ```bash
-*kagi* --version              # Show version
-*kagi* --help                 # Show all commands
-*kagi* auth status            # Check credential status
-*kagi* auth check             # Validate credentials
-*kagi* news --list-categories # Show available news categories
+kagi --version              # Show version
+kagi --help                 # Show all commands
+kagi auth status            # Check credential status
+kagi auth check             # Validate credentials
+kagi news --list-categories # Show available news categories
 ```
 
 ### Search Commands
 
 ```bash
-*kagi* search "query"                      # JSON output
-*kagi* search --pretty "query"             # Human-readable
-*kagi* search --lens 2 "query"             # With lens
-*kagi* search --lens 2 --pretty "query"    # Combined
+kagi search "query"                      # JSON output
+kagi search --pretty "query"             # Human-readable
+kagi search --lens 2 "query"             # With lens
+kagi search --lens 2 --pretty "query"    # Combined
 ```
 
 ### Content Commands
 
 ```bash
-*kagi* summarize --url https://example.com                    # Public API
-*kagi* summarize --subscriber --url https://example.com       # Subscriber
-*kagi* fastgpt "question"                                     # Quick answer
-*kagi* assistant "prompt"                                     # AI assistant
-*kagi* enrich web "query"                                     # Web enrichment
-*kagi* enrich news "query"                                    # News enrichment
+kagi summarize --url https://example.com                    # Public API
+kagi summarize --subscriber --url https://example.com       # Subscriber
+kagi fastgpt "question"                                     # Quick answer
+kagi assistant "prompt"                                     # AI assistant
+kagi enrich web "query"                                     # Web enrichment
+kagi enrich news "query"                                    # News enrichment
 ```
 
 ### Feed Commands
 
 ```bash
-*kagi* news --category tech --limit 5     # Tech news
-*kagi* news --category world --limit 10   # World news
-*kagi* smallweb --limit 20                # Small Web feed
-*kagi* news --chaos                       # Chaos index
+kagi news --category tech --limit 5     # Tech news
+kagi news --category world --limit 10   # World news
+kagi smallweb --limit 20                # Small Web feed
+kagi news --chaos                       # Chaos index
 ```
 
 ## What You've Learned

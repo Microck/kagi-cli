@@ -10,7 +10,7 @@ Fetch the Kagi Small Web feed - a curated collection of posts from independent w
 ## Synopsis
 
 ```bash
-*kagi* smallweb [OPTIONS]
+kagi smallweb [OPTIONS]
 ```
 
 ## Description
@@ -36,8 +36,8 @@ Number of posts to return.
 
 **Example:**
 ```bash
-*kagi* smallweb --limit 10
-*kagi* smallweb --limit 50
+kagi smallweb --limit 10
+kagi smallweb --limit 50
 ```
 
 ## Output Format
@@ -60,23 +60,23 @@ Number of posts to return.
 
 ```bash
 # Get the Small Web feed
-*kagi* smallweb
+kagi smallweb
 
 # Request a smaller feed slice
-*kagi* smallweb --limit 50
+kagi smallweb --limit 50
 
 # Request fewer posts
-*kagi* smallweb --limit 5
+kagi smallweb --limit 5
 ```
 
 ### Processing Output
 
 ```bash
 # Save the raw feed to disk
-*kagi* smallweb > smallweb-feed.json
+kagi smallweb > smallweb-feed.json
 
 # Extract the XML payload
-*kagi* smallweb | jq -r '.xml' > smallweb.xml
+kagi smallweb | jq -r '.xml' > smallweb.xml
 ```
 
 ### Daily Discovery
@@ -89,7 +89,7 @@ echo "🌐 Today's Small Web Discoveries"
 echo "================================="
 echo ""
 
-*kagi* smallweb --limit 10 | jq -r '.xml'
+kagi smallweb --limit 10 | jq -r '.xml'
 ```
 
 ### Archiving Workflow
@@ -102,7 +102,7 @@ OUTPUT_DIR="$HOME/smallweb-archive/$(date +%Y/%m)"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Fetching Small Web feed..."
-*kagi* smallweb --limit 100 | jq -r '.xml' > "$OUTPUT_DIR/smallweb-$(date +%Y%m%d).xml"
+kagi smallweb --limit 100 | jq -r '.xml' > "$OUTPUT_DIR/smallweb-$(date +%Y%m%d).xml"
 
 echo "Saved to: $OUTPUT_DIR"
 ```

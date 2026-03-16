@@ -33,13 +33,13 @@ Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env
 **Solution:**
 ```bash
 # Set session token
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Or set API token
-*kagi* auth set --api-token 'YOUR_API_TOKEN'
+kagi auth set --api-token 'YOUR_API_TOKEN'
 
 # Verify
-*kagi* auth check
+kagi auth check
 ```
 
 ### "this command requires KAGI_SESSION_TOKEN"
@@ -54,10 +54,10 @@ Config error: this command requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.
 **Solution:**
 ```bash
 # Add session token
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Or if using wrong mode
-*kagi* summarize --subscriber --url https://example.com  # Use --subscriber for session
+kagi summarize --subscriber --url https://example.com  # Use --subscriber for session
 ```
 
 ### "this command requires KAGI_API_TOKEN"
@@ -72,10 +72,10 @@ Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_
 **Solution:**
 ```bash
 # Add API token
-*kagi* auth set --api-token 'YOUR_API_TOKEN'
+kagi auth set --api-token 'YOUR_API_TOKEN'
 
 # Or remove conflicting flag
-*kagi* summarize --url https://example.com  # Remove --subscriber for API mode
+kagi summarize --url https://example.com  # Remove --subscriber for API mode
 ```
 
 ### "auth check failed"
@@ -152,7 +152,7 @@ chmod 600 ./.kagi.toml
 
 # Or recreate
 rm ./.kagi.toml
-*kagi* auth set --session-token 'YOUR_TOKEN'
+kagi auth set --session-token 'YOUR_TOKEN'
 ```
 
 ## Command Errors
@@ -169,7 +169,7 @@ Error: Config: --length requires --subscriber
 **Solution:**
 ```bash
 # Add --subscriber flag
-*kagi* summarize --subscriber --url https://example.com --length digest
+kagi summarize --subscriber --url https://example.com --length digest
 ```
 
 ### "--engine is only supported for the paid public summarizer API"
@@ -184,7 +184,7 @@ Error: Config: --engine is only supported for the paid public summarizer API
 **Solution:**
 ```bash
 # Remove --subscriber for API mode
-*kagi* summarize --url https://example.com --engine cecil
+kagi summarize --url https://example.com --engine cecil
 ```
 
 ### "--cache is only supported for the paid public summarizer API"
@@ -199,7 +199,7 @@ Error: Config: --cache is only supported for the paid public summarizer API
 **Solution:**
 ```bash
 # Remove --subscriber flag
-*kagi* summarize --url https://example.com --cache false
+kagi summarize --url https://example.com --cache false
 ```
 
 ### "--url or --text required"
@@ -209,10 +209,10 @@ Error: Config: --cache is only supported for the paid public summarizer API
 **Solution:**
 ```bash
 # Provide URL
-*kagi* summarize --url https://example.com
+kagi summarize --url https://example.com
 
 # Or text
-*kagi* summarize --text "Content to summarize..."
+kagi summarize --text "Content to summarize..."
 ```
 
 ## Network Errors
@@ -258,7 +258,7 @@ env | grep -i proxy
 
 # Try without proxy temporarily
 unset HTTPS_PROXY
-*kagi* search "test"
+kagi search "test"
 ```
 
 ### "DNS resolution failed"
@@ -311,7 +311,7 @@ brew install ca-certificates
 **Solution:**
 1. Update *kagi* CLI:
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+   curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
    ```
 2. Check raw output:
    ```bash
@@ -325,7 +325,7 @@ brew install ca-certificates
 **Solution:**
 ```bash
 # Check version
-*kagi* --version
+kagi --version
 
 # Update to latest
 # (reinstall using install script)
@@ -361,7 +361,7 @@ Same as rate limit. Wait and retry with slower pace.
 **Solution:**
 ```bash
 # Find binary
-which *kagi* || find ~ -name "*kagi*" -type f 2>/dev/null
+which kagi || find ~ -name "kagi" -type f 2>/dev/null
 
 # Add to PATH
 export PATH="$HOME/.local/bin:$PATH"
@@ -388,26 +388,26 @@ Reinstall using install script or package manager.
 ### Step 1: Check Basic Functionality
 
 ```bash
-*kagi* --version      # Binary works?
-*kagi* --help         # Shows help?
-*kagi* news --limit 1 # Network works?
+kagi --version      # Binary works?
+kagi --help         # Shows help?
+kagi news --limit 1 # Network works?
 ```
 
 ### Step 2: Check Authentication
 
 ```bash
-*kagi* auth status    # What's configured?
-*kagi* auth check     # Does it work?
+kagi auth status    # What's configured?
+kagi auth check     # Does it work?
 ```
 
 ### Step 3: Isolate the Issue
 
 ```bash
 # Test specific command
-*kagi* search "test" 2>&1
+kagi search "test" 2>&1
 
 # Check raw output
-*kagi* search "test" 2>&1 | cat
+kagi search "test" 2>&1 | cat
 ```
 
 ### Step 4: Check Environment
@@ -423,7 +423,7 @@ curl -I https://kagi.com
 
 # System
 uname -a
-*kagi* --version
+kagi --version
 ```
 
 ## Getting Help
@@ -431,7 +431,7 @@ uname -a
 If you encounter an error not listed here:
 
 1. Check [Troubleshooting](/guides/troubleshooting)
-2. Search [GitHub Issues](https://github.com/Microck/*kagi*-cli/issues)
+2. Search [GitHub Issues](https://github.com/Microck/kagi-cli/issues)
 3. Create new issue with:
    - Error message (exact text)
    - Command you ran

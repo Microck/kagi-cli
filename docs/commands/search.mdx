@@ -12,7 +12,7 @@ Search Kagi and return structured results in JSON or human-readable format. This
 ## Synopsis
 
 ```bash
-*kagi* search [OPTIONS] <QUERY>
+kagi search [OPTIONS] <QUERY>
 ```
 
 ## Description
@@ -57,9 +57,9 @@ The search query string.
 
 **Examples:**
 ```bash
-*kagi* search "rust programming language"
-*kagi* search "site:github.com rust cli"
-*kagi* search '"exact phrase match"'
+kagi search "rust programming language"
+kagi search "site:github.com rust cli"
+kagi search '"exact phrase match"'
 ```
 
 ### `--pretty`
@@ -119,10 +119,10 @@ Search using a specific Kagi lens.
 **Example:**
 ```bash
 # Use lens #2 (your "Developer Documentation" lens)
-*kagi* search --lens 2 "error handling"
+kagi search --lens 2 "error handling"
 
 # Combine with pretty output
-*kagi* search --lens 2 --pretty "rust async"
+kagi search --lens 2 --pretty "rust async"
 ```
 
 **Important:** Lens indices are user-specific. Your lens #2 is different from another user's lens #2.
@@ -173,71 +173,71 @@ Results are numbered and formatted with title, URL, and optional snippet:
 
 ```bash
 # Simple search with JSON output
-*kagi* search "rust programming language"
+kagi search "rust programming language"
 
 # Human-readable output
-*kagi* search --pretty "rust programming language"
+kagi search --pretty "rust programming language"
 ```
 
 ### Lens Search
 
 ```bash
 # Search within your developer documentation lens (lens #2)
-*kagi* search --lens 2 "error handling patterns"
+kagi search --lens 2 "error handling patterns"
 
 # Search within your tech news lens (lens #5)
-*kagi* search --lens 5 "artificial intelligence"
+kagi search --lens 5 "artificial intelligence"
 ```
 
 ### Advanced Queries
 
 ```bash
 # Site-specific search
-*kagi* search "site:github.com rust cli"
+kagi search "site:github.com rust cli"
 
 # Exact phrase
-*kagi* search '"async await rust"'
+kagi search '"async await rust"'
 
 # Exclude terms
-*kagi* search "rust -game -gaming"
+kagi search "rust -game -gaming"
 
 # Date range
-*kagi* search "rust tutorial after:2023-01-01"
+kagi search "rust tutorial after:2023-01-01"
 ```
 
 ### Processing Results
 
 ```bash
 # Extract URLs
-*kagi* search "rust" | jq -r '.data[].url'
+kagi search "rust" | jq -r '.data[].url'
 
 # Extract titles
-*kagi* search "rust" | jq -r '.data[].title'
+kagi search "rust" | jq -r '.data[].title'
 
 # Get first result URL
-*kagi* search "rust" | jq -r '.data[0].url'
+kagi search "rust" | jq -r '.data[0].url'
 
 # Filter organic results only
-*kagi* search "rust" | jq '.data | map(select(.t == 0))'
+kagi search "rust" | jq '.data | map(select(.t == 0))'
 
 # Count results
-*kagi* search "rust" | jq '.data | length'
+kagi search "rust" | jq '.data | length'
 ```
 
 ### Combining with Other Tools
 
 ```bash
 # Open first result in browser
-*kagi* search "rust" | jq -r '.data[0].url' | xargs open
+kagi search "rust" | jq -r '.data[0].url' | xargs open
 
 # Save results to file
-*kagi* search "rust" > rust-search-results.json
+kagi search "rust" > rust-search-results.json
 
 # Create markdown links
-*kagi* search "rust" | jq -r '.data[0:5] | .[] | "- [\(.title)](\(.url))"' > results.md
+kagi search "rust" | jq -r '.data[0:5] | .[] | "- [\(.title)](\(.url))"' > results.md
 
 # Generate CSV
-*kagi* search "rust" | jq -r '.data[] | [.title, .url] | @csv' > results.csv
+kagi search "rust" | jq -r '.data[] | [.title, .url] | @csv' > results.csv
 ```
 
 ## Exit Codes
@@ -259,7 +259,7 @@ Results are numbered and formatted with title, URL, and optional snippet:
 
 ```mermaid
 flowchart TD
-    Start([User runs: *kagi* search "query"]) --> CheckCreds[CLI checks credentials]
+    Start([User runs: kagi search "query"]) --> CheckCreds[CLI checks credentials]
     
     CheckCreds --> APIToken{API token configured?}
     APIToken -->|Yes| TrySearchAPI[Try Search API]
@@ -280,7 +280,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start([User runs: *kagi* search --lens 2 "query"]) --> CheckSession{CLI checks: Session token configured?}
+    Start([User runs: kagi search --lens 2 "query"]) --> CheckSession{CLI checks: Session token configured?}
     
     CheckSession -->|Yes| QueryWeb[Query web product with lens]
     QueryWeb -->|Success| ReturnResults[Return results]

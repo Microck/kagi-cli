@@ -198,13 +198,13 @@ session_token = "https://kagi.com/search?token=your_session_token_here"
 
 ```bash
 # Set session token (extracts token from URL automatically)
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Set API token
-*kagi* auth set --api-token 'YOUR_API_TOKEN'
+kagi auth set --api-token 'YOUR_API_TOKEN'
 
 # Set both at once
-*kagi* auth set --session-token 'https://kagi.com/search?token=SESSION_TOKEN' --api-token 'API_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=SESSION_TOKEN' --api-token 'API_TOKEN'
 ```
 
 **Creating manually:**
@@ -259,13 +259,13 @@ cat ./.kagi.toml
 export KAGI_SESSION_TOKEN='https://kagi.com/search?token=SPECIAL_TOKEN'
 
 # This uses SPECIAL_TOKEN
-*kagi* search "test"
+kagi search "test"
 
 # Unset to revert to file config
 unset KAGI_SESSION_TOKEN
 
 # This uses DEFAULT_TOKEN
-*kagi* search "test"
+kagi search "test"
 ```
 
 ## Authentication Verification
@@ -275,7 +275,7 @@ unset KAGI_SESSION_TOKEN
 See which credentials are configured:
 
 ```bash
-*kagi* auth status
+kagi auth status
 ```
 
 **Example outputs:**
@@ -309,7 +309,7 @@ config path: .kagi.toml
 Test that configured credentials actually work:
 
 ```bash
-*kagi* auth check
+kagi auth check
 ```
 
 This command:
@@ -386,7 +386,7 @@ The `kagi search` command has special authentication logic:
 
 ```mermaid
 flowchart TD
-    Start([User runs: *kagi* search "query"]) --> CheckLens{CLI checks for lens flag}
+    Start([User runs: kagi search "query"]) --> CheckLens{CLI checks for lens flag}
     
     CheckLens -->|Lens specified| LensReq[Requires session_token]
     CheckLens -->|No lens| TryAPI[Try API token first]
@@ -413,7 +413,7 @@ The base search command implements intelligent fallback:
 **Scenario 1: API token works**
 ```bash
 export KAGI_API_TOKEN='valid_token'
-*kagi* search "test"
+kagi search "test"
 # Uses Search API, returns results
 ```
 
@@ -421,7 +421,7 @@ export KAGI_API_TOKEN='valid_token'
 ```bash
 export KAGI_API_TOKEN='valid_token'
 export KAGI_SESSION_TOKEN='also_valid'
-*kagi* search "test"
+kagi search "test"
 # Tries Search API → gets auth error
 # Falls back to session token path
 # Returns results
@@ -430,14 +430,14 @@ export KAGI_SESSION_TOKEN='also_valid'
 **Scenario 3: Only session token**
 ```bash
 export KAGI_SESSION_TOKEN='valid_token'
-*kagi* search "test"
+kagi search "test"
 # Uses session token path directly
 # Returns results
 ```
 
 **Scenario 4: No tokens**
 ```bash
-*kagi* search "test"
+kagi search "test"
 # Error: missing credentials
 ```
 
@@ -485,16 +485,16 @@ history -d $((HISTCMD-1))
 **GitHub Actions:**
 ```yaml
 steps:
-  - name: Run *kagi* command
+  - name: Run kagi command
     env:
       KAGI_SESSION_TOKEN: ${{ secrets.KAGI_SESSION_TOKEN }}
-    run: *kagi* search "query"
+    run: kagi search "query"
 ```
 
 **GitLab CI:**
 ```yaml
 script:
-  - *kagi* search "query"
+  - kagi search "query"
 variables:
   KAGI_SESSION_TOKEN: $KAGI_SESSION_TOKEN
 ```
@@ -503,7 +503,7 @@ variables:
 ```yaml
 steps:
   - run:
-      command: *kagi* search "query"
+      command: kagi search "query"
       environment:
         KAGI_SESSION_TOKEN: ${KAGI_SESSION_TOKEN}
 ```
@@ -527,7 +527,7 @@ RUN apk add --no-cache curl && \
 
 ```bash
 # docker run
-docker run -e KAGI_SESSION_TOKEN="$KAGI_SESSION_TOKEN" myimage *kagi* search "test"
+docker run -e KAGI_SESSION_TOKEN="$KAGI_SESSION_TOKEN" myimage kagi search "test"
 ```
 
 ### Team Sharing
@@ -599,7 +599,7 @@ KAGI_API_TOKEN=...
 
 **Check:**
 ```bash
-*kagi* auth status
+kagi auth status
 # Shows source: "env" or "file"
 ```
 
@@ -620,8 +620,8 @@ unset KAGI_API_TOKEN
 **Solution:**
 ```bash
 # Either format works:
-*kagi* auth set --session-token 'https://kagi.com/search?token=abc123'
-*kagi* auth set --session-token 'abc123'
+kagi auth set --session-token 'https://kagi.com/search?token=abc123'
+kagi auth set --session-token 'abc123'
 ```
 
 ## Advanced Configuration
@@ -632,10 +632,10 @@ unset KAGI_API_TOKEN
 
 ```bash
 # Store in keychain
-security add-generic-password -s "*kagi*-session" -a "$USER" -w "your_token"
+security add-generic-password -s "kagi-session" -a "$USER" -w "your_token"
 
 # Retrieve and use
-export KAGI_SESSION_TOKEN=$(security find-generic-password -s "*kagi*-session" -w)
+export KAGI_SESSION_TOKEN=$(security find-generic-password -s "kagi-session" -w)
 ```
 
 **Windows Credential Manager:**
@@ -643,10 +643,10 @@ export KAGI_SESSION_TOKEN=$(security find-generic-password -s "*kagi*-session" -
 ```powershell
 # Store credential
 $credential = Get-Credential -Message "Enter Kagi Session Token"
-$credential.Password | ConvertFrom-SecureString | Out-File "$env:USERPROFILE\.*kagi*_session.cred"
+$credential.Password | ConvertFrom-SecureString | Out-File "$env:USERPROFILE\.kagi_session.cred"
 
 # Use in scripts
-$secureString = Get-Content "$env:USERPROFILE\.*kagi*_session.cred" | ConvertTo-SecureString
+$secureString = Get-Content "$env:USERPROFILE\.kagi_session.cred" | ConvertTo-SecureString
 $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureString)
 $env:KAGI_SESSION_TOKEN = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
 ```
@@ -658,24 +658,24 @@ For users with multiple Kagi accounts:
 ```bash
 # Create wrapper scripts
 #!/bin/bash
-# *kagi*-work
+# kagi-work
 export KAGI_SESSION_TOKEN='work_account_token'
-*kagi* "$@"
+kagi "$@"
 
 #!/bin/bash
-# *kagi*-personal
+# kagi-personal
 export KAGI_SESSION_TOKEN='personal_account_token'
-*kagi* "$@"
+kagi "$@"
 ```
 
 Or use environment-specific files:
 
 ```bash
-# .*kagi*-work.toml
+# .kagi-work.toml
 [auth]
 session_token = "work_token"
 
-# .*kagi*-personal.toml
+# .kagi-personal.toml
 [auth]
 session_token = "personal_token"
 

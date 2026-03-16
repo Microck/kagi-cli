@@ -200,7 +200,7 @@ export KAGI_SESSION_TOKEN="special_session"
 
 **Setup:**
 ```bash
-*kagi* auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth set --session-token 'https://kagi.com/search?token=...'
 ```
 
 **Working commands:**
@@ -220,7 +220,7 @@ export KAGI_SESSION_TOKEN="special_session"
 
 **Setup:**
 ```bash
-*kagi* auth set --api-token 'your_api_token'
+kagi auth set --api-token 'your_api_token'
 ```
 
 **Working commands:**
@@ -240,7 +240,7 @@ export KAGI_SESSION_TOKEN="special_session"
 
 **Setup:**
 ```bash
-*kagi* auth set --session-token '...' --api-token '...'
+kagi auth set --session-token '...' --api-token '...'
 ```
 
 **All commands work:**
@@ -287,20 +287,20 @@ export KAGI_SESSION_TOKEN="special_session"
 
 ```bash
 # Already have session token
-*kagi* auth set --api-token 'new_api_token'
+kagi auth set --api-token 'new_api_token'
 
 # Now fastgpt works
-*kagi* fastgpt "question"
+kagi fastgpt "question"
 ```
 
 ### Adding Session to existing API setup
 
 ```bash
 # Already have API token
-*kagi* auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth set --session-token 'https://kagi.com/search?token=...'
 
 # Now assistant works
-*kagi* assistant "prompt"
+kagi assistant "prompt"
 ```
 
 ## Reference Tables

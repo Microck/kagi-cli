@@ -12,7 +12,7 @@ Summarize URLs or text content using either the paid public API or the subscribe
 ## Synopsis
 
 ```bash
-*kagi* summarize [OPTIONS]
+kagi summarize [OPTIONS]
 ```
 
 ## Description
@@ -64,7 +64,7 @@ URL of the page to summarize.
 
 **Example:**
 ```bash
-*kagi* summarize --url https://example.com/article
+kagi summarize --url https://example.com/article
 ```
 
 #### `--text <TEXT>`
@@ -73,7 +73,7 @@ Raw text to summarize.
 
 **Example:**
 ```bash
-*kagi* summarize --text "Long text content to summarize..."
+kagi summarize --text "Long text content to summarize..."
 ```
 
 **Note:** Choose either `--url` or `--text`, not both.
@@ -88,7 +88,7 @@ Use subscriber web Summarizer instead of public API.
 
 **Example:**
 ```bash
-*kagi* summarize --subscriber --url https://example.com
+kagi summarize --subscriber --url https://example.com
 ```
 
 ### Public API Options
@@ -104,7 +104,7 @@ Summarization engine to use (public API only).
 
 **Example:**
 ```bash
-*kagi* summarize --url https://example.com --engine cecil
+kagi summarize --url https://example.com --engine cecil
 ```
 
 #### `--cache <BOOL>`
@@ -116,7 +116,7 @@ Enable/disable response caching (public API only).
 
 **Example:**
 ```bash
-*kagi* summarize --url https://example.com --cache false
+kagi summarize --url https://example.com --cache false
 ```
 
 ### Subscriber Mode Options
@@ -134,7 +134,7 @@ Summary length (subscriber mode only).
 
 **Example:**
 ```bash
-*kagi* summarize --subscriber --url https://example.com --length digest
+kagi summarize --subscriber --url https://example.com --length digest
 ```
 
 #### `--summary-type <TYPE>`
@@ -148,7 +148,7 @@ Style of summary (subscriber mode only).
 
 **Example:**
 ```bash
-*kagi* summarize --subscriber --url https://example.com --summary-type keypoints
+kagi summarize --subscriber --url https://example.com --summary-type keypoints
 ```
 
 ### Universal Options
@@ -159,7 +159,7 @@ Target language for summary output.
 
 **Example:**
 ```bash
-*kagi* summarize --url https://example.com --target-language es
+kagi summarize --url https://example.com --target-language es
 ```
 
 ## Output Format
@@ -203,46 +203,46 @@ Target language for summary output.
 
 ```bash
 # Basic URL summarization
-*kagi* summarize --url https://www.rust-lang.org
+kagi summarize --url https://www.rust-lang.org
 
 # With specific engine
-*kagi* summarize --url https://example.com --engine cecil
+kagi summarize --url https://example.com --engine cecil
 
 # Disable caching
-*kagi* summarize --url https://example.com --cache false
+kagi summarize --url https://example.com --cache false
 
 # Text summarization
-*kagi* summarize --text "Long text content here..."
+kagi summarize --text "Long text content here..."
 ```
 
 ### Subscriber Mode Examples
 
 ```bash
 # Basic subscriber summarization
-*kagi* summarize --subscriber --url https://www.rust-lang.org
+kagi summarize --subscriber --url https://www.rust-lang.org
 
 # Key points format
-*kagi* summarize --subscriber --url https://example.com --summary-type keypoints
+kagi summarize --subscriber --url https://example.com --summary-type keypoints
 
 # Short length
-*kagi* summarize --subscriber --url https://example.com --length overview
+kagi summarize --subscriber --url https://example.com --length overview
 
 # Full options
-*kagi* summarize --subscriber --url https://example.com --summary-type keypoints --length digest --target-language en
+kagi summarize --subscriber --url https://example.com --summary-type keypoints --length digest --target-language en
 ```
 
 ### Processing Examples
 
 ```bash
 # Extract just the summary text
-*kagi* summarize --url https://example.com | jq -r '.data.output'
+kagi summarize --url https://example.com | jq -r '.data.output'
 
 # Save to file
-*kagi* summarize --url https://example.com > summary.json
+kagi summarize --url https://example.com > summary.json
 
 # Batch process URLs
 cat urls.txt | while read url; do
-  *kagi* summarize --subscriber --url "$url" > "summaries/$(basename $url).json"
+  kagi summarize --subscriber --url "$url" > "summaries/$(basename $url).json"
   sleep 1
 done
 ```
@@ -274,7 +274,7 @@ URLS=(
 
 for url in "${URLS[@]}"; do
   echo "Processing: $url"
-  *kagi* summarize --subscriber --url "$url" --summary-type keypoints | jq -r '.data.output'
+  kagi summarize --subscriber --url "$url" --summary-type keypoints | jq -r '.data.output'
   echo "---"
   sleep 1
 done
@@ -284,13 +284,13 @@ done
 
 ```bash
 # Quick overview of a page
-*kagi* summarize --subscriber --url "$URL" --length overview | jq -r '.data.output'
+kagi summarize --subscriber --url "$URL" --length overview | jq -r '.data.output'
 
 # Detailed reading
-*kagi* summarize --subscriber --url "$URL" --length long | jq -r '.data.output'
+kagi summarize --subscriber --url "$URL" --length long | jq -r '.data.output'
 
 # Key points only
-*kagi* summarize --subscriber --url "$URL" --summary-type keypoints | jq -r '.data.output'
+kagi summarize --subscriber --url "$URL" --summary-type keypoints | jq -r '.data.output'
 ```
 
 ## Exit Codes
@@ -318,7 +318,7 @@ You're using public API mode without an API token. Either:
 
 You're using `--subscriber` mode without a session token. Set it:
 ```bash
-*kagi* auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth set --session-token 'https://kagi.com/search?token=...'
 ```
 
 ### "--length requires --subscriber"
@@ -326,10 +326,10 @@ You're using `--subscriber` mode without a session token. Set it:
 The `--length` option only works with subscriber mode:
 ```bash
 # Wrong
-*kagi* summarize --url https://example.com --length digest
+kagi summarize --url https://example.com --length digest
 
 # Right
-*kagi* summarize --subscriber --url https://example.com --length digest
+kagi summarize --subscriber --url https://example.com --length digest
 ```
 
 ### "--engine is only supported for the paid public summarizer API"
@@ -337,10 +337,10 @@ The `--length` option only works with subscriber mode:
 The `--engine` option only works with public API mode:
 ```bash
 # Right (public API)
-*kagi* summarize --url https://example.com --engine cecil
+kagi summarize --url https://example.com --engine cecil
 
 # Wrong (subscriber mode doesn't support engine selection)
-*kagi* summarize --subscriber --url https://example.com --engine cecil
+kagi summarize --subscriber --url https://example.com --engine cecil
 ```
 
 ### Empty output

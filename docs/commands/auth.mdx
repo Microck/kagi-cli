@@ -10,7 +10,7 @@ Manage authentication credentials for the *kagi* CLI. This command allows you to
 ## Synopsis
 
 ```bash
-*kagi* auth <SUBCOMMAND> [OPTIONS]
+kagi auth <SUBCOMMAND> [OPTIONS]
 ```
 
 ## Subcommands
@@ -41,7 +41,7 @@ Display the current credential configuration without testing validity.
 ### Synopsis
 
 ```bash
-*kagi* auth status
+kagi auth status
 ```
 
 ### Description
@@ -103,7 +103,7 @@ Validate configured credentials by attempting an authenticated operation.
 ### Synopsis
 
 ```bash
-*kagi* auth check
+kagi auth check
 ```
 
 ### Description
@@ -162,7 +162,7 @@ Save credentials to the configuration file.
 ### Synopsis
 
 ```bash
-*kagi* auth set [OPTIONS]
+kagi auth set [OPTIONS]
 ```
 
 ### Options
@@ -178,10 +178,10 @@ Set the Kagi Session Token.
 **Example:**
 ```bash
 # With full URL (recommended)
-*kagi* auth set --session-token 'https://kagi.com/search?token=abc123def456'
+kagi auth set --session-token 'https://kagi.com/search?token=abc123def456'
 
 # With raw token
-*kagi* auth set --session-token 'abc123def456'
+kagi auth set --session-token 'abc123def456'
 ```
 
 #### `--api-token <TOKEN>`
@@ -192,7 +192,7 @@ Set the Kagi API Token.
 
 **Example:**
 ```bash
-*kagi* auth set --api-token 'your_api_token_here'
+kagi auth set --api-token 'your_api_token_here'
 ```
 
 ### Description
@@ -261,39 +261,39 @@ api_token = "your_api_token"
 
 ```bash
 # 1. Set your session token
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # 2. Verify it was saved
-*kagi* auth status
+kagi auth status
 
 # 3. Test that it works
-*kagi* auth check
+kagi auth check
 
 # 4. Try a command
-*kagi* search --pretty "test"
+kagi search --pretty "test"
 ```
 
 ### Adding API Token Later
 
 ```bash
 # You already have session token, now add API token
-*kagi* auth set --api-token 'your_api_token'
+kagi auth set --api-token 'your_api_token'
 
 # Verify both are configured
-*kagi* auth status
+kagi auth status
 ```
 
 ### Updating Tokens
 
 ```bash
 # Update just the session token (API token stays the same)
-*kagi* auth set --session-token 'https://kagi.com/search?token=NEW_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=NEW_TOKEN'
 
 # Update just the API token
-*kagi* auth set --api-token 'new_api_token'
+kagi auth set --api-token 'new_api_token'
 
 # Update both
-*kagi* auth set --session-token 'NEW_SESSION' --api-token 'NEW_API'
+kagi auth set --session-token 'NEW_SESSION' --api-token 'NEW_API'
 ```
 
 ### Environment Override
@@ -308,12 +308,12 @@ cat ./.kagi.toml
 export KAGI_SESSION_TOKEN='special_token'
 
 # Check - shows "env" source
-*kagi* auth status
+kagi auth status
 # session token: configured via env
 
 # Unset to revert to file
 unset KAGI_SESSION_TOKEN
-*kagi* auth status
+kagi auth status
 # session token: configured via config
 ```
 
@@ -321,17 +321,17 @@ unset KAGI_SESSION_TOKEN
 
 ```bash
 # Step 1: Check what's configured
-*kagi* auth status
+kagi auth status
 
 # Step 2: Test if it works
-*kagi* auth check
+kagi auth check
 
 # Step 3: If check fails, verify token in Kagi settings
 # Step 4: Try setting again
-*kagi* auth set --session-token 'https://kagi.com/search?token=REFRESHED_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=REFRESHED_TOKEN'
 
 # Step 5: Verify again
-*kagi* auth check
+kagi auth check
 ```
 
 ## Security Considerations
@@ -383,7 +383,7 @@ touch ./.kagi.toml
 chmod 600 ./.kagi.toml
 
 # Now try again
-*kagi* auth set --session-token '...'
+kagi auth set --session-token '...'
 ```
 
 ### Changes not taking effect
@@ -405,7 +405,7 @@ You can also edit `./.kagi.toml` directly:
 
 ```bash
 # Via auth set (recommended)
-*kagi* auth set --session-token 'token'
+kagi auth set --session-token 'token'
 
 # Or manual edit
 cat > ./.kagi.toml << 'EOF'

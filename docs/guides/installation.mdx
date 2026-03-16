@@ -27,7 +27,7 @@ For most users, the one-line install scripts provide the fastest path to a worki
 Open your terminal and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 ```
 
 This script will:
@@ -39,7 +39,7 @@ This script will:
 **Verification:**
 
 ```bash
-*kagi* --help
+kagi --help
 ```
 
 You should see the help output listing all available commands.
@@ -49,7 +49,7 @@ You should see the help output listing all available commands.
 Open PowerShell and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/Microck/*kagi*-cli/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.ps1 | iex
 ```
 
 This script will:
@@ -61,7 +61,7 @@ This script will:
 **Verification:**
 
 ```powershell
-*kagi* --help
+kagi --help
 ```
 
 ### What the Installers Do
@@ -101,22 +101,22 @@ For users who prefer package managers, *kagi* is available through several chann
 If you use Homebrew, you can install *kagi* via a custom tap:
 
 ```bash
-brew tap Microck/*kagi*
-brew install *kagi*
+brew tap Microck/kagi
+brew install kagi
 ```
 
 **Updating:**
 
 ```bash
 brew update
-brew upgrade *kagi*
+brew upgrade kagi
 ```
 
 **Uninstalling:**
 
 ```bash
-brew uninstall *kagi*
-brew untap Microck/*kagi*
+brew uninstall kagi
+brew untap Microck/kagi
 ```
 
 ### Scoop (Windows)
@@ -124,21 +124,21 @@ brew untap Microck/*kagi*
 For Windows users who prefer Scoop:
 
 ```powershell
-scoop bucket add *kagi* https://github.com/Microck/scoop-*kagi*
-scoop install *kagi*
+scoop bucket add kagi https://github.com/Microck/scoop-kagi
+scoop install kagi
 ```
 
 **Updating:**
 
 ```powershell
 scoop update
-scoop update *kagi*
+scoop update kagi
 ```
 
 **Uninstalling:**
 
 ```powershell
-scoop uninstall *kagi*
+scoop uninstall kagi
 ```
 
 ### npm (Node.js)
@@ -146,19 +146,19 @@ scoop uninstall *kagi*
 The npm package provides a cross-platform wrapper that downloads the native binary:
 
 ```bash
-npm install -g *kagi*-cli
+npm install -g kagi-cli
 ```
 
 Or with pnpm:
 
 ```bash
-pnpm add -g *kagi*-cli
+pnpm add -g kagi-cli
 ```
 
 Or with bun:
 
 ```bash
-bun add -g *kagi*-cli
+bun add -g kagi-cli
 ```
 
 **Important notes:**
@@ -170,7 +170,7 @@ bun add -g *kagi*-cli
 **Updating:**
 
 ```bash
-npm update -g *kagi*-cli
+npm update -g kagi-cli
 ```
 
 ### Cargo (Rust)
@@ -178,14 +178,14 @@ npm update -g *kagi*-cli
 If you have the Rust toolchain installed, you can install directly from the repository:
 
 ```bash
-cargo install --git https://github.com/Microck/*kagi*-cli
+cargo install --git https://github.com/Microck/kagi-cli
 ```
 
 Or from a local checkout:
 
 ```bash
-git clone https://github.com/Microck/*kagi*-cli.git
-cd *kagi*-cli
+git clone https://github.com/Microck/kagi-cli.git
+cd kagi-cli
 cargo install --path .
 ```
 
@@ -197,7 +197,7 @@ For users who want full control over the installation process or need to install
 
 ### Step 1: Download the Release
 
-1. Visit the [GitHub Releases page](https://github.com/Microck/*kagi*-cli/releases)
+1. Visit the [GitHub Releases page](https://github.com/Microck/kagi-cli/releases)
 2. Choose the latest release (or a specific version)
 3. Download the appropriate asset for your platform:
    - macOS Intel: `kagi-x86_64-apple-darwin.tar.gz`
@@ -211,13 +211,13 @@ For users who want full control over the installation process or need to install
 **macOS and Linux:**
 
 ```bash
-tar -xzf *kagi*-*-*.tar.gz
+tar -xzf kagi-*-*.tar.gz
 ```
 
 **Windows:**
 
 ```powershell
-Expand-Archive -Path *kagi*-*.zip -DestinationPath .\*kagi*
+Expand-Archive -Path kagi-*.zip -DestinationPath .\kagi
 ```
 
 ### Step 3: Move to PATH
@@ -229,23 +229,23 @@ Choose a directory in your PATH. Common choices:
 ```bash
 # User-local installation (recommended)
 mkdir -p ~/.local/bin
-mv *kagi* ~/.local/bin/
+mv kagi ~/.local/bin/
 
 # Or system-wide (requires sudo)
-sudo mv *kagi* /usr/local/bin/
+sudo mv kagi /usr/local/bin/
 ```
 
 **Windows:**
 
 ```powershell
 # Create directory and move binary
-New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\*kagi*\bin"
-Move-Item -Path .\*kagi*\*kagi*.exe -Destination "$env:LOCALAPPDATA\*kagi*\bin\"
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\kagi\bin"
+Move-Item -Path .\kagi\kagi.exe -Destination "$env:LOCALAPPDATA\kagi\bin\"
 
 # Add to PATH
 [Environment]::SetEnvironmentVariable(
     "Path",
-    [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:LOCALAPPDATA\*kagi*\bin",
+    [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:LOCALAPPDATA\kagi\bin",
     "User"
 )
 ```
@@ -253,8 +253,8 @@ Move-Item -Path .\*kagi*\*kagi*.exe -Destination "$env:LOCALAPPDATA\*kagi*\bin\"
 ### Step 4: Verify Installation
 
 ```bash
-*kagi* --version
-*kagi* --help
+kagi --version
+kagi --help
 ```
 
 ## Building from Source
@@ -285,8 +285,8 @@ cargo --version
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/Microck/*kagi*-cli.git
-cd *kagi*-cli
+git clone https://github.com/Microck/kagi-cli.git
+cd kagi-cli
 ```
 
 ### Build Release Binary
@@ -304,7 +304,7 @@ The compiled binary will be at:
 **Option 1: Run directly**
 
 ```bash
-./target/release/*kagi* --help
+./target/release/kagi --help
 ```
 
 **Option 2: Install to Cargo bin directory**
@@ -318,7 +318,7 @@ This installs to `~/.cargo/bin/` (already in PATH if you have Rust installed).
 **Option 3: Manual installation**
 
 ```bash
-cp ./target/release/*kagi* ~/.local/bin/
+cp ./target/release/kagi ~/.local/bin/
 ```
 
 ### Development Build
@@ -349,7 +349,7 @@ macOS may warn about the binary being from an unidentified developer. To allow i
 Or bypass for a single execution:
 
 ```bash
-xattr -d com.apple.quarantine $(which *kagi*)
+xattr -d com.apple.quarantine $(which kagi)
 ```
 
 ### Linux
@@ -373,13 +373,13 @@ To enable tab completion, add to your shell configuration:
 
 ```bash
 # Bash (~/.bashrc)
-eval "$(*kagi* completions bash)"
+eval "$(kagi completions bash)"
 
 # Zsh (~/.zshrc)
-eval "$(*kagi* completions zsh)"
+eval "$(kagi completions zsh)"
 
 # Fish (~/.config/fish/config.fish)
-*kagi* completions fish | source
+kagi completions fish | source
 ```
 
 ### Windows
@@ -410,26 +410,26 @@ After installation, verify everything works:
 
 ```bash
 # Check version
-*kagi* --version
+kagi --version
 
 # View help
-*kagi* --help
+kagi --help
 
 # Test unauthenticated command
-*kagi* news --category world --limit 3
+kagi news --category world --limit 3
 ```
 
 ### Authentication Test (if you have tokens)
 
 ```bash
 # Set up session token
-*kagi* auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Verify auth
-*kagi* auth check
+kagi auth check
 
 # Test search
-*kagi* search --pretty "test query"
+kagi search --pretty "test query"
 ```
 
 ## Troubleshooting
@@ -460,7 +460,7 @@ After installation, verify everything works:
 **Solution:**
 
 ```bash
-chmod +x ~/.local/bin/*kagi*
+chmod +x ~/.local/bin/kagi
 ```
 
 ### Network errors during installation
@@ -479,7 +479,7 @@ chmod +x ~/.local/bin/*kagi*
 
 **Solutions:**
 
-1. Check the [GitHub Releases](https://github.com/Microck/*kagi*-cli/releases) for your platform
+1. Check the [GitHub Releases](https://github.com/Microck/kagi-cli/releases) for your platform
 2. Build from source
 3. Request support by opening an issue
 
@@ -512,16 +512,16 @@ Re-run the install script - it will overwrite the existing binary.
 
 ```bash
 # Homebrew
-brew upgrade *kagi*
+brew upgrade kagi
 
 # Scoop
-scoop update *kagi*
+scoop update kagi
 
 # npm
-npm update -g *kagi*-cli
+npm update -g kagi-cli
 
 # Cargo
-cargo install --git https://github.com/Microck/*kagi*-cli --force
+cargo install --git https://github.com/Microck/kagi-cli --force
 ```
 
 ## Uninstallation
@@ -532,7 +532,7 @@ To completely remove *kagi*:
 
 ```bash
 # Remove binary
-rm ~/.local/bin/*kagi*
+rm ~/.local/bin/kagi
 
 # Remove config
 rm ./.kagi.toml
@@ -544,7 +544,7 @@ rm ./.kagi.toml
 
 ```powershell
 # Remove binary
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\*kagi*"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\kagi"
 
 # Remove config
 Remove-Item ".kagi.toml"
@@ -556,17 +556,17 @@ Remove-Item ".kagi.toml"
 
 ```bash
 # Homebrew
-brew uninstall *kagi*
-brew untap Microck/*kagi*
+brew uninstall kagi
+brew untap Microck/kagi
 
 # Scoop
-scoop uninstall *kagi*
+scoop uninstall kagi
 
 # npm
-npm uninstall -g *kagi*-cli
+npm uninstall -g kagi-cli
 
 # Cargo
-cargo uninstall *kagi*
+cargo uninstall kagi
 ```
 
 ## Next Steps
@@ -575,8 +575,8 @@ Now that *kagi* is installed, continue with:
 
 - **[Quickstart](/guides/quickstart)** - Run your first commands
 - **[Authentication](/guides/authentication)** - Set up your tokens
-- **[Configuration](/guides/configuration)** - Customize your setup
+- **[Advanced Usage](/guides/advanced-usage)** - Automation, scripting, and CI/CD patterns
 
 ---
 
-*Need help? See the [Troubleshooting](/guides/troubleshooting) guide or open an issue on [GitHub](https://github.com/Microck/*kagi*-cli/issues).*
+*Need help? See the [Troubleshooting](/guides/troubleshooting) guide or open an issue on [GitHub](https://github.com/Microck/kagi-cli/issues).*

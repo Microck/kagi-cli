@@ -12,7 +12,7 @@ Prompt Kagi Assistant and continue existing conversation threads. Access AI-powe
 ## Synopsis
 
 ```bash
-*kagi* assistant [OPTIONS] <QUERY>
+kagi assistant [OPTIONS] <QUERY>
 ```
 
 ## Description
@@ -39,8 +39,8 @@ The prompt or question to send to the Assistant.
 
 **Example:**
 ```bash
-*kagi* assistant "Explain recursion in Python"
-*kagi* assistant "What are the latest features in Rust?"
+kagi assistant "Explain recursion in Python"
+kagi assistant "What are the latest features in Rust?"
 ```
 
 ## Options
@@ -55,11 +55,11 @@ Continue an existing conversation thread.
 **Example:**
 ```bash
 # Start conversation
-*kagi* assistant "What is machine learning?"
+kagi assistant "What is machine learning?"
 # Response includes: "thread_id": "abc123..."
 
 # Continue conversation
-*kagi* assistant --thread-id abc123 "Give me an example"
+kagi assistant --thread-id abc123 "Give me an example"
 ```
 
 ## Output Format
@@ -100,13 +100,13 @@ Continue an existing conversation thread.
 
 ```bash
 # Simple question
-*kagi* assistant "What is Docker?"
+kagi assistant "What is Docker?"
 
 # Complex query
-*kagi* assistant "Explain the difference between concurrency and parallelism with examples"
+kagi assistant "Explain the difference between concurrency and parallelism with examples"
 
 # Code help
-*kagi* assistant "How do I read a file in Python?"
+kagi assistant "How do I read a file in Python?"
 ```
 
 ### Conversation Chains
@@ -114,13 +114,13 @@ Continue an existing conversation thread.
 ```bash
 #!/bin/bash
 # Start a conversation
-THREAD_ID=$(*kagi* assistant "Explain quantum computing" | jq -r '.thread.id')
+THREAD_ID=$(kagi assistant "Explain quantum computing" | jq -r '.thread.id')
 
 # Continue with follow-up
-*kagi* assistant --thread-id "$THREAD_ID" "What are qubits?"
+kagi assistant --thread-id "$THREAD_ID" "What are qubits?"
 
 # Another follow-up
-*kagi* assistant --thread-id "$THREAD_ID" "How are they different from classical bits?"
+kagi assistant --thread-id "$THREAD_ID" "How are they different from classical bits?"
 
 echo "Thread ID for later: $THREAD_ID"
 ```
@@ -129,13 +129,13 @@ echo "Thread ID for later: $THREAD_ID"
 
 ```bash
 # Extract just the response
-*kagi* assistant "Hello" | jq -r '.message.markdown'
+kagi assistant "Hello" | jq -r '.message.markdown'
 
 # Save conversation
-*kagi* assistant "Explain Rust" > conversation.json
+kagi assistant "Explain Rust" > conversation.json
 
 # Extract thread ID for continuation
-THREAD_ID=$(*kagi* assistant "Initial prompt" | jq -r '.thread.id')
+THREAD_ID=$(kagi assistant "Initial prompt" | jq -r '.thread.id')
 ```
 
 ### Building Tools
@@ -151,7 +151,7 @@ if [ -z "$QUESTION" ]; then
 fi
 
 echo "🤔 Asking Kagi Assistant..."
-*kagi* assistant "$QUESTION" | jq -r '.message.markdown'
+kagi assistant "$QUESTION" | jq -r '.message.markdown'
 ```
 
 ## Exit Codes
@@ -175,10 +175,10 @@ Each `kagi assistant` call without `--thread-id` starts a new conversation:
 
 ```bash
 # Thread 1
-*kagi* assistant "Topic A"
+kagi assistant "Topic A"
 
 # Thread 2 (separate conversation)
-*kagi* assistant "Topic B"
+kagi assistant "Topic B"
 ```
 
 ### Continuing Threads
@@ -187,11 +187,11 @@ Save the `thread.id` from responses to continue:
 
 ```bash
 # Get thread ID
-RESPONSE=$(*kagi* assistant "Initial question")
+RESPONSE=$(kagi assistant "Initial question")
 THREAD_ID=$(echo "$RESPONSE" | jq -r '.thread.id')
 
 # Continue same thread
-*kagi* assistant --thread-id "$THREAD_ID" "Follow-up question"
+kagi assistant --thread-id "$THREAD_ID" "Follow-up question"
 ```
 
 ### Thread Persistence
@@ -207,24 +207,24 @@ THREAD_ID=$(echo "$RESPONSE" | jq -r '.thread.id')
 
 ```bash
 # Good - specific
-*kagi* assistant "Explain Python list comprehensions with three examples"
+kagi assistant "Explain Python list comprehensions with three examples"
 
 # Less effective - vague
-*kagi* assistant "Python"
+kagi assistant "Python"
 ```
 
 ### Context Management
 
 ```bash
 # Provide context in thread
-THREAD_ID=$(*kagi* assistant "I'm learning Rust" | jq -r '.thread.id')
-*kagi* assistant --thread-id "$THREAD_ID" "What are ownership and borrowing?"
+THREAD_ID=$(kagi assistant "I'm learning Rust" | jq -r '.thread.id')
+kagi assistant --thread-id "$THREAD_ID" "What are ownership and borrowing?"
 ```
 
 ### Error Handling
 
 ```bash
-if RESPONSE=$(*kagi* assistant "Question" 2>/dev/null); then
+if RESPONSE=$(kagi assistant "Question" 2>/dev/null); then
   echo "$RESPONSE" | jq -r '.message.markdown'
 else
   echo "Failed to get response"
