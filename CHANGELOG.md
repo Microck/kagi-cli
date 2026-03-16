@@ -11,6 +11,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 - Ongoing documentation and release process improvements
 
+## [0.1.3]
+
+### Fixed
+
+- Synchronized the Rust package version in `Cargo.lock` with `Cargo.toml` so locked release builds succeed
+
 ## [0.1.2]
 
 ### Fixed
