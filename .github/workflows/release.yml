@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -57,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload packaged assets (unix)
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: release-${{ matrix.target }}
           path: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload packaged assets (windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: release-${{ matrix.target }}
           path: |
@@ -125,7 +125,7 @@ jobs:
 
     steps:
       - name: Download packaged archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-*
           merge-multiple: true
@@ -136,9 +136,12 @@ jobs:
         run: |
           sha256sum * > "kagi-${GITHUB_REF_NAME}-checksums.txt"
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/*
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+          fi
