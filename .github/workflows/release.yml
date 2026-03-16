@@ -150,11 +150,15 @@ jobs:
           fi
 
       - name: Sync Homebrew tap and Scoop bucket
-        if: ${{ secrets.REPO_SYNC_TOKEN != '' }}
         env:
           REPO_SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
           set -euo pipefail
+
+          if [ -z "${REPO_SYNC_TOKEN:-}" ]; then
+            echo "REPO_SYNC_TOKEN is not configured; skipping Homebrew/Scoop sync."
+            exit 0
+          fi
 
           VERSION="${GITHUB_REF_NAME#v}"
           CHECKSUM_FILE="dist/kagi-${GITHUB_REF_NAME}-checksums.txt"
