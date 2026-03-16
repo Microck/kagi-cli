@@ -9,6 +9,7 @@ This repository is a Rust CLI for Kagi workflows. Contributions should stay focu
 ```bash
 cargo build --release
 cargo test -q
+make check
 ```
 
 Optional checks before opening a pull request:
@@ -17,6 +18,18 @@ Optional checks before opening a pull request:
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
+
+## Local Tooling
+
+Canonical local commands live in [Makefile](Makefile):
+
+```bash
+make check
+make coverage
+make setup-hooks
+```
+
+If you want local pre-commit enforcement, run `make setup-hooks` once to point Git at [`.githooks/pre-commit`](.githooks/pre-commit).
 
 ## Pull Requests
 
@@ -35,6 +48,20 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 - Add a short entry to [CHANGELOG.md](CHANGELOG.md) for notable user-facing changes
 - Call out breaking CLI changes explicitly
+
+## CI Permissions
+
+- CI and coverage workflows use read-only `contents` permissions
+- The security workflow adds `security-events: write` for audit reporting
+- The release workflow uses `contents: write` only to publish tagged GitHub Releases
+
+## Review Policy
+
+This repository is currently solo-maintained.
+
+- Required status checks stay enabled on `main`
+- Required approving reviews are intentionally not enforced, because they would block the sole maintainer
+- Contributors should still open pull requests with verification details when possible
 
 ## Code of Conduct
 
