@@ -11,6 +11,13 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 - Ongoing documentation and release process improvements
 
+## [0.1.2]
+
+### Fixed
+
+- Corrected cross-platform release workflow runner selection for macOS Intel builds
+- Aligned the npm wrapper version with the release tag used for native binary downloads
+
 ## [0.1.1]
 
 ### Added
