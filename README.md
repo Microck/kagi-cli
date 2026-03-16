@@ -90,6 +90,12 @@ bun add -g kagi-cli
 
 These package-manager installs still expose the same `kagi` command. The wrapper package downloads the native release binary for the current platform during install.
 
+Current publishing note:
+
+- `kagi-cli` is the npm package name
+- `kagi` is the installed command
+- public npm installs depend on public GitHub release assets for the matching version
+
 ### Build locally from source
 
 ```bash

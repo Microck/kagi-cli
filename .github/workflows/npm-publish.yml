@@ -2,9 +2,9 @@ name: npm Publish
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
 
 permissions:
   contents: read
@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   publish:
-    if: ${{ vars.NPM_PUBLISH_ENABLED == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -22,9 +21,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Verify package metadata
+        working-directory: npm
+        run: |
+          npm pack --dry-run
 
       - name: Publish package
         working-directory: npm
-        run: npm publish --access public --provenance
+        run: npm publish

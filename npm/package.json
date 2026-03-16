@@ -22,6 +22,10 @@
   "scripts": {
     "postinstall": "node lib/install.cjs"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "keywords": [
     "kagi",
     "cli",
