@@ -18,166 +18,158 @@
 
 ---
 
-# kagi
+`kagi` brings Kagi into the terminal with one CLI for search, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want fast interactive use and clean JSON output for scripts, agents, and shell workflows.
 
-## overview
+the best part is the session-link flow: paste your full Kagi session-link URL into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
-`kagi` is a cli for people who want kagi in the terminal without juggling a bunch of different setup paths.
+[documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [github](https://github.com/Microck/kagi-cli)
 
-the main nice part is the session-link flow: you can paste your full kagi session-link url directly into `kagi auth set --session-token`, and the cli pulls out the `token=` value for you. that gives you the subscriber features people usually care about most, like lens search, assistant, and subscriber summarizer.
-
-if you also have kagi api access, `kagi` can use that too for the paid public api commands like public summarizer, fastgpt, and enrich.
+![search demo](images/demos/search.gif)
 
 ## quickstart
 
-### install
-
-macos and linux:
+install on macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 kagi --help
 ```
 
-windows powershell:
+install on Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.ps1 | iex
 kagi --help
 ```
 
-or install through a package manager:
+or use a package manager:
 
 ```bash
 brew tap Microck/kagi
 brew install kagi
+
 npm install -g kagi-cli
 pnpm add -g kagi-cli
 bun add -g kagi-cli
-kagi --help
 ```
 
-the npm package is `kagi-cli`, but the command you run is `kagi`.
+the npm package is `kagi-cli`, but the installed command is `kagi`.
 
-windows scoop:
-
-```powershell
-scoop bucket add kagi https://github.com/Microck/scoop-kagi
-scoop install kagi
-kagi --help
-```
-
-### session-link url setup
-
-this is the path most people will want.
-
-```bash
-kagi auth set --session-token 'https://kagi.com/search?token=...'
-kagi auth check
-kagi search --pretty "obsidian cli daily notes workflow"
-kagi search --lens 2 "privacy focused note taking"
-kagi assistant "plan a private obsidian workflow for cafe work. give me 3 setup tips and a short checklist."
-kagi summarize --subscriber --url https://mullvad.net/en/browser
-```
-
-`kagi auth set` saves the token in `.kagi.toml`, and it accepts either the raw token or the full session-link url.
-
-if you prefer env vars, this works too:
-
-```bash
-export KAGI_SESSION_TOKEN='...'
-```
-
-### api token setup
-
-if you use kagi's paid public api, add an api token as well:
-
-```bash
-export KAGI_API_TOKEN='...'
-kagi auth check
-kagi summarize --url https://example.com
-kagi fastgpt "best practices for private browsing"
-kagi enrich web "obsidian cli plugins"
-```
-
-if both credentials are present, base search now prefers your subscriber session by default. if you want normal search to prefer the paid api instead, set this in `.kagi.toml`:
-
-```toml
-[auth]
-preferred_auth = "api"
-```
-
-## what you can do
-
-- search kagi from the terminal with json by default or `--pretty` when you want nicer human output
-- use your subscriber session for lens-aware search with `kagi search --lens <INDEX> "query"`
-- run the subscriber summarizer with `kagi summarize --subscriber --url <URL>`
-- talk to kagi assistant with `kagi assistant "prompt"`
-- read public feeds like `kagi news` and `kagi smallweb` without any auth
-- use paid api commands like `fastgpt`, public `summarize`, and `enrich` when you have `KAGI_API_TOKEN`
-
-search looks good in the terminal when you want something human-readable instead of raw json:
-
-![search demo](images/demos/search.gif)
-
-subscriber summarize is one of the nicest session-token features:
-
-![summarize demo](images/demos/summarize.gif)
-
-assistant works well for quick planning-style prompts:
-
-![assistant demo](images/demos/assistant.gif)
-
-and public feeds still work without any auth:
-
-![news demo](images/demos/news.gif)
-
-some quick examples:
+run something immediately, no auth required:
 
 ```bash
 kagi news --category tech --limit 3
 kagi smallweb --limit 3
-kagi search "obsidian cli plugins"
-kagi search --pretty "mullvad browser features"
-kagi news --list-categories
-kagi news --chaos
 ```
 
-## auth
+add your subscriber session token:
 
-`kagi` supports two credential types:
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth check
+kagi search --pretty "private search tools"
+kagi search --lens 2 "developer documentation"
+kagi assistant "give me 3 ways to use kagi from the terminal"
+kagi summarize --subscriber --url https://kagi.com
+```
 
-- `KAGI_SESSION_TOKEN` is the best default if you want subscriber features. it powers lens search, subscriber summarizer, and assistant, and `kagi auth set --session-token` accepts the full session-link url directly.
-- `KAGI_API_TOKEN` is for the paid public api path, including public summarizer, fastgpt, and enrich.
+add an API token when you want the paid public API commands:
 
-small notes that matter:
+```bash
+export KAGI_API_TOKEN='...'
+kagi summarize --url https://example.com
+kagi fastgpt "what changed in rust 1.86?"
+kagi enrich web "privacy focused browsers"
+```
 
-- environment variables win over `.kagi.toml`
-- base search can use either token path and prefers session by default
-- set `[auth] preferred_auth = "api"` in `.kagi.toml` if you want normal search to prefer the paid api path
-- `news` and `smallweb` do not need auth
+## what it covers
 
-## for automation
+- `search` for structured Kagi results with optional `--pretty` output
+- `search --lens` for subscriber lens-aware search
+- `assistant` for subscriber Kagi Assistant prompts and threads
+- `summarize --subscriber` for the subscriber web summarizer
+- `summarize`, `fastgpt`, and `enrich` for paid public API usage
+- `news` and `smallweb` for public feeds that work without credentials
 
-the README is user-first, but the cli still works well in scripts and agents.
+## auth model
 
-stdout is json by default, and `--pretty` only changes how results are rendered in the terminal. the command surface stays the same either way.
+| credential | what it unlocks |
+| --- | --- |
+| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
+| `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
+| none | `news`, `smallweb`, `auth status` |
 
-## more docs
+small things that matter:
 
-- [installation guide](guides/installation.mdx)
-- [authentication guide](guides/authentication.mdx)
-- [workflows](guides/workflows.mdx)
-- [auth command](commands/auth.mdx)
-- [search command](commands/search.mdx)
-- [summarize command](commands/summarize.mdx)
-- [assistant command](commands/assistant.mdx)
-- [news command](commands/news.mdx)
-- [smallweb command](commands/smallweb.mdx)
+- `kagi auth set --session-token` accepts either the raw token or the full session-link URL
+- environment variables override `.kagi.toml`
+- base `kagi search` defaults to the session-token path when both credentials are present
+- set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
+- `search --lens` always requires `KAGI_SESSION_TOKEN`
+- `auth check` validates the selected primary credential without using search fallback logic
+
+example config:
+
+```toml
+[auth]
+session_token = "..."
+api_token = "..."
+preferred_auth = "api"
+```
+
+for the full command-to-token matrix, use the docs page at [`kagi.micr.dev/reference/auth-matrix`](https://kagi.micr.dev/reference/auth-matrix).
+
+## command surface
+
+| command | purpose |
+| --- | --- |
+| `kagi search` | search Kagi with JSON by default or `--pretty` for terminal output |
+| `kagi auth` | inspect, validate, and save credentials |
+| `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
+| `kagi news` | read Kagi News from public JSON endpoints |
+| `kagi assistant` | prompt Kagi Assistant with a subscriber session token |
+| `kagi fastgpt` | query FastGPT through the paid API |
+| `kagi enrich` | query Kagi's web and news enrichment indexes |
+| `kagi smallweb` | fetch the Kagi Small Web feed |
+
+for automation, stdout stays JSON by default. `--pretty` only changes rendering for humans.
+
+## demos
+
+subscriber summarization:
+
+![summarize demo](images/demos/summarize.gif)
+
+assistant in the terminal:
+
+![assistant demo](images/demos/assistant.gif)
+
+public news with no auth:
+
+![news demo](images/demos/news.gif)
+
+## docs
+
+- [installation guide](https://kagi.micr.dev/guides/installation)
+- [quickstart guide](https://kagi.micr.dev/guides/quickstart)
+- [authentication guide](https://kagi.micr.dev/guides/authentication)
+- [workflows](https://kagi.micr.dev/guides/workflows)
+- [advanced usage](https://kagi.micr.dev/guides/advanced-usage)
+- [search command](https://kagi.micr.dev/commands/search)
+- [auth command](https://kagi.micr.dev/commands/auth)
+- [summarize command](https://kagi.micr.dev/commands/summarize)
+- [assistant command](https://kagi.micr.dev/commands/assistant)
+- [news command](https://kagi.micr.dev/commands/news)
+- [smallweb command](https://kagi.micr.dev/commands/smallweb)
+- [auth matrix](https://kagi.micr.dev/reference/auth-matrix)
+- [output contract](https://kagi.micr.dev/reference/output-contract)
 
 ## project links
 
+- [releases](https://github.com/Microck/kagi-cli/releases)
 - [contributing](CONTRIBUTING.md)
 - [support](SUPPORT.md)
 - [security](SECURITY.md)
 - [license](LICENSE)
+
+last reviewed: March 16, 2026
