@@ -193,4 +193,7 @@ if you want a quick feel for the cli before installing it, this is the kind of o
 
 ## license
 
-[mit license](LICENSE).
+[mit license](LICENSE)
+
+### todo
+- add https://translate.kagi.com/
