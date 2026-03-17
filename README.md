@@ -34,21 +34,21 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 
 ## quickstart
 
-install on macOS or Linux:
+### Linux or macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
 kagi --help
 ```
 
-install on Windows PowerShell:
+### Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.ps1 | iex
 kagi --help
 ```
 
-or use a package manager:
+### using a package manager
 
 ```bash
 brew tap Microck/kagi
@@ -59,41 +59,21 @@ pnpm add -g kagi-cli
 bun add -g kagi-cli
 ```
 
-the npm package is `kagi-cli`, but the installed command is `kagi`.
-
-run something immediately, no auth required:
-
-```bash
-kagi news --category tech --limit 3
-kagi smallweb --limit 3
-```
+### auth
 
 add your subscriber session token:
 
 ```bash
 kagi auth set --session-token 'https://kagi.com/search?token=...'
 kagi auth check
-kagi search --pretty "private search tools"
-kagi search --lens 2 "developer documentation"
-kagi assistant "give me 3 ways to use kagi from the terminal"
-kagi summarize --subscriber --url https://kagi.com
 ```
 
-add an API token when you want the paid public API commands:
+add an api token when you want the paid public api commands:
+
 
 ```bash
 export KAGI_API_TOKEN='...'
-kagi summarize --url https://example.com
-kagi fastgpt "best practices for private browsing"
-kagi enrich web "privacy focused browsers"
 ```
-
-## what it covers
-
-- `search` returns structured Kagi results, with `--pretty` when you want terminal output
-- `search --lens`, `assistant`, and `summarize --subscriber` use the subscriber session path
-- `news` and `smallweb` work without credentials
-- `summarize`, `fastgpt`, and `enrich` use `KAGI_API_TOKEN` for paid public API access
 
 ## auth model
 
@@ -103,7 +83,20 @@ kagi enrich web "privacy focused browsers"
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status` |
 
-small things that matter:
+example config:
+
+```toml
+[auth]
+# Full Kagi session-link URL or just the raw token value.
+session_token = "https://kagi.com/search?token=kagi_session_demo_1234567890abcdef"
+
+# Paid API token for summarize, fastgpt, and enrich commands.
+api_token = "kagi_api_demo_abcdef1234567890"
+
+# Base `kagi search` auth preference: "session" or "api".
+preferred_auth = "api"
+```
+notes:
 
 - `kagi auth set --session-token` accepts either the raw token or the full session-link URL
 - environment variables override `.kagi.toml`
@@ -112,16 +105,7 @@ small things that matter:
 - `search --lens` always requires `KAGI_SESSION_TOKEN`
 - `auth check` validates the selected primary credential without using search fallback logic
 
-example config:
-
-```toml
-[auth]
-session_token = "..."
-api_token = "..."
-preferred_auth = "api"
-```
-
-for the full command-to-token matrix, use the docs page at [`kagi.micr.dev/reference/auth-matrix`](https://kagi.micr.dev/reference/auth-matrix).
+for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.
 
 ## command surface
 
@@ -137,6 +121,58 @@ for the full command-to-token matrix, use the docs page at [`kagi.micr.dev/refer
 | `kagi smallweb` | fetch the Kagi Small Web feed |
 
 for automation, stdout stays JSON by default. `--pretty` only changes rendering for humans.
+
+## examples
+
+use search as part of a shell pipeline:
+
+```bash
+kagi search "what is mullvad"'
+```
+
+switch the same command to terminal-readable output:
+
+```bash
+kagi search --pretty "how do i exit vim"
+```
+
+scope search to one of your lenses:
+
+```bash
+kagi search --lens 2 "developer documentation"
+```
+
+continue research with assistant:
+
+```bash
+kagi assistant "plan a focused research session in the terminal"
+```
+
+use the subscriber summarizer:
+
+```bash
+kagi summarize --subscriber --url https://kagi.com --summary-type keypoints --length digest
+```
+
+use the paid api summarizer:
+
+```bash
+kagi summarize --url https://example.com --engine cecil
+```
+
+get a faster factual answer through the paid api:
+
+```bash
+kagi fastgpt "what changed in rust 1.86?"
+```
+
+query enrichment indexes:
+
+```bash
+kagi enrich web "local-first software"
+kagi enrich news "browser privacy"
+```
+
 
 ## what it looks like
 
@@ -157,6 +193,4 @@ if you want a quick feel for the cli before installing it, this is the kind of o
 
 ## license
 
-released under the [mit license](LICENSE).
-
-last reviewed: March 17, 2026
+[mit license](LICENSE).
