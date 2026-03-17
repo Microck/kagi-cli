@@ -32,6 +32,90 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 - use one CLI for search, assistant, summarization, and feeds
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
+## enhanced features
+
+This modified version includes several powerful enhancements:
+
+### Multiple Output Formats
+
+Choose from 5 different output formats to suit your needs:
+
+- **`json`** (default): Structured JSON for scripts and APIs
+- **`pretty`**: Human-readable terminal display with colors
+- **`compact`**: Minified JSON for reduced size
+- **`markdown`**: Headers and links for documentation
+- **`csv`**: Spreadsheet-compatible table format
+
+```bash
+kagi search "query" --format pretty
+kagi search "query" --format markdown
+kagi search "query" --format csv
+```
+
+### Parallel Batch Processing
+
+Execute multiple searches concurrently with built-in rate limiting:
+
+```bash
+# Basic batch (3 concurrent, 60 requests/minute)
+kagi batch "rust" "python" "go"
+
+# Custom concurrency and rate limits
+kagi batch "q1" "q2" "q3" --concurrency 5 --rate-limit 120
+
+# Batch with different output formats
+kagi batch "news" "weather" --format markdown
+```
+
+**Features:**
+- Token bucket rate limiting algorithm
+- Configurable concurrency (default: 3)
+- Adjustable rate limits (default: 60 RPM)
+- Lens support for scoped searches
+- All output formats supported
+
+### Shell Autocomplete
+
+Full autocomplete support for Bash, Zsh, Fish, and PowerShell:
+
+```bash
+# Generate completion script
+kagi --generate-completion bash > /etc/bash_completion.d/kagi
+
+# Then enjoy autocomplete
+kagi <TAB><TAB>            # Shows all commands
+kagi search --format <TAB> # Shows format options
+kagi batch --<TAB>         # Shows batch options
+```
+
+### Colorized Output
+
+Pretty format now includes colored output by default:
+
+```bash
+kagi search "query" --format pretty            # Colored output
+kagi search "query" --format pretty --no-color # Disable colors
+```
+
+### Improved Error Handling
+
+- Clear, actionable error messages
+- Better rate limit handling
+- Graceful fallback mechanisms
+
+### Feature Comparison
+
+| Feature | Original | Enhanced |
+|---------|----------|----------|
+| Output Formats | JSON only | JSON, Pretty, Compact, Markdown, CSV |
+| Color Support | No | Yes (with `--no-color` option) |
+| Batch Processing | No | Yes (parallel execution) |
+| Rate Limiting | No | Yes (token bucket algorithm) |
+| Autocomplete | No | Yes (Bash/Zsh/Fish/PowerShell) |
+| Concurrency Control | No | Yes (`--concurrency` flag) |
+| Interactive Help | Basic | Enhanced with examples |
+| Error Handling | Basic | Improved messages |
+
 ## quickstart
 
 ### Linux or macOS
@@ -143,6 +227,108 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi smallweb` | fetch the Kagi Small Web feed |
 
 for automation, stdout stays JSON by default. `--pretty` only changes rendering for humans.
+
+## building from source
+
+To build and install the modified version with new features:
+
+```bash
+# Prerequisites: Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Clone the repository
+git clone https://github.com/Microck/kagi-cli.git
+cd kagi-cli
+
+# Build the project
+cargo build --release
+
+# Install the binary
+sudo cp target/release/kagi /usr/local/bin/kagi
+
+# Verify installation
+kagi --version
+kagi --help
+```
+
+### Quick test without installation
+
+```bash
+# Build and run directly
+cargo build --release
+./target/release/kagi --help
+./target/release/kagi search "test" --format pretty
+```
+
+### Shell completion setup
+
+After installation, set up shell completions:
+
+**Bash:**
+```bash
+kagi --generate-completion bash > /etc/bash_completion.d/kagi
+source ~/.bashrc
+```
+
+**Zsh:**
+```bash
+kagi --generate-completion zsh > ~/.zsh/completion/_kagi
+autoload -U compinit && compinit
+```
+
+**Fish:**
+```bash
+kagi --generate-completion fish > ~/.config/fish/completions/kagi.fish
+```
+
+## new features examples
+
+### autocomplete
+
+```bash
+# After setting up completions, try:
+kagi <TAB><TAB>  # Shows all available commands
+kagi search --format <TAB>  # Shows: json, pretty, compact, markdown, csv
+kagi batch --<TAB>  # Shows batch command options
+```
+
+### output formats
+
+```bash
+# Pretty format with colors (default behavior)
+kagi search "rust programming" --format pretty
+
+# Pretty format without colors
+kagi search "rust programming" --format pretty --no-color
+
+# Markdown output
+kagi search "rust programming" --format markdown
+
+# CSV output
+kagi search "rust programming" --format csv
+
+# Compact JSON
+kagi search "rust programming" --format compact
+```
+
+### batch searches with parallel execution
+
+```bash
+# Basic batch search (3 concurrent, 60 RPM default)
+kagi batch "rust programming" "python tutorial" "go language"
+
+# Custom concurrency and rate limiting
+kagi batch "query1" "query2" "query3" --concurrency 5 --rate-limit 120
+
+# Batch with different output formats
+kagi batch "news today" "weather forecast" --format markdown
+
+# Batch with lens support
+kagi batch "tech news" "programming tips" --lens 1
+
+# Batch with no color
+kagi batch "query1" "query2" --format pretty --no-color
+```
 
 ## examples
 

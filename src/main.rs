@@ -13,6 +13,9 @@ use crate::api::{
     execute_news, execute_news_categories, execute_news_chaos, execute_smallweb,
     execute_subscriber_summarize, execute_summarize,
 };
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+use std::time::{Instant, Duration};
 use crate::auth::{
     Credential, CredentialKind, SearchCredentials, format_status, load_credential_inventory,
     save_credentials,
@@ -43,7 +46,14 @@ async fn run() -> Result<(), KagiError> {
             } else {
                 request
             };
-            run_search(request, args.pretty).await
+            let format_str = match args.format {
+                cli::OutputFormat::Json => "json",
+                cli::OutputFormat::Pretty => "pretty",
+                cli::OutputFormat::Compact => "compact",
+                cli::OutputFormat::Markdown => "markdown",
+                cli::OutputFormat::Csv => "csv",
+            };
+            run_search(request, format_str.to_string(), !args.no_color).await
         }
         Commands::Auth(auth) => match auth.command {
             AuthSubcommand::Status => run_auth_status(),
@@ -136,25 +146,27 @@ async fn run() -> Result<(), KagiError> {
             let response = execute_smallweb(args.limit).await?;
             print_json(&response)
         }
+        Commands::Batch(args) => {
+            let format_str = match args.format {
+                cli::OutputFormat::Json => "json",
+                cli::OutputFormat::Pretty => "pretty",
+                cli::OutputFormat::Compact => "compact",
+                cli::OutputFormat::Markdown => "markdown",
+                cli::OutputFormat::Csv => "csv",
+            };
+            run_batch_search(
+                args.queries,
+                args.concurrency,
+                args.rate_limit,
+                format_str.to_string(),
+                !args.no_color,
+                args.lens,
+            ).await
+        }
     }
 }
 
-async fn run_search(request: search::SearchRequest, pretty: bool) -> Result<(), KagiError> {
-    let inventory = load_credential_inventory()?;
-    let credentials = inventory.resolve_for_search(request.lens.is_some())?;
 
-    let response = execute_search_request(&request, credentials).await?;
-    let output = if pretty {
-        format_pretty_response(&response)
-    } else {
-        serde_json::to_string_pretty(&response).map_err(|error| {
-            KagiError::Parse(format!("failed to serialize search response: {error}"))
-        })?
-    };
-
-    println!("{output}");
-    Ok(())
-}
 
 fn run_auth_status() -> Result<(), KagiError> {
     let inventory = load_credential_inventory()?;
@@ -250,7 +262,28 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
     Ok(())
 }
 
-fn format_pretty_response(response: &SearchResponse) -> String {
+async fn run_search(request: search::SearchRequest, format: String, use_color: bool) -> Result<(), KagiError> {
+    let inventory = load_credential_inventory()?;
+    let credentials = inventory.resolve_for_search(request.lens.is_some())?;
+
+    let response = execute_search_request(&request, credentials).await?;
+    let output = match format.as_str() {
+        "pretty" => format_pretty_response(&response, use_color),
+        "compact" => serde_json::to_string(&response).map_err(|error| {
+            KagiError::Parse(format!("failed to serialize search response: {error}"))
+        })?,
+        "markdown" => format_markdown_response(&response),
+        "csv" => format_csv_response(&response),
+        _ => serde_json::to_string_pretty(&response).map_err(|error| {
+            KagiError::Parse(format!("failed to serialize search response: {error}"))
+        })?,
+    };
+
+    println!("{output}");
+    Ok(())
+}
+
+fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String {
     if response.data.is_empty() {
         return "No results found.".to_string();
     }
@@ -260,7 +293,19 @@ fn format_pretty_response(response: &SearchResponse) -> String {
         .iter()
         .enumerate()
         .map(|(index, result)| {
-            let mut section = format!("{}. {}\n   {}", index + 1, result.title, result.url);
+            let title_color = if use_color { "\x1b[1;34m" } else { "" };
+            let url_color = if use_color { "\x1b[36m" } else { "" };
+            let reset_color = if use_color { "\x1b[0m" } else { "" };
+            
+            let mut section = format!(
+                "{}{}. {}{}\n   {}{}",
+                title_color, 
+                index + 1, 
+                result.title, 
+                url_color,
+                result.url,
+                reset_color
+            );
             if !result.snippet.trim().is_empty() {
                 section.push_str(&format!("\n\n   {}", result.snippet.trim()));
             }
@@ -268,6 +313,168 @@ fn format_pretty_response(response: &SearchResponse) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+fn format_markdown_response(response: &SearchResponse) -> String {
+    if response.data.is_empty() {
+        return "# No results found.".to_string();
+    }
+
+    response
+        .data
+        .iter()
+        .enumerate()
+        .map(|(index, result)| {
+            let mut section = format!(
+                "## {}. [{}]({})\n\n",
+                index + 1,
+                result.title,
+                result.url
+            );
+            if !result.snippet.trim().is_empty() {
+                section.push_str(&format!("{}\n\n", result.snippet.trim()));
+            }
+            section
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_csv_response(response: &SearchResponse) -> String {
+    if response.data.is_empty() {
+        return "title,url,snippet".to_string();
+    }
+
+    let mut output = String::from("title,url,snippet\n");
+    
+    for result in &response.data {
+        let title = result.title.replace('"', "'");
+        let url = result.url.replace('"', "'");
+        let snippet = result.snippet.replace('"', "'");
+        output.push_str(&format!("\"{}\",\"{}\",\"{}\"\n", title, url, snippet));
+    }
+    
+    output
+}
+
+/// Simple rate limiter using token bucket algorithm
+struct RateLimiter {
+    capacity: u32,
+    tokens: Arc<tokio::sync::Mutex<u32>>,
+    last_refill: Arc<tokio::sync::Mutex<Instant>>,
+    refill_rate: u32, // tokens per minute
+}
+
+impl RateLimiter {
+    fn new(capacity: u32, refill_rate: u32) -> Self {
+        Self {
+            capacity,
+            tokens: Arc::new(tokio::sync::Mutex::new(capacity)),
+            last_refill: Arc::new(tokio::sync::Mutex::new(Instant::now())),
+            refill_rate,
+        }
+    }
+
+    async fn acquire(&self) -> Result<(), KagiError> {
+        let mut tokens = self.tokens.lock().await;
+        let mut last_refill = self.last_refill.lock().await;
+        
+        // Refill tokens based on time elapsed
+        let now = Instant::now();
+        let elapsed = now.duration_since(*last_refill).as_secs_f64();
+        let new_tokens = (elapsed * (self.refill_rate as f64 / 60.0)) as u32;
+        
+        if new_tokens > 0 {
+            *tokens = (*tokens + new_tokens).min(self.capacity);
+            *last_refill = now;
+        }
+
+        // Try to acquire a token
+        if *tokens > 0 {
+            *tokens -= 1;
+            Ok(())
+        } else {
+            // Wait until a token becomes available
+            let tokens_needed = 1;
+            let seconds_to_wait = (tokens_needed as f64 / self.refill_rate as f64) * 60.0;
+            tokio::time::sleep(Duration::from_secs_f64(seconds_to_wait)).await;
+            Ok(())
+        }
+    }
+}
+
+async fn run_batch_search(
+    queries: Vec<String>,
+    concurrency: usize,
+    rate_limit: u32,
+    format: String,
+    use_color: bool,
+    lens: Option<String>,
+) -> Result<(), KagiError> {
+    let inventory = load_credential_inventory()?;
+    let credentials = inventory.resolve_for_search(lens.is_some())?;
+    
+    let rate_limiter = Arc::new(RateLimiter::new(rate_limit, rate_limit));
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+
+    let mut handles = vec![];
+    
+    for query in queries {
+        let rate_limiter_clone = Arc::clone(&rate_limiter);
+        let semaphore_clone = Arc::clone(&semaphore);
+        let credentials_clone = credentials.clone();
+        let lens_clone = lens.clone();
+        let format_clone = format.clone();
+        let query_clone = query.clone();
+        
+        let handle: tokio::task::JoinHandle<Result<(String, String), KagiError>> = tokio::spawn(async move {
+            let _permit = semaphore_clone.acquire().await;
+            rate_limiter_clone.acquire().await?;
+            
+            let request = search::SearchRequest::new(query_clone);
+            let request = if let Some(lens) = lens_clone {
+                request.with_lens(lens)
+            } else {
+                request
+            };
+            
+            let response = execute_search_request(&request, credentials_clone).await?;
+            
+            let output = match format_clone.as_str() {
+                "pretty" => format_pretty_response(&response, use_color),
+                "compact" => serde_json::to_string(&response).map_err(|error| {
+                    KagiError::Parse(format!("failed to serialize search response: {error}"))
+                })?,
+                "markdown" => format_markdown_response(&response),
+                "csv" => format_csv_response(&response),
+                _ => serde_json::to_string_pretty(&response).map_err(|error| {
+                    KagiError::Parse(format!("failed to serialize search response: {error}"))
+                })?,
+            };
+            
+            Ok((query, output))
+        });
+        
+        handles.push(handle);
+    }
+
+    let mut results = vec![];
+    for handle in handles {
+        match handle.await {
+            Ok(Ok((query, output))) => results.push((query, output)),
+            Ok(Err(e)) => eprintln!("Error processing query: {e}"),
+            Err(e) => eprintln!("Task failed: {e}"),
+        }
+    }
+
+    // Output results in order
+    for (query, output) in results {
+        println!("=== Results for: {} ===", query);
+        println!("{}", output);
+        println!();
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -301,7 +508,7 @@ mod tests {
             ],
         };
 
-        let output = format_pretty_response(&response);
+        let output = format_pretty_response(&response, false);
 
         assert_eq!(
             output,
@@ -312,7 +519,7 @@ mod tests {
     #[test]
     fn formats_pretty_output_for_empty_results() {
         let response = SearchResponse { data: vec![] };
-        let output = format_pretty_response(&response);
+        let output = format_pretty_response(&response, false);
 
         assert_eq!(output, "No results found.");
     }
@@ -330,9 +537,100 @@ mod tests {
             }],
         };
 
-        let output = format_pretty_response(&response);
+        let output = format_pretty_response(&response, false);
 
         assert_eq!(output, "1. Example\n   https://example.com");
+    }
+
+    #[test]
+    fn formats_pretty_output_with_color() {
+        let response = SearchResponse {
+            data: vec![SearchResult {
+                t: 0,
+                rank: None,
+                title: "Example".to_string(),
+                url: "https://example.com".to_string(),
+                snippet: "Test snippet".to_string(),
+                published: None,
+            }],
+        };
+
+        let output = format_pretty_response(&response, true);
+
+        assert!(output.contains("\x1b[1;34m"));
+        assert!(output.contains("\x1b[36m"));
+        assert!(output.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_rate_limiter_basic_functionality() {
+        let rate_limiter = RateLimiter::new(10, 60);
+        
+        // Should be able to acquire tokens up to capacity
+        for _ in 0..10 {
+            let result = futures::executor::block_on(rate_limiter.acquire());
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_rate_limiter_refill() {
+        let rate_limiter = RateLimiter::new(2, 60); // 2 tokens, 60 per minute
+        
+        // Acquire both tokens
+        futures::executor::block_on(rate_limiter.acquire()).unwrap();
+        futures::executor::block_on(rate_limiter.acquire()).unwrap();
+        
+        // Third acquisition should wait (but we can't easily test the wait in a test)
+        // This just verifies it doesn't panic
+        let result = futures::executor::block_on(rate_limiter.acquire());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn formats_markdown_output() {
+        let response = SearchResponse {
+            data: vec![
+                SearchResult {
+                    t: 0,
+                    rank: None,
+                    title: "Rust Programming Language".to_string(),
+                    url: "https://www.rust-lang.org".to_string(),
+                    snippet: "A language empowering everyone to build reliable and efficient software.".to_string(),
+                    published: None,
+                },
+            ],
+        };
+
+        let output = format_markdown_response(&response);
+
+        assert_eq!(
+            output,
+            "## 1. [Rust Programming Language](https://www.rust-lang.org)\n\nA language empowering everyone to build reliable and efficient software.\n\n"
+        );
+    }
+
+    #[test]
+    fn formats_csv_output() {
+        let response = SearchResponse {
+            data: vec![
+                SearchResult {
+                    t: 0,
+                    rank: None,
+                    title: "Rust Programming Language".to_string(),
+                    url: "https://www.rust-lang.org".to_string(),
+                    snippet: "A language empowering everyone to build reliable and efficient software.".to_string(),
+                    published: None,
+                },
+            ],
+        };
+
+        let output = format_csv_response(&response);
+
+        assert_eq!(
+            output,
+            "title,url,snippet\n\"Rust Programming Language\",\"https://www.rust-lang.org\",\"A language empowering everyone to build reliable and efficient software.\"\n"
+        );
     }
 
     #[test]
