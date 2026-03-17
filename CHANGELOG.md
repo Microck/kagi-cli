@@ -9,7 +9,17 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ### Added
 
-- Ongoing documentation and release process improvements
+- Multiple output formats: JSON, Pretty, Compact, Markdown, and CSV
+- Batch search capability with parallel execution and rate limiting
+- Enhanced CLI with shell autocomplete support
+- Colorized terminal output with `--no-color` option
+- Comprehensive lens support for scoped searches
+
+### Changed
+
+- Improved help text and documentation
+- Restructured CLI argument parsing
+- Enhanced error handling and user feedback
 
 ## [0.1.6]
 

@@ -478,7 +478,10 @@ async fn run_batch_search(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_pretty_response, should_fallback_to_session};
+    use super::{
+        RateLimiter, format_csv_response, format_markdown_response, format_pretty_response,
+        should_fallback_to_session,
+    };
     use crate::error::KagiError;
     use crate::types::{SearchResponse, SearchResult};
 
@@ -561,28 +564,28 @@ mod tests {
         assert!(output.contains("\x1b[0m"));
     }
 
-    #[test]
-    fn test_rate_limiter_basic_functionality() {
+    #[tokio::test]
+    async fn test_rate_limiter_basic_functionality() {
         let rate_limiter = RateLimiter::new(10, 60);
 
         // Should be able to acquire tokens up to capacity
         for _ in 0..10 {
-            let result = futures::executor::block_on(rate_limiter.acquire());
+            let result = rate_limiter.acquire().await;
             assert!(result.is_ok());
         }
     }
 
-    #[test]
-    fn test_rate_limiter_refill() {
+    #[tokio::test]
+    async fn test_rate_limiter_refill() {
         let rate_limiter = RateLimiter::new(2, 60); // 2 tokens, 60 per minute
 
         // Acquire both tokens
-        futures::executor::block_on(rate_limiter.acquire()).unwrap();
-        futures::executor::block_on(rate_limiter.acquire()).unwrap();
+        rate_limiter.acquire().await.unwrap();
+        rate_limiter.acquire().await.unwrap();
 
         // Third acquisition should wait (but we can't easily test the wait in a test)
         // This just verifies it doesn't panic
-        let result = futures::executor::block_on(rate_limiter.acquire());
+        let result = rate_limiter.acquire().await;
         assert!(result.is_ok());
     }
 
