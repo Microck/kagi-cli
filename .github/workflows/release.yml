@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to build and publish (for example v0.1.7)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,10 +17,14 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -33,6 +42,8 @@ jobs:
 
   build:
     needs: verify
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +69,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -82,7 +95,7 @@ jobs:
         if: runner.os != 'Windows'
         env:
           TARGET: ${{ matrix.target }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           mkdir -p dist
           cp "target/$TARGET/release/kagi" dist/kagi
@@ -94,7 +107,7 @@ jobs:
         shell: pwsh
         env:
           TARGET: ${{ matrix.target }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item "target/$env:TARGET/release/kagi.exe" "dist/kagi.exe"
@@ -107,8 +120,8 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            kagi-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-            kagi-${{ github.ref_name }}-${{ matrix.target }}
+            kagi-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+            kagi-${{ env.RELEASE_TAG }}-${{ matrix.target }}
 
       - name: Upload packaged assets (windows)
         if: runner.os == 'Windows'
@@ -116,16 +129,20 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            kagi-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-            kagi-${{ github.ref_name }}-${{ matrix.target }}.exe
+            kagi-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+            kagi-${{ env.RELEASE_TAG }}-${{ matrix.target }}.exe
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Download packaged archives
         uses: actions/download-artifact@v8.0.1
@@ -137,19 +154,21 @@ jobs:
       - name: Generate checksums
         working-directory: dist
         run: |
-          sha256sum * > "kagi-${GITHUB_REF_NAME}-checksums.txt"
+          sha256sum * > "kagi-${RELEASE_TAG}-checksums.txt"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+            gh release create "$RELEASE_TAG" dist/* --generate-notes --verify-tag
           fi
 
       - name: Sync Homebrew tap and Scoop bucket
+        id: sync_package_indexes
+        continue-on-error: true
         env:
           REPO_SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
@@ -162,26 +181,40 @@ jobs:
 
           SYNC_TOKEN="$(printf '%s' "$REPO_SYNC_TOKEN" | tr -d '\r\n')"
 
-          VERSION="${GITHUB_REF_NAME#v}"
-          CHECKSUM_FILE="dist/kagi-${GITHUB_REF_NAME}-checksums.txt"
-          BASE_URL="https://github.com/Microck/kagi-cli/releases/download/${GITHUB_REF_NAME}"
+          VERSION="${RELEASE_TAG#v}"
+          CHECKSUM_FILE="dist/kagi-${RELEASE_TAG}-checksums.txt"
+          BASE_URL="https://github.com/Microck/kagi-cli/releases/download/${RELEASE_TAG}"
 
           checksum_for() {
             local asset="$1"
             grep "  ${asset}$" "$CHECKSUM_FILE" | awk '{print $1}'
           }
 
-          MACOS_ARM_SHA="$(checksum_for "kagi-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz")"
-          MACOS_INTEL_SHA="$(checksum_for "kagi-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz")"
-          LINUX_ARM_SHA="$(checksum_for "kagi-${GITHUB_REF_NAME}-aarch64-unknown-linux-gnu.tar.gz")"
-          LINUX_INTEL_SHA="$(checksum_for "kagi-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz")"
-          WINDOWS_INTEL_SHA="$(checksum_for "kagi-${GITHUB_REF_NAME}-x86_64-pc-windows-msvc.zip")"
+          MACOS_ARM_SHA="$(checksum_for "kagi-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz")"
+          MACOS_INTEL_SHA="$(checksum_for "kagi-${RELEASE_TAG}-x86_64-apple-darwin.tar.gz")"
+          LINUX_ARM_SHA="$(checksum_for "kagi-${RELEASE_TAG}-aarch64-unknown-linux-gnu.tar.gz")"
+          LINUX_INTEL_SHA="$(checksum_for "kagi-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz")"
+          WINDOWS_INTEL_SHA="$(checksum_for "kagi-${RELEASE_TAG}-x86_64-pc-windows-msvc.zip")"
 
           TAP_DIR="$(mktemp -d)"
           BUCKET_DIR="$(mktemp -d)"
+          AUTH_HEADER="$(printf 'x-access-token:%s' "$SYNC_TOKEN" | base64 | tr -d '\n')"
 
-          git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Microck/homebrew-kagi.git" "$TAP_DIR"
-          git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Microck/scoop-kagi.git" "$BUCKET_DIR"
+          clone_with_token() {
+            local repo="$1"
+            local dir="$2"
+            git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_HEADER}" \
+              clone "https://github.com/${repo}.git" "$dir"
+          }
+
+          push_with_token() {
+            local dir="$1"
+            git -C "$dir" -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_HEADER}" \
+              push origin main
+          }
+
+          clone_with_token "Microck/homebrew-kagi" "$TAP_DIR"
+          clone_with_token "Microck/scoop-kagi" "$BUCKET_DIR"
 
           mkdir -p "$TAP_DIR/Formula"
           cat > "$TAP_DIR/Formula/kagi.rb" <<EOF
@@ -193,24 +226,24 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "${BASE_URL}/kagi-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz"
+                url "${BASE_URL}/kagi-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz"
                 sha256 "${MACOS_ARM_SHA}"
               end
 
               if Hardware::CPU.intel?
-                url "${BASE_URL}/kagi-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz"
+                url "${BASE_URL}/kagi-${RELEASE_TAG}-x86_64-apple-darwin.tar.gz"
                 sha256 "${MACOS_INTEL_SHA}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "${BASE_URL}/kagi-${GITHUB_REF_NAME}-aarch64-unknown-linux-gnu.tar.gz"
+                url "${BASE_URL}/kagi-${RELEASE_TAG}-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${LINUX_ARM_SHA}"
               end
 
               if Hardware::CPU.intel?
-                url "${BASE_URL}/kagi-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+                url "${BASE_URL}/kagi-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${LINUX_INTEL_SHA}"
               end
             end
@@ -233,7 +266,7 @@ jobs:
             "license": "MIT",
             "architecture": {
               "64bit": {
-                "url": "${BASE_URL}/kagi-${GITHUB_REF_NAME}-x86_64-pc-windows-msvc.zip",
+                "url": "${BASE_URL}/kagi-${RELEASE_TAG}-x86_64-pc-windows-msvc.zip",
                 "hash": "${WINDOWS_INTEL_SHA}"
               }
             },
@@ -255,14 +288,19 @@ jobs:
           git -C "$TAP_DIR" config user.email "contact@micr.dev"
           if ! git -C "$TAP_DIR" diff --quiet; then
             git -C "$TAP_DIR" add Formula/kagi.rb
-            git -C "$TAP_DIR" commit -m "chore: update kagi formula for ${GITHUB_REF_NAME}"
-            git -C "$TAP_DIR" push origin main
+            git -C "$TAP_DIR" commit -m "chore: update kagi formula for ${RELEASE_TAG}"
+            push_with_token "$TAP_DIR"
           fi
 
           git -C "$BUCKET_DIR" config user.name "Microck"
           git -C "$BUCKET_DIR" config user.email "contact@micr.dev"
           if ! git -C "$BUCKET_DIR" diff --quiet; then
             git -C "$BUCKET_DIR" add kagi.json
-            git -C "$BUCKET_DIR" commit -m "chore: update kagi manifest for ${GITHUB_REF_NAME}"
-            git -C "$BUCKET_DIR" push origin main
+            git -C "$BUCKET_DIR" commit -m "chore: update kagi manifest for ${RELEASE_TAG}"
+            push_with_token "$BUCKET_DIR"
           fi
+
+      - name: Report package index sync warning
+        if: steps.sync_package_indexes.outcome == 'failure'
+        run: |
+          echo "::warning title=Package index sync failed::GitHub release assets were published, but Homebrew/Scoop sync did not complete. Check the release job logs."
