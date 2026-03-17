@@ -32,19 +32,6 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 - use one CLI for search, assistant, summarization, and feeds
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
-## highlights
-
-- `kagi search` supports `json`, `compact`, `pretty`, `markdown`, and `csv` output
-- `kagi batch` runs multiple searches in parallel with configurable concurrency and rate limiting
-- `--generate-completion` prints shell completion scripts for bash, zsh, fish, and powershell
-- `--format pretty` supports color by default, with `--no-color` when you want plain terminal output
-
-```bash
-kagi search "rust programming" --format pretty
-kagi batch "rust" "python" "go" --format compact
-kagi --generate-completion bash > ~/.local/share/bash-completion/completions/kagi
-```
-
 ## quickstart
 
 ### Linux or macOS
@@ -116,7 +103,7 @@ export KAGI_API_TOKEN='...'
 | --- | --- |
 | `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
-| none | `news`, `smallweb`, `auth status`, `--help`, completion generation |
+| none | `news`, `smallweb`, `auth status`, `--help` |
 
 example config:
 
@@ -238,18 +225,6 @@ kagi enrich web "local-first software"
 kagi enrich news "browser privacy"
 ```
 
-## building from source
-
-```bash
-git clone https://github.com/Microck/kagi-cli.git
-cd kagi-cli
-cargo build --release
-./target/release/kagi --help
-```
-
-for a fuller install matrix, release artifacts, and package-manager notes, use the [installation guide](https://kagi.micr.dev/guides/installation).
-
-
 ## what it looks like
 
 if you want a quick feel for the cli before installing it, this is the kind of output you get from the subscriber summarizer, assistant, and public news feed:
@@ -259,6 +234,19 @@ if you want a quick feel for the cli before installing it, this is the kind of o
 ![assistant demo](images/demos/assistant.gif)
 
 ![news demo](images/demos/news.gif)
+
+## building from source
+
+if you are working on the cli itself, build from a local checkout:
+
+```bash
+git clone https://github.com/Microck/kagi-cli.git
+cd kagi-cli
+cargo build --release
+./target/release/kagi --help
+```
+
+for the fuller install matrix and platform-specific setup, use the [installation guide](https://kagi.micr.dev/guides/installation).
 
 ## documentation
 
