@@ -1,19 +1,40 @@
-# Demo Assets
+---
+title: "Demos"
+description: "Recorded terminal demos and how to regenerate them."
+---
 
-These terminal demos are recorded from the real CLI with `asciinema` and exported as GIFs for GitHub rendering with the official asciinema `agg` binary.
+# Demos
 
-The demo scripts build the local debug binary, expose it as `kagi` through `/tmp/kagi-demo-bin`, and add short intro and outro pauses so the commands are readable in the rendered GIFs.
+The docs site ships with recorded terminal GIFs from the repo:
 
-## Assets
+- search
+- subscriber summarize
+- news
+- assistant
 
-- `docs/demo-assets/search.gif`
-- `docs/demo-assets/summarize.gif`
-- `docs/demo-assets/news.gif`
-- `docs/demo-assets/assistant.gif`
+## Preview
+
+### Search
+
+![Search demo](/images/demos/search.gif)
+
+### Subscriber Summarize
+
+![Summarize demo](/images/demos/summarize.gif)
+
+### News
+
+![News demo](/images/demos/news.gif)
+
+### Assistant
+
+![Assistant demo](/images/demos/assistant.gif)
 
 ## Regenerate
 
-Subscriber demos require `KAGI_SESSION_TOKEN` in the environment. API-token demos are intentionally excluded here because the current account has zero billable API credit and the paid API surfaces reject upstream.
+Subscriber demos require `KAGI_SESSION_TOKEN`.
+
+The demo scripts build the local debug binary, expose it as `kagi` through `/tmp/*kagi*-demo-bin`, and add short intro and outro pauses so the commands stay readable in the final GIFs.
 
 The current demo commands are:
 
@@ -28,17 +49,19 @@ chmod +x scripts/demo-search.sh scripts/demo-summarize.sh scripts/demo-news.sh s
 mkdir -p docs/demo-assets /tmp/kagi-demos
 
 agg --version
-# expected: "asciinema gif generator"
-
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-search.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/search.cast
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-summarize.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/summarize.cast
 asciinema rec -c ./scripts/demo-news.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/news.cast
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-assistant.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/assistant.cast
+```
 
+## Rendering
+
+Use the official asciinema `agg` binary when exporting GIFs. On this machine, the correct binary may be the Cargo-installed one rather than an unrelated npm package that also installs `agg`.
+
+```bash
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/search.cast docs/demo-assets/search.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/summarize.cast docs/demo-assets/summarize.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/news.cast docs/demo-assets/news.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/assistant.cast docs/demo-assets/assistant.gif
 ```
-
-If `agg --version` does not print `asciinema gif generator`, your `PATH` is resolving a different package. Use the official binary explicitly, for example `~/.cargo/bin/agg`.

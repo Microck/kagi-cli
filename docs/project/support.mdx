@@ -1,0 +1,32 @@
+---
+title: "Support and Contribution"
+description: "Where to file issues, how to contribute safely, and what not to commit."
+---
+
+# Support and Contribution
+
+## Support
+
+Use the repo’s issue tracker and support channels for:
+
+- bug reports
+- feature requests
+- usage questions
+
+## Contribution rules
+
+- keep changes scoped to one goal
+- update docs when behavior changes
+- add or update tests when behavior changes
+- avoid committing secrets, local tokens, or personal config
+
+## Auth safety
+
+Do not commit:
+
+- `.env`
+- `.kagi.toml`
+- session tokens
+- API tokens
+
+Prefer unit tests and parser fixtures over live authenticated tests. If a change needs live verification, document the manual steps instead of hard-coding secrets or compatibility hacks.

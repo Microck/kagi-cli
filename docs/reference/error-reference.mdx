@@ -1,0 +1,439 @@
+---
+title: "Error Reference"
+description: "Complete catalog of error messages, their meanings, and solutions."
+---
+
+# Error Reference
+
+This guide catalogs all error messages from the *kagi* CLI, organized by category with explanations and solutions.
+
+## Error Format
+
+Errors follow this pattern:
+
+```
+Error: {category}: {message}
+```
+
+Examples:
+- `Error: missing credentials - this command requires KAGI_SESSION_TOKEN`
+- `Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden`
+
+## Authentication Errors
+
+### "missing credentials"
+
+**Message:**
+```
+Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env), or add [auth] api_token/session_token to .kagi.toml
+```
+
+**Meaning:** No authentication token is configured.
+
+**Solution:**
+```bash
+# Set session token
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# Or set API token
+kagi auth set --api-token 'YOUR_API_TOKEN'
+
+# Verify
+kagi auth check
+```
+
+### "this command requires KAGI_SESSION_TOKEN"
+
+**Message:**
+```
+Config error: this command requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+```
+
+**Meaning:** Command needs session token, but you may have only API token configured.
+
+**Solution:**
+```bash
+# Add session token
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# Or if using wrong mode
+kagi summarize --subscriber --url https://example.com  # Use --subscriber for session
+```
+
+### "this command requires KAGI_API_TOKEN"
+
+**Message:**
+```
+Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_token])
+```
+
+**Meaning:** Command needs API token, but you may have only session token configured.
+
+**Solution:**
+```bash
+# Add API token
+kagi auth set --api-token 'YOUR_API_TOKEN'
+
+# Or remove conflicting flag
+kagi summarize --url https://example.com  # Remove --subscriber for API mode
+```
+
+### "auth check failed"
+
+**Message:**
+```
+Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden
+```
+
+**Meaning:** Token is invalid, expired, or rejected.
+
+**Causes:**
+- Token expired
+- Token revoked
+- Token regenerated in Kagi settings
+- Account doesn't have required access
+
+**Solution:**
+1. Log into [kagi.com](https://kagi.com)
+2. Navigate to Settings → Account (session) or API
+3. Generate new token
+4. Update configuration:
+   ```bash
+   *kagi* auth set --session-token 'NEW_TOKEN'
+   # or
+   *kagi* auth set --api-token 'NEW_API_TOKEN'
+   ```
+5. Verify: `kagi auth check`
+
+### "Insufficient credit"
+
+**Message:**
+```
+Error: Auth error: Kagi Search API request rejected: HTTP 400 Bad Request; Insufficient credit
+```
+
+**Meaning:** API token is valid but you have no remaining API credit.
+
+**Solution:**
+1. Check API credit in Kagi settings
+2. Add credit if needed
+3. Or use subscriber features (no credit required)
+
+## Configuration Errors
+
+### "Config file not found"
+
+**Message:**
+```
+config path: .kagi.toml
+```
+
+**Meaning:** No configuration file exists yet.
+
+**Solution:**
+This is informational. Run `kagi auth set` to create it, or use environment variables.
+
+### "Permission denied"
+
+**Message:**
+```
+Error: Permission denied (os error 13)
+```
+
+**Meaning:** Cannot read/write configuration file.
+
+**Solution:**
+```bash
+# Check permissions
+ls -la ./.kagi.toml
+
+# Fix permissions
+chmod 600 ./.kagi.toml
+
+# Or recreate
+rm ./.kagi.toml
+kagi auth set --session-token 'YOUR_TOKEN'
+```
+
+## Command Errors
+
+### "--length requires --subscriber"
+
+**Message:**
+```
+Error: Config: --length requires --subscriber
+```
+
+**Meaning:** The `--length` option only works with subscriber summarizer mode.
+
+**Solution:**
+```bash
+# Add --subscriber flag
+kagi summarize --subscriber --url https://example.com --length digest
+```
+
+### "--engine is only supported for the paid public summarizer API"
+
+**Message:**
+```
+Error: Config: --engine is only supported for the paid public summarizer API
+```
+
+**Meaning:** The `--engine` option doesn't work with subscriber mode.
+
+**Solution:**
+```bash
+# Remove --subscriber for API mode
+kagi summarize --url https://example.com --engine cecil
+```
+
+### "--cache is only supported for the paid public summarizer API"
+
+**Message:**
+```
+Error: Config: --cache is only supported for the paid public summarizer API
+```
+
+**Meaning:** The `--cache` option doesn't work with subscriber mode.
+
+**Solution:**
+```bash
+# Remove --subscriber flag
+kagi summarize --url https://example.com --cache false
+```
+
+### "--url or --text required"
+
+**Meaning:** Summarize command needs content to summarize.
+
+**Solution:**
+```bash
+# Provide URL
+kagi summarize --url https://example.com
+
+# Or text
+kagi summarize --text "Content to summarize..."
+```
+
+## Network Errors
+
+### "Network error: request to Kagi timed out"
+
+**Meaning:** Request took too long to complete.
+
+**Causes:**
+- Slow internet connection
+- Kagi service slow
+- Rate limiting
+
+**Solution:**
+1. Check internet connection
+2. Try again later
+3. Add retry logic:
+   ```bash
+   for i in 1 2 3; do
+     *kagi* search "query" && break
+     sleep 5
+   done
+   ```
+
+### "Failed to connect"
+
+**Meaning:** Cannot establish connection to Kagi.
+
+**Causes:**
+- No internet
+- DNS failure
+- Firewall/proxy blocking
+
+**Solution:**
+```bash
+# Test connectivity
+ping kagi.com
+nslookup kagi.com
+curl -I https://kagi.com
+
+# Check proxy settings
+env | grep -i proxy
+
+# Try without proxy temporarily
+unset HTTPS_PROXY
+kagi search "test"
+```
+
+### "DNS resolution failed"
+
+**Meaning:** Cannot resolve kagi.com hostname.
+
+**Solution:**
+```bash
+# Test DNS
+nslookup kagi.com
+dig kagi.com
+
+# Try public DNS temporarily
+echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf
+```
+
+### "SSL/TLS error"
+
+**Meaning:** Certificate validation failed.
+
+**Causes:**
+- System time wrong
+- Outdated CA certificates
+- Corporate proxy
+
+**Solution:**
+```bash
+# Check time
+date
+
+# Update certificates
+# Ubuntu/Debian:
+sudo apt-get update && sudo apt-get install -y ca-certificates
+
+# macOS:
+brew install ca-certificates
+```
+
+## Parse Errors
+
+### "failed to serialize search response"
+
+**Meaning:** Response couldn't be parsed as JSON.
+
+**Causes:**
+- API returned unexpected format
+- Version mismatch
+- Corrupted response
+
+**Solution:**
+1. Update *kagi* CLI:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
+   ```
+2. Check raw output:
+   ```bash
+   *kagi* search "test" 2>&1 | head -20
+   ```
+
+### "failed to parse"
+
+**Meaning:** General parsing error.
+
+**Solution:**
+```bash
+# Check version
+kagi --version
+
+# Update to latest
+# (reinstall using install script)
+```
+
+## Rate Limit Errors
+
+### "Rate limit exceeded"
+
+**Meaning:** Too many requests in short time.
+
+**Solution:**
+1. Wait a few minutes
+2. Add delays between requests:
+   ```bash
+   for url in $URLS; do
+     *kagi* summarize --subscriber --url "$url"
+     sleep 2
+   done
+   ```
+3. Reduce request frequency
+
+### "Too many requests"
+
+Same as rate limit. Wait and retry with slower pace.
+
+## Installation Errors
+
+### "command not found"
+
+**Meaning:** *kagi* not in PATH.
+
+**Solution:**
+```bash
+# Find binary
+which kagi || find ~ -name "kagi" -type f 2>/dev/null
+
+# Add to PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Or open new terminal
+```
+
+### "No such file or directory"
+
+**Meaning:** Binary missing or wrong path.
+
+**Solution:**
+Reinstall using install script or package manager.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Any error (check stderr) |
+
+## Debugging Strategy
+
+### Step 1: Check Basic Functionality
+
+```bash
+kagi --version      # Binary works?
+kagi --help         # Shows help?
+kagi news --limit 1 # Network works?
+```
+
+### Step 2: Check Authentication
+
+```bash
+kagi auth status    # What's configured?
+kagi auth check     # Does it work?
+```
+
+### Step 3: Isolate the Issue
+
+```bash
+# Test specific command
+kagi search "test" 2>&1
+
+# Check raw output
+kagi search "test" 2>&1 | cat
+```
+
+### Step 4: Check Environment
+
+```bash
+# Auth tokens
+echo $KAGI_SESSION_TOKEN
+echo $KAGI_API_TOKEN
+
+# Network
+env | grep -i proxy
+curl -I https://kagi.com
+
+# System
+uname -a
+kagi --version
+```
+
+## Getting Help
+
+If you encounter an error not listed here:
+
+1. Check [Troubleshooting](/guides/troubleshooting)
+2. Search [GitHub Issues](https://github.com/Microck/kagi-cli/issues)
+3. Create new issue with:
+   - Error message (exact text)
+   - Command you ran
+   - *kagi* version (`kagi --version`)
+   - OS and version

@@ -1,0 +1,207 @@
+---
+title: "news"
+description: "Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category filtering."
+---
+
+# `kagi news`
+
+Read Kagi News from the public JSON endpoints. This command requires no authentication and provides access to Kagi's curated news feed.
+
+![News demo](/images/demos/news.gif)
+
+## Synopsis
+
+```bash
+kagi news [OPTIONS]
+```
+
+## Description
+
+The `kagi news` command fetches the latest news from Kagi's public news endpoints. Unlike search commands, this requires no authentication and can be used immediately after installation.
+
+Kagi News provides a curated selection of important stories across various categories, updated throughout the day.
+
+## Authentication
+
+**Required:** None
+
+This command works without any tokens, making it ideal for:
+- Testing your installation
+- Daily news briefings
+- Public information gathering
+- Unauthenticated environments
+
+## Options
+
+### `--category <CATEGORY>`
+
+News category to fetch.
+
+**Default:** `world`
+
+**Available Categories:** use `kagi news --list-categories` to inspect the live category inventory. The available set changes over time and may include both core and community categories.
+
+**Example:**
+```bash
+kagi news --category tech
+kagi news --category business --limit 5
+```
+
+### `--limit <COUNT>`
+
+Number of stories to return.
+
+**Type:** Integer
+**Default:** 12
+**Constraint:** must be greater than 0
+
+**Example:**
+```bash
+kagi news --limit 5
+kagi news --category tech --limit 10
+```
+
+### `--lang <LANG>`
+
+Language for news content.
+
+**Default:** `default` (uses Kagi's default)
+**Values:** Language codes as supported
+
+**Example:**
+```bash
+kagi news --lang en
+```
+
+### `--list-categories`
+
+List available news categories instead of fetching news.
+
+**Example:**
+```bash
+kagi news --list-categories
+```
+
+Output shows available categories and their descriptions.
+
+### `--chaos`
+
+Get the current Kagi News chaos index.
+
+The chaos index measures the level of disruption and uncertainty in current news cycles.
+
+**Example:**
+```bash
+kagi news --chaos
+```
+
+## Output Format
+
+### News Response
+
+```json
+{
+  "latest_batch": {
+    "id": "batch-123",
+    "created_at": "2026-03-16T00:00:00Z"
+  },
+  "category": {
+    "category_id": "tech",
+    "category_name": "Technology"
+  },
+  "stories": [],
+  "total_stories": "20",
+  "domains": [],
+  "read_count": 1234
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `latest_batch` | object | Metadata for the current news batch |
+| `category` | object | Resolved category metadata |
+| `stories` | array | Raw story payloads returned by Kagi News |
+| `total_stories` | string | Total number of stories in the category |
+| `domains` | array | Domain-level metadata from the feed |
+| `read_count` | integer | Aggregate read count for the category |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Get world news (default)
+kagi news
+
+# Get tech news
+kagi news --category tech
+
+# Get 5 business stories
+kagi news --category business --limit 5
+```
+
+### Processing Output
+
+```bash
+# Inspect the story payloads
+kagi news | jq '.stories'
+
+# Read category metadata
+kagi news | jq '.category'
+
+# Read the latest batch metadata
+kagi news | jq '.latest_batch'
+
+# Save to file
+kagi news --category tech > tech-news.json
+```
+
+### Daily Briefing
+
+```bash
+#!/bin/bash
+# Daily news briefing script
+
+echo "📰 Today's News"
+echo "==============="
+for category in tech business science; do
+  echo ""
+  echo "${category^^}:"
+  kagi news --category "$category" --limit 3 | jq '.stories'
+done
+```
+
+### Chaos Index
+
+```bash
+# Check current news chaos level
+kagi news --chaos
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error (network, parsing, etc.) |
+
+## Troubleshooting
+
+### Empty results
+
+- Try different category
+- Check network connectivity
+- Verify Kagi endpoints are accessible
+
+### "Failed to fetch"
+
+- Check internet connection
+- Verify DNS resolution: `nslookup kagi.com`
+- Try with curl: `curl https://kagi.com`
+
+## See Also
+
+- [smallweb](/commands/smallweb) - Kagi Small Web feed
+- [Workflows](/guides/workflows) - News automation patterns

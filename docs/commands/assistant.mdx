@@ -1,0 +1,245 @@
+---
+title: "assistant"
+description: "Complete reference for *kagi* assistant command - interact with Kagi AI Assistant programmatically."
+---
+
+# `kagi assistant`
+
+Prompt Kagi Assistant and continue existing conversation threads from the terminal.
+
+![Assistant demo](/images/demos/assistant.gif)
+
+## Synopsis
+
+```bash
+kagi assistant [OPTIONS] <QUERY>
+```
+
+## Description
+
+The `kagi assistant` command provides programmatic access to Kagi's AI Assistant feature. Send prompts, receive responses, and continue multi-turn conversations via thread continuation.
+
+This command is ideal for:
+- Quick questions without opening a browser
+- Building conversational workflows
+- Integrating Assistant replies into scripts
+- Continuing previous conversations
+
+## Authentication
+
+**Required:** `KAGI_SESSION_TOKEN`
+
+The Assistant feature requires a Kagi subscription and session token authentication.
+
+## Arguments
+
+### `<QUERY>` (Required)
+
+The prompt or question to send to the Assistant.
+
+**Example:**
+```bash
+kagi assistant "Explain recursion in Python"
+kagi assistant "What are the latest features in Rust?"
+```
+
+## Options
+
+### `--thread-id <THREAD_ID>`
+
+Continue an existing conversation thread.
+
+**Type:** String
+**Source:** Previous Assistant response
+
+**Example:**
+```bash
+# Start conversation
+kagi assistant "What is machine learning?"
+# Response includes: "thread_id": "abc123..."
+
+# Continue conversation
+kagi assistant --thread-id abc123 "Give me an example"
+```
+
+## Output Format
+
+```json
+{
+  "meta": {
+    "version": "202603091651.stage.c128588",
+    "trace": "trace-123"
+  },
+  "thread": {
+    "id": "thread-1",
+    "title": "Greeting",
+    "created_at": "2026-03-16T06:19:07Z"
+  },
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "created_at": "2026-03-16T06:19:07Z",
+    "state": "done",
+    "prompt": "Hello",
+    "markdown": "Hi"
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `meta` | object | Stream metadata such as version and trace id |
+| `thread` | object | Thread metadata for continuation |
+| `message` | object | The assistant reply payload |
+
+## Examples
+
+### Basic Queries
+
+```bash
+# Simple question
+kagi assistant "What is Docker?"
+
+# Complex query
+kagi assistant "Explain the difference between concurrency and parallelism with examples"
+
+# Code help
+kagi assistant "How do I read a file in Python?"
+```
+
+### Conversation Chains
+
+```bash
+#!/bin/bash
+# Start a conversation
+THREAD_ID=$(kagi assistant "Explain quantum computing" | jq -r '.thread.id')
+
+# Continue with follow-up
+kagi assistant --thread-id "$THREAD_ID" "What are qubits?"
+
+# Another follow-up
+kagi assistant --thread-id "$THREAD_ID" "How are they different from classical bits?"
+
+echo "Thread ID for later: $THREAD_ID"
+```
+
+### Processing Output
+
+```bash
+# Extract just the response
+kagi assistant "Hello" | jq -r '.message.markdown'
+
+# Save conversation
+kagi assistant "Explain Rust" > conversation.json
+
+# Extract thread ID for continuation
+THREAD_ID=$(kagi assistant "Initial prompt" | jq -r '.thread.id')
+```
+
+### Building Tools
+
+```bash
+#!/bin/bash
+# ai-helper.sh - Quick AI assistance
+
+QUESTION="$1"
+if [ -z "$QUESTION" ]; then
+  echo "Usage: ai-helper.sh 'your question'"
+  exit 1
+fi
+
+echo "🤔 Asking Kagi Assistant..."
+kagi assistant "$QUESTION" | jq -r '.message.markdown'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success - response received |
+| 1 | Error - see stderr |
+
+**Common errors:**
+- Missing session token
+- Invalid thread ID
+- Rate limiting
+- Network error
+
+## Thread Management
+
+### Starting New Threads
+
+Each `kagi assistant` call without `--thread-id` starts a new conversation:
+
+```bash
+# Thread 1
+kagi assistant "Topic A"
+
+# Thread 2 (separate conversation)
+kagi assistant "Topic B"
+```
+
+### Continuing Threads
+
+Save the `thread.id` from responses to continue:
+
+```bash
+# Get thread ID
+RESPONSE=$(kagi assistant "Initial question")
+THREAD_ID=$(echo "$RESPONSE" | jq -r '.thread.id')
+
+# Continue same thread
+kagi assistant --thread-id "$THREAD_ID" "Follow-up question"
+```
+
+### Thread Persistence
+
+- Threads persist across CLI sessions
+- Threads are associated with your Kagi account
+- You can continue threads from the web interface
+- Thread IDs are alphanumeric strings
+
+## Best Practices
+
+### Clear Prompts
+
+```bash
+# Good - specific
+kagi assistant "Explain Python list comprehensions with three examples"
+
+# Less effective - vague
+kagi assistant "Python"
+```
+
+### Context Management
+
+```bash
+# Provide context in thread
+THREAD_ID=$(kagi assistant "I'm learning Rust" | jq -r '.thread.id')
+kagi assistant --thread-id "$THREAD_ID" "What are ownership and borrowing?"
+```
+
+### Error Handling
+
+```bash
+if RESPONSE=$(kagi assistant "Question" 2>/dev/null); then
+  echo "$RESPONSE" | jq -r '.message.markdown'
+else
+  echo "Failed to get response"
+fi
+```
+
+## Limitations
+
+- Requires active Kagi subscription
+- Subject to rate limits
+- Thread availability may vary
+- Response length may be limited
+
+## See Also
+
+- [fastgpt](/commands/fastgpt) - Quick answers via API
+- [Authentication](/guides/authentication) - Token setup
+- [Workflows](/guides/workflows) - Conversation and automation patterns

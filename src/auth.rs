@@ -147,7 +147,9 @@ impl CredentialInventory {
 
     pub fn preferred_for_status(&self) -> Option<&Credential> {
         match self.search_preference {
-            SearchAuthPreference::Session => self.session_token.as_ref().or(self.api_token.as_ref()),
+            SearchAuthPreference::Session => {
+                self.session_token.as_ref().or(self.api_token.as_ref())
+            }
             SearchAuthPreference::Api => self.api_token.as_ref().or(self.session_token.as_ref()),
         }
     }
@@ -545,9 +547,7 @@ mod tests {
             .transpose()
             .expect_err("invalid config should fail");
 
-        assert!(error
-            .to_string()
-            .contains("expected `session` or `api`"));
+        assert!(error.to_string().contains("expected `session` or `api`"));
         let _ = fs::remove_file(path);
     }
 

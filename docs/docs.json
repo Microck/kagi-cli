@@ -1,0 +1,134 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "kagi",
+  "theme": "maple",
+  "colors": {
+    "primary": "#ffb319",
+    "light": "#ffc85a",
+    "dark": "#18181a"
+  },
+  "logo": {
+    "light": "/images/kagi-cli-logo-light.svg",
+    "dark": "/images/kagi-cli-logo-dark.svg"
+  },
+  "favicon": "https://litter.catbox.moe/rfjmzn6ddhrg0l0v.png",
+  "seo": {
+    "metatags": {
+      "canonical": "https://kagi.micr.dev"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view"
+    ]
+  },
+  "navigation": {
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/Microck/kagi-cli"
+        },
+        {
+          "anchor": "npm",
+          "href": "https://www.npmjs.com/package/kagi-cli"
+        },
+        {
+          "anchor": "Kagi",
+          "href": "https://kagi.com"
+        }
+      ]
+    },
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "guides/installation",
+              "guides/quickstart",
+              "guides/authentication"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "guides/workflows",
+              "guides/advanced-usage",
+              "guides/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Commands",
+        "groups": [
+          {
+            "group": "Core Commands",
+            "pages": [
+              "commands/search",
+              "commands/auth",
+              "commands/summarize"
+            ]
+          },
+          {
+            "group": "Content & Feeds",
+            "pages": [
+              "commands/news",
+              "commands/smallweb"
+            ]
+          },
+          {
+            "group": "AI & Enrichment",
+            "pages": [
+              "commands/assistant",
+              "commands/fastgpt",
+              "commands/enrich"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Authentication & Security",
+            "pages": [
+              "reference/auth-matrix"
+            ]
+          },
+          {
+            "group": "Technical Reference",
+            "pages": [
+              "reference/output-contract",
+              "reference/error-reference",
+              "reference/coverage"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Project",
+        "groups": [
+          {
+            "group": "Development",
+            "pages": [
+              "project/development",
+              "project/demos"
+            ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "project/support",
+              "project/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

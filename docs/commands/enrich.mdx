@@ -1,0 +1,179 @@
+---
+title: "enrich"
+description: "Complete reference for *kagi* enrich command - query Kagi's enrichment indexes for web and news."
+---
+
+# `kagi enrich`
+
+Query Kagi's enrichment indexes (Teclis for web, TinyGem for news) for enhanced search capabilities.
+
+## Synopsis
+
+```bash
+kagi enrich <SUBCOMMAND> [OPTIONS]
+```
+
+## Description
+
+The `kagi enrich` command provides access to Kagi's specialized enrichment APIs:
+
+- **Teclis** - Web enrichment index
+- **TinyGem** - News enrichment index
+
+These endpoints provide enhanced search capabilities beyond standard search, offering additional context and metadata.
+
+## Authentication
+
+**Required:** `KAGI_API_TOKEN`
+
+Enrichment APIs require API access and consume API credit.
+
+## Subcommands
+
+### `enrich web`
+
+Query the Teclis web enrichment index.
+
+**Example:**
+```bash
+kagi enrich web "artificial intelligence"
+```
+
+### `enrich news`
+
+Query the TinyGem news enrichment index.
+
+**Example:**
+```bash
+kagi enrich news "climate change"
+```
+
+## Options
+
+### `<QUERY>` (Required)
+
+The search query for the enrichment index.
+
+**Example:**
+```bash
+kagi enrich web "machine learning frameworks"
+kagi enrich news "tech industry layoffs"
+```
+
+## Output Format
+
+### Web Enrichment Output
+
+```json
+{
+  "meta": {
+    "id": "req-123",
+    "node": "us-east",
+    "ms": 120
+  },
+  "data": [
+    {
+      "title": "Result Title",
+      "url": "https://example.com",
+      "snippet": "Description...",
+      "published": "2024-03-15T10:30:00Z",
+      "domain": "example.com"
+    }
+  ]
+}
+```
+
+### News Enrichment Output
+
+```json
+{
+  "meta": {
+    "id": "req-456",
+    "node": "us-east",
+    "ms": 140
+  },
+  "data": [
+    {
+      "title": "News Headline",
+      "url": "https://news.example.com/story",
+      "snippet": "Article summary...",
+      "published": "2024-03-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+## Examples
+
+### Web Enrichment
+
+```bash
+# Search web enrichment
+kagi enrich web "python web frameworks"
+
+# Process results
+kagi enrich web "cloud computing" | jq -r '.data[].url'
+
+# Filter by domain
+kagi enrich web "kubernetes" | jq '.data | map(select(.domain == "kubernetes.io"))'
+```
+
+### News Enrichment
+
+```bash
+# Search news enrichment
+kagi enrich news "artificial intelligence"
+
+# Get recent news on topic
+kagi enrich news "cryptocurrency regulation" | jq -r '.data[0:5] | .[].title'
+
+# Filter by date
+kagi enrich news "tech layoffs" | jq '.data | map(select(.published > "2024-01-01"))'
+```
+
+### Research Workflow
+
+```bash
+#!/bin/bash
+# Research a topic using both indexes
+
+TOPIC="$1"
+[ -z "$TOPIC" ] && { echo "Usage: research.sh <topic>"; exit 1; }
+
+echo "🔍 Researching: $TOPIC"
+echo ""
+
+echo "Web Resources:"
+kagi enrich web "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+
+echo ""
+echo "News Coverage:"
+kagi enrich news "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+```
+
+## Comparison with Standard Search
+
+| Feature | `kagi search` | `kagi enrich web` |
+|---------|---------------|-------------------|
+| **Token** | API or Session | API only |
+| **Index** | General search | Teclis enrichment |
+| **Focus** | Broad results | Enhanced metadata |
+| **Cost** | Varies | API credit |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error |
+
+**Common errors:**
+- Missing API token
+- Insufficient credit
+- Rate limiting
+
+## See Also
+
+- [search](/commands/search) - General search
+- [news](/commands/news) - Kagi News feed
+- [Authentication](/guides/authentication) - API token setup

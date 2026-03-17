@@ -1,0 +1,433 @@
+---
+title: "auth"
+description: "Complete reference for *kagi* auth command - credential management, validation, and configuration."
+---
+
+# `kagi auth`
+
+Manage authentication credentials for the *kagi* CLI. This command allows you to view, set, and validate your API and session tokens.
+
+## Synopsis
+
+```bash
+kagi auth <SUBCOMMAND> [OPTIONS]
+```
+
+## Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `status` | Display current credential configuration |
+| `check` | Validate credentials by testing authentication |
+| `set` | Save credentials to configuration file |
+
+## Description
+
+The `kagi auth` command group manages your authentication state. Unlike most CLI tools that simply fail when credentials are missing, *kagi* provides detailed visibility into which credentials are configured, where they come from, and whether they're valid.
+
+### Credential Sources
+
+The CLI checks credentials in this order:
+
+1. **Environment variables** - `KAGI_API_TOKEN`, `KAGI_SESSION_TOKEN`
+2. **Configuration file** - `./.kagi.toml`
+
+The first source found wins, allowing you to override file configuration with environment variables.
+
+## `kagi auth status`
+
+Display the current credential configuration without testing validity.
+
+### Synopsis
+
+```bash
+kagi auth status
+```
+
+### Description
+
+Shows which credentials are configured and their sources. This is a read-only operation that does not validate tokens or make network requests.
+
+### Output Examples
+
+**No credentials configured:**
+```
+selected: none
+api token: not configured
+session token: not configured
+config path: .kagi.toml
+```
+
+**Session token only (from config file):**
+```
+selected: session-token (config)
+api token: not configured
+session token: configured via config
+config path: .kagi.toml
+```
+
+**API token only (from environment):**
+```
+selected: api-token (env)
+api token: configured via env
+session token: not configured
+config path: .kagi.toml
+```
+
+**Both tokens (mixed sources):**
+```
+selected: api-token (env)
+api token: configured via env
+session token: configured via config
+config path: .kagi.toml
+```
+
+**Session token only (from environment):**
+```
+selected: session-token (env)
+api token: not configured
+session token: configured via env
+config path: .kagi.toml
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Always succeeds (informational command) |
+
+## `kagi auth check`
+
+Validate configured credentials by attempting an authenticated operation.
+
+### Synopsis
+
+```bash
+kagi auth check
+```
+
+### Description
+
+Tests that your configured credentials actually work by attempting a search operation. This command is intentionally strict and does not use the base-search fallback behavior.
+
+**Important:** Unlike the `search` command which can fall back between API and session tokens, `auth check` tests the primary credential only. This ensures you get an accurate picture of which specific token is working.
+
+### Output Examples
+
+**Session token valid:**
+```
+auth check passed: session-token (config)
+```
+
+**API token valid:**
+```
+auth check passed: api-token (env)
+```
+
+**Invalid or missing token:**
+```
+Error: Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env), or add [auth] api_token/session_token to .kagi.toml
+```
+
+**Invalid token:**
+```
+Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden
+```
+
+### What It Tests
+
+1. Loads credentials using standard precedence rules
+2. Selects primary credential based on availability
+3. Attempts a test search with that credential
+4. Reports success and credential type
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Credentials are valid and working |
+| 1 | Credentials missing, invalid, or rejected |
+
+### When to Use
+
+- After setting up credentials to verify they work
+- When debugging authentication issues
+- Before running automated scripts to ensure auth is ready
+- After rotating tokens to confirm new ones work
+
+## `kagi auth set`
+
+Save credentials to the configuration file.
+
+### Synopsis
+
+```bash
+kagi auth set [OPTIONS]
+```
+
+### Options
+
+#### `--session-token <TOKEN>`
+
+Set the Kagi Session Token.
+
+**Accepts:**
+- Full Session Link URL: `https://kagi.com/search?token=abc123...`
+- Raw token value: `abc123...`
+
+**Example:**
+```bash
+# With full URL (recommended)
+kagi auth set --session-token 'https://kagi.com/search?token=abc123def456'
+
+# With raw token
+kagi auth set --session-token 'abc123def456'
+```
+
+#### `--api-token <TOKEN>`
+
+Set the Kagi API Token.
+
+**Accepts:** Raw API token string
+
+**Example:**
+```bash
+kagi auth set --api-token 'your_api_token_here'
+```
+
+### Description
+
+Saves the provided credentials to `./.kagi.toml`. You can set one or both tokens in a single command.
+
+### Behavior
+
+- Creates `./.kagi.toml` if it doesn't exist
+- Updates existing tokens if already present
+- Extracts token from full Session Link URL automatically
+- Saves to the current working directory
+
+### Output Examples
+
+**Set session token:**
+```
+saved credentials to .kagi.toml
+selected: session-token (config)
+api token: not configured
+session token: configured via config
+```
+
+**Set both tokens:**
+```
+saved credentials to .kagi.toml
+selected: api-token (config)
+api token: configured via config
+session token: configured via config
+```
+
+**Update existing:**
+```
+saved credentials to .kagi.toml
+selected: api-token (config)
+api token: configured via config
+session token: configured via config
+```
+
+### File Location
+
+- `./.kagi.toml` in the current working directory
+
+### File Format
+
+The configuration file is TOML format:
+
+```toml
+[auth]
+api_token = "your_api_token"
+  session_token = "your_session_token"
+```
+
+**Security note:** The file should have restrictive permissions (600 on Unix systems) to prevent other users from reading your tokens.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Credentials saved successfully |
+| 1 | Error writing configuration file |
+
+## Common Workflows
+
+### Initial Setup
+
+```bash
+# 1. Set your session token
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# 2. Verify it was saved
+kagi auth status
+
+# 3. Test that it works
+kagi auth check
+
+# 4. Try a command
+kagi search --pretty "test"
+```
+
+### Adding API Token Later
+
+```bash
+# You already have session token, now add API token
+kagi auth set --api-token 'your_api_token'
+
+# Verify both are configured
+kagi auth status
+```
+
+### Updating Tokens
+
+```bash
+# Update just the session token (API token stays the same)
+kagi auth set --session-token 'https://kagi.com/search?token=NEW_TOKEN'
+
+# Update just the API token
+kagi auth set --api-token 'new_api_token'
+
+# Update both
+kagi auth set --session-token 'NEW_SESSION' --api-token 'NEW_API'
+```
+
+### Environment Override
+
+```bash
+# File has default credentials
+cat ./.kagi.toml
+# [auth]
+# session_token = "default_token"
+
+# Override with environment for this session
+export KAGI_SESSION_TOKEN='special_token'
+
+# Check - shows "env" source
+kagi auth status
+# session token: configured via env
+
+# Unset to revert to file
+unset KAGI_SESSION_TOKEN
+kagi auth status
+# session token: configured via config
+```
+
+### Debugging Authentication
+
+```bash
+# Step 1: Check what's configured
+kagi auth status
+
+# Step 2: Test if it works
+kagi auth check
+
+# Step 3: If check fails, verify token in Kagi settings
+# Step 4: Try setting again
+kagi auth set --session-token 'https://kagi.com/search?token=REFRESHED_TOKEN'
+
+# Step 5: Verify again
+kagi auth check
+```
+
+## Security Considerations
+
+### Token Storage
+
+- Tokens are stored in plain text in `./.kagi.toml`
+- Set file permissions to 600 (readable only by owner):
+  ```bash
+  chmod 600 ./.kagi.toml
+  ```
+- Don't commit this file to version control
+- Add `.kagi.toml` to your `.gitignore`
+
+### Token Visibility
+
+- `auth status` shows that tokens exist but doesn't display their values
+- `auth check` tests tokens without displaying them
+- Environment variables may be visible in process lists
+
+### Rotation
+
+When rotating tokens:
+
+1. Generate new token in Kagi settings
+2. Set new token: `kagi auth set --session-token 'NEW_TOKEN'`
+3. Verify: `kagi auth check`
+4. Revoke old token in Kagi settings
+
+## Exit Codes Summary
+
+| Subcommand | Success | Error |
+|------------|---------|-------|
+| `auth status` | 0 | 0 (always succeeds) |
+| `auth check` | 0 | 1 |
+| `auth set` | 0 | 1 |
+
+## Troubleshooting
+
+### "Config file not found"
+
+Normal if you haven't run `auth set` yet. Set your tokens to create it.
+
+### "Permission denied" when setting
+
+```bash
+# Create directory if needed
+touch ./.kagi.toml
+chmod 600 ./.kagi.toml
+
+# Now try again
+kagi auth set --session-token '...'
+```
+
+### Changes not taking effect
+
+Remember environment variables override the config file:
+
+```bash
+# Check if env var is set
+env | grep KAGI
+
+# Unset if needed
+unset KAGI_SESSION_TOKEN
+unset KAGI_API_TOKEN
+```
+
+## Comparison with Manual Configuration
+
+You can also edit `./.kagi.toml` directly:
+
+```bash
+# Via auth set (recommended)
+kagi auth set --session-token 'token'
+
+# Or manual edit
+cat > ./.kagi.toml << 'EOF'
+[auth]
+session_token = "token"
+EOF
+```
+
+Both methods work. The `auth set` command:
+- Validates the format
+- Sets proper file permissions
+- Provides confirmation output
+- Is less error-prone
+
+## Related Commands
+
+- `kagi search` - Uses authentication for search
+- `kagi summarize` - Uses authentication for summarization
+- `kagi assistant` - Requires session token
+
+## See Also
+
+- [Authentication Guide](/guides/authentication) - Complete auth walkthrough
+- [Troubleshooting](/guides/troubleshooting) - Auth debugging help
+- [Auth Matrix](/reference/auth-matrix) - Which commands need which tokens

@@ -1,0 +1,770 @@
+---
+title: "Troubleshooting"
+description: "Common issues, error messages, debugging techniques, and solutions for *kagi* CLI problems."
+---
+
+# Troubleshooting Guide
+
+This guide helps you diagnose and resolve common issues with the *kagi* CLI. It's organized by symptom and error message for quick reference.
+
+## Quick Diagnostic Steps
+
+When encountering any issue, follow these steps first:
+
+1. **Check version:** `kagi --version`
+2. **Verify installation:** `kagi --help`
+3. **Test unauthenticated:** `kagi news --limit 1`
+4. **Check auth status:** `kagi auth status`
+5. **Validate credentials:** `kagi auth check`
+
+## Installation Issues
+
+### "command not found" or "*kagi* is not recognized"
+
+**Symptoms:**
+- Shell reports `kagi: command not found`
+- PowerShell reports `kagi : The term '*kagi*' is not recognized`
+
+**Causes:**
+- Binary not in PATH
+- Shell not reloaded after installation
+- Installation didn't complete
+
+**Solutions:**
+
+**1. Find the binary:**
+
+```bash
+# macOS/Linux
+which kagi || find ~ -name "kagi" -type f 2>/dev/null
+
+# Windows PowerShell
+Get-ChildItem -Recurse -Filter "kagi.exe" -ErrorAction SilentlyContinue
+```
+
+**2. Check if directory is in PATH:**
+
+```bash
+# macOS/Linux
+echo $PATH | tr ':' '\n' | grep -E '(local|bin)'
+
+# Windows PowerShell
+$env:PATH -split ';' | Select-String 'kagi'
+```
+
+**3. Add to PATH manually:**
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+
+# Reload
+source ~/.bashrc  # or ~/.zshrc
+```
+
+**4. Open new terminal window** (simplest solution for PATH issues)
+
+### Permission Denied (macOS/Linux)
+
+**Symptoms:**
+- `bash: /path/to/*kagi*: Permission denied`
+
+**Solutions:**
+
+```bash
+# Make executable
+chmod +x ~/.local/bin/kagi
+
+# Or reinstall via script which sets permissions automatically
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
+```
+
+### Windows Defender / SmartScreen Blocks Installation
+
+**Symptoms:**
+- "Windows protected your PC" dialog
+- "Unknown publisher" warning
+
+**Solutions:**
+
+1. Click "More info"
+2. Click "Run anyway"
+3. Consider adding exclusion for the *kagi* directory
+4. Or use npm install as alternative: `npm install -g kagi-cli`
+
+### Installation Script Fails
+
+**Symptoms:**
+- Script exits with error
+- "curl: (6) Could not resolve host"
+
+**Causes & Solutions:**
+
+**Network issues:**
+```bash
+# Check connectivity
+ping github.com
+
+# Try with explicit DNS
+curl --resolve raw.githubusercontent.com:443:185.199.108.133 \
+  -fsSL https://raw.githubusercontent.com/... | sh
+```
+
+**Corporate proxy:**
+```bash
+# Set proxy for curl
+export HTTPS_PROXY=http://proxy.company.com:8080
+curl -fsSL https://raw.githubusercontent.com/... | sh
+```
+
+**Download and run manually:**
+```bash
+# Download script
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh -o install-kagi.sh
+
+# Inspect (optional)
+cat install-kagi.sh
+
+# Run
+sh install-kagi.sh
+```
+
+## Authentication Issues
+
+### "missing credentials" Error
+
+**Symptoms:**
+```
+Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env), or add [auth] api_token/session_token to .kagi.toml
+```
+
+**Diagnostic:**
+
+```bash
+# Check current status
+kagi auth status
+
+# Verify environment variable is set
+echo $KAGI_SESSION_TOKEN
+echo $KAGI_API_TOKEN
+
+# Check for typos in variable name
+env | grep KAGI
+```
+
+**Solutions:**
+
+**1. Set via environment variable:**
+
+```bash
+export KAGI_SESSION_TOKEN='https://kagi.com/search?token=YOUR_TOKEN'
+
+# Verify
+kagi auth check
+```
+
+**2. Set via config file:**
+
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# Or manually
+cat > ./.kagi.toml << 'EOF'
+[auth]
+session_token = "https://kagi.com/search?token=YOUR_TOKEN"
+EOF
+```
+
+**3. Common mistakes to check:**
+- Variable name is `KAGI_SESSION_TOKEN` not `KAGI_TOKEN`
+- Using `export` not just assignment
+- No extra spaces around `=` in export
+- Token is complete (not truncated)
+
+### "auth check failed" Error
+
+**Symptoms:**
+```
+Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden
+```
+
+**Causes:**
+1. Token is invalid or expired
+2. Token was revoked
+3. Account doesn't have required access
+4. Rate limit exceeded
+
+**Solutions:**
+
+**1. Verify token in Kagi settings:**
+- Log into kagi.com
+- Check Settings → Account (for session token)
+- Check Settings → API (for API token)
+- Ensure token hasn't been regenerated
+
+**2. Regenerate if needed:**
+- Generate new token in Kagi settings
+- Update your configuration
+- Test: `kagi auth check`
+
+**3. Check account status:**
+- Verify subscription is active (for session token)
+- Verify API credit is available (for API token)
+
+### "this command requires KAGI_API_TOKEN"
+
+**Symptoms:**
+```
+Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_token])
+```
+
+**Cause:** Trying to use paid API commands without API token
+
+**Solution:**
+
+```bash
+# Add API token
+kagi auth set --api-token 'your_api_token'
+
+# Or use environment variable
+export KAGI_API_TOKEN='your_api_token'
+```
+
+**Note:** API access is separate from your Kagi subscription and requires available credit.
+
+### Environment Variable Not Being Used
+
+**Symptoms:**
+- Set env var but `kagi auth status` shows "not configured"
+- Config file values overriding env vars (opposite of expected)
+
+**Diagnostic:**
+
+```bash
+# Check if variable is actually set
+env | grep KAGI
+
+# Check if exported
+export -p | grep KAGI
+
+# Try explicit command
+KAGI_SESSION_TOKEN='token' kagi auth status
+```
+
+**Common Causes:**
+
+**1. Not exported:**
+```bash
+# Wrong - just sets in current shell
+KAGI_SESSION_TOKEN='token'
+
+# Right - exports to environment
+export KAGI_SESSION_TOKEN='token'
+```
+
+**2. Subshell doesn't inherit:**
+```bash
+# Wrong - subshell doesn't see it
+export KAGI_SESSION_TOKEN='token'
+bash -c 'kagi auth status'
+
+# Right - pass explicitly
+bash -c 'kagi auth status'  # won't work
+KAGI_SESSION_TOKEN='token' bash -c 'kagi auth status'  # works
+```
+
+**3. Already set to empty:**
+```bash
+# Unset first if having issues
+unset KAGI_SESSION_TOKEN
+unset KAGI_API_TOKEN
+
+# Then set fresh
+export KAGI_SESSION_TOKEN='token'
+```
+
+### Session Link URL Not Working
+
+**Symptoms:**
+- "Invalid token format" error
+- Authentication fails with session token
+
+**Solution:**
+
+The CLI accepts both formats:
+
+```bash
+# Full URL (recommended)
+kagi auth set --session-token 'https://kagi.com/search?token=abc123def456'
+
+# Just the token
+kagi auth set --session-token 'abc123def456'
+```
+
+**Check URL format:**
+```bash
+# Should contain 'token='
+echo 'https://kagi.com/search?token=abc123' | grep -o 'token=[^&]*'
+```
+
+## Command Execution Issues
+
+### "No results found" or Empty Output
+
+**Symptoms:**
+- Command runs but returns empty data array
+- JSON shows `{ "data": [] }`
+
+**Causes & Solutions:**
+
+**1. Query is too specific:**
+```bash
+# Try broader search
+kagi search "python"  # instead of "python 3.12.1 specific error on macOS"
+```
+
+**2. Rate limiting:**
+- Wait a few minutes
+- Reduce request frequency
+- Check if using both tokens (fallback can help)
+
+**3. Network issues:**
+```bash
+# Test connectivity
+curl -I https://kagi.com
+
+# Try with timeout
+kagi search "test"  # should fail fast if network issue
+```
+
+### JSON Parse Errors
+
+**Symptoms:**
+```
+Error: failed to serialize search response
+```
+
+**Causes:**
+1. Unexpected API response format
+2. Binary version incompatible with API
+3. Corrupted output
+
+**Solutions:**
+
+**1. Update *kagi*:**
+```bash
+# Check current version
+kagi --version
+
+# Update to latest
+curl -fsSL https://raw.githubusercontent.com/Microck/kagi-cli/main/scripts/install.sh | sh
+```
+
+**2. Test raw output:**
+```bash
+# Check if output is valid JSON
+kagi search "test" | jq . > /dev/null && echo "Valid JSON"
+
+# If that fails, check what's happening
+kagi search "test" 2>&1 | head -20
+```
+
+**3. Clear any intermediaries:**
+```bash
+# If using pipes, test direct output
+kagi search "test" > /tmp/test.json
+cat /tmp/test.json | jq .
+```
+
+### Slow Response Times
+
+**Symptoms:**
+- Commands take 10+ seconds to complete
+- Timeout errors
+
+**Causes & Solutions:**
+
+**1. Network latency:**
+```bash
+# Test connection speed
+ping kagi.com
+
+# Try different DNS
+echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf
+```
+
+**2. Fallback behavior:**
+- Base search tries API first, then falls back
+- If API is slow/down, fallback adds delay
+- Set explicit token to skip fallback
+
+**3. Rate limiting backoff:**
+- After many requests, service may slow responses
+- Add delays between requests: `sleep 1`
+
+### Command Hangs / No Output
+
+**Symptoms:**
+- Command starts but never completes
+- No output, no error
+
+**Diagnostic:**
+
+```bash
+# Run with timeout
+timeout 30 kagi search "test"
+
+# Check if process is stuck
+ps aux | grep kagi
+
+# Check network connections
+netstat -an | grep 443
+```
+
+**Solutions:**
+
+**1. Interrupt and retry:**
+```bash
+# Ctrl+C to cancel, then retry
+kagi search "test"
+```
+
+**2. Check network:**
+```bash
+# Verify DNS resolves
+nslookup kagi.com
+
+# Test HTTPS
+openssl s_client -connect kagi.com:443
+```
+
+**3. Try different command:**
+```bash
+# Test with simple command
+kagi news --limit 1
+```
+
+## Platform-Specific Issues
+
+### macOS: "Cannot be opened because the developer cannot be verified"
+
+**Symptoms:**
+- Gatekeeper blocks execution
+- "macOS cannot verify that this app is free from malware"
+
+**Solutions:**
+
+**1. Override for this instance:**
+- Go to System Preferences → Security & Privacy → General
+- Click "Allow Anyway"
+- Re-run command
+
+**2. Remove quarantine attribute:**
+```bash
+xattr -d com.apple.quarantine $(which kagi)
+```
+
+**3. Disable Gatekeeper (not recommended):**
+```bash
+sudo spctl --master-disable
+# Re-enable after: sudo spctl --master-enable
+```
+
+### Linux: "No such file or directory" despite file existing
+
+**Symptoms:**
+- `ls` shows file exists
+- Running it gives "No such file or directory"
+
+**Cause:** Missing dynamic libraries or incompatible binary
+
+**Solutions:**
+
+**1. Check library dependencies:**
+```bash
+ldd $(which kagi)
+
+# Look for "not found" entries
+```
+
+**2. Use musl build (static):**
+```bash
+# Download musl version instead of gnu
+wget https://github.com/Microck/kagi-cli/releases/download/.../kagi-x86_64-unknown-linux-musl.tar.gz
+```
+
+**3. Install missing libraries:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y libssl-dev
+
+# CentOS/RHEL
+sudo yum install -y openssl-devel
+```
+
+### Windows: PowerShell Execution Policy
+
+**Symptoms:**
+```
+cannot be loaded because running scripts is disabled on this system
+```
+
+**Solution:**
+
+```powershell
+# Check current policy
+Get-ExecutionPolicy
+
+# Set to allow signed scripts (recommended)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Or bypass for this session (temporary)
+powershell -ExecutionPolicy Bypass -File script.ps1
+```
+
+## Network and Connectivity Issues
+
+### Corporate Proxy / Firewall
+
+**Symptoms:**
+- Commands fail with network errors
+- Works on home network but not office network
+
+**Solutions:**
+
+**1. Configure proxy:**
+
+```bash
+# Set proxy environment variables
+export HTTPS_PROXY=http://proxy.company.com:8080
+export HTTP_PROXY=http://proxy.company.com:8080
+
+# Or specific to kagi
+export https_proxy=http://proxy.company.com:8080
+```
+
+**2. Use package manager install:**
+Package managers often respect system proxy settings better than curl downloads.
+
+**3. Manual download:**
+Download release asset via browser, then install manually.
+
+### DNS Resolution Failures
+
+**Symptoms:**
+- "Could not resolve host: kagi.com"
+- Works with IP but not hostname
+
+**Solutions:**
+
+```bash
+# Test DNS
+nslookup kagi.com
+dig kagi.com
+
+# Use public DNS temporarily
+echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf
+
+# Or in /etc/hosts (temporary)
+echo '52.223.21.130 kagi.com' | sudo tee -a /etc/hosts
+```
+
+### TLS / Certificate Errors
+
+**Symptoms:**
+- SSL certificate verification failed
+- TLS handshake errors
+
+**Solutions:**
+
+**1. Update CA certificates:**
+```bash
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y ca-certificates
+
+# macOS
+brew install ca-certificates
+
+# Update system certificates
+sudo update-ca-certificates
+```
+
+**2. Check system time:**
+```bash
+# TLS requires correct time
+date
+
+# Sync time
+sudo ntpdate pool.ntp.org
+```
+
+## Performance Issues
+
+### High Memory Usage
+
+**Symptoms:**
+- *kagi* process uses excessive memory
+- System slows down when using *kagi*
+
+**Causes & Solutions:**
+
+**1. Large result sets:**
+```bash
+# Limit results
+kagi news --limit 5  # instead of --limit 100
+```
+
+**2. Piping large data:**
+```bash
+# Avoid loading entire results into memory
+kagi search "test" | jq -r '.data[0:5]'  # limit early
+```
+
+### Binary Size Concerns
+
+The *kagi* binary is self-contained and includes:
+- Rust runtime
+- TLS certificates
+- HTTP client libraries
+
+This makes it larger than simple scripts but ensures it works everywhere without dependencies.
+
+**Size comparison:**
+- *kagi* binary: ~5-10 MB
+- Equivalent Python + requests: ~50+ MB installed
+
+## Debugging Techniques
+
+### Enable Verbose Output
+
+While *kagi* doesn't have a `--verbose` flag, you can debug:
+
+```bash
+# Check what's being sent
+curl -v https://kagi.com/...  # test endpoints directly
+
+# Monitor network
+sudo tcpdump -i any host kagi.com
+
+# Trace execution
+strace -f kagi search "test" 2>&1 | grep -E '(connect|send|recv)'
+```
+
+### Test Authentication Directly
+
+```bash
+# Test session token
+curl -H "Authorization: Bearer $KAGI_SESSION_TOKEN" \
+  https://kagi.com/api/...  # endpoint varies
+
+# Test API token
+curl -H "Authorization: Bearer $KAGI_API_TOKEN" \
+  https://kagi.com/api/...
+```
+
+### Isolate Issues
+
+**Test components separately:**
+
+```bash
+# 1. Binary works?
+kagi --help
+
+# 2. Auth configured?
+kagi auth status
+
+# 3. Auth valid?
+kagi auth check
+
+# 4. Unauthenticated commands work?
+kagi news --limit 1
+
+# 5. Session commands work?
+kagi search "test"
+
+# 6. API commands work?
+kagi fastgpt "test"
+```
+
+### Collect Debug Information
+
+When reporting issues, include:
+
+```bash
+# System info
+uname -a
+kagi --version
+
+# Auth status (redact tokens!)
+kagi auth status | sed 's/token=.*/token=REDACTED/'
+
+# Test commands
+echo "=== Test 1: Help ==="
+kagi --help
+echo "=== Test 2: News ==="
+kagi news --limit 1
+echo "=== Test 3: Auth ==="
+kagi auth check 2>&1 || echo "Auth check failed"
+```
+
+## Error Reference Quick Guide
+
+| Error Message | Likely Cause | Solution |
+|--------------|--------------|----------|
+| `command not found` | Not in PATH | Reload shell or add to PATH |
+| `Permission denied` | Not executable | `chmod +x *kagi*` |
+| `missing credentials` | No token set | Set KAGI_SESSION_TOKEN or KAGI_API_TOKEN |
+| `auth check failed` | Invalid token | Regenerate token in Kagi settings |
+| `403 Forbidden` | Auth issue | Check token validity |
+| `No results found` | Empty query result | Try different query |
+| `failed to serialize` | Version/API mismatch | Update *kagi* CLI |
+
+## Getting Help
+
+If you've tried the solutions above and still have issues:
+
+1. **Check GitHub Issues:** [github.com/Microck/kagi-cli/issues](https://github.com/Microck/kagi-cli/issues)
+2. **Search existing issues** for your error message
+3. **Create a new issue** with:
+   - *kagi* version (`kagi --version`)
+   - Operating system and version
+   - Installation method
+   - Complete error message
+   - Steps to reproduce
+   - Debug output (with tokens redacted)
+
+## Common Gotchas
+
+### Token Confusion
+
+- **Session Token**: For subscriber features (lens, assistant)
+- **API Token**: For paid API (fastgpt, summarize, enrich)
+- Both can exist, different commands need different ones
+
+### Variable Name Typos
+
+- `KAGI_SESSION_TOKEN` ✓
+- `KAGI_SESSON_TOKEN` ✗
+- `KAGI_API_TOKEN` ✓
+- `KAGI_APITOKEN` ✗
+
+### Config File Location
+
+- Repo checkout: `./.kagi.toml`
+
+### Shell Syntax
+
+```bash
+# Right
+export KAGI_SESSION_TOKEN='token'
+
+# Wrong - spaces around =
+export KAGI_SESSION_TOKEN = 'token'
+
+# Wrong - missing export
+KAGI_SESSION_TOKEN='token'
+```
+
+---
+
+*Still stuck? Check the [GitHub Issues](https://github.com/Microck/kagi-cli/issues) or [Discussions](https://github.com/Microck/kagi-cli/discussions).*

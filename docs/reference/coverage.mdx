@@ -1,0 +1,248 @@
+---
+title: "API and Product Coverage"
+description: "Complete reference of what APIs and product features are implemented today and what is intentionally unavailable."
+---
+
+# API and Product Coverage
+
+This document summarizes what the *kagi* CLI implements today and what is intentionally unavailable.
+
+## Currently Implemented
+
+### Documented Kagi APIs
+
+These are official, documented API endpoints:
+
+| Endpoint | Command | Status |
+|----------|---------|--------|
+| Search API | `kagi search` | ✅ Implemented (with fallback) |
+| Universal Summarizer | `kagi summarize` | ✅ Implemented |
+| FastGPT | `kagi fastgpt` | ✅ Implemented |
+| Web Enrichment (Teclis) | `kagi enrich web` | ✅ Implemented |
+| News Enrichment (TinyGem) | `kagi enrich news` | ✅ Implemented |
+
+### Subscriber Web Product Features
+
+These features use the subscriber web product (Session Token):
+
+| Feature | Command | Status |
+|---------|---------|--------|
+| Base Search | `kagi search` | ✅ Implemented (session path) |
+| Lens Search | `kagi search --lens` | ✅ Implemented |
+| Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
+| Assistant | `kagi assistant` | ✅ Implemented |
+
+### Public Product Endpoints
+
+These require no authentication:
+
+| Endpoint | Command | Status |
+|----------|---------|--------|
+| Kagi News | `kagi news` | ✅ Implemented |
+| Small Web Feed | `kagi smallweb` | ✅ Implemented |
+| News Categories | `kagi news --list-categories` | ✅ Implemented |
+| Chaos Index | `kagi news --chaos` | ✅ Implemented |
+
+## Implementation Status Summary
+
+### Commands
+
+| Command | Description | Auth | Status |
+|---------|-------------|------|--------|
+| `search` | Kagi search | API/Session | ✅ |
+| `search --lens` | Lens search | Session | ✅ |
+| `auth` | Credential management | None | ✅ |
+| `summarize` | Public API summarizer | API | ✅ |
+| `summarize --subscriber` | Web summarizer | Session | ✅ |
+| `news` | News feed | None | ✅ |
+| `assistant` | AI assistant | Session | ✅ |
+| `fastgpt` | Fast answers | API | ✅ |
+| `enrich web` | Web enrichment | API | ✅ |
+| `enrich news` | News enrichment | API | ✅ |
+| `smallweb` | Small web feed | None | ✅ |
+
+### Command Options
+
+| Option | Commands | Status |
+|--------|----------|--------|
+| `--pretty` | search | ✅ |
+| `--lens` | search | ✅ |
+| `--limit` | news, smallweb | ✅ |
+| `--category` | news | ✅ |
+| `--list-categories` | news | ✅ |
+| `--chaos` | news | ✅ |
+| `--url` | summarize | ✅ |
+| `--text` | summarize | ✅ |
+| `--subscriber` | summarize | ✅ |
+| `--length` | summarize (subscriber) | ✅ |
+| `--summary-type` | summarize (subscriber) | ✅ |
+| `--engine` | summarize (API) | ✅ |
+| `--cache` | summarize (API), fastgpt | ✅ |
+| `--web-search` | fastgpt | ✅ |
+| `--target-language` | summarize | ✅ |
+| `--thread-id` | assistant | ✅ |
+
+## Not Available
+
+### Intentionally Excluded
+
+These features were evaluated and left out of the public CLI surface:
+
+#### Translate
+
+**Status:** ❌ Not implemented
+
+**Reason:** The current Session Link implementation is not sufficient for `translate.kagi.com` as deployed. The endpoint requires additional authentication mechanisms that are incompatible with the Session Link token model.
+
+**Decision:** Rather than ship a fragile compatibility layer that might break, the feature is excluded until there is a viable authentication path.
+
+**Alternative:** Use the web interface at [translate.kagi.com](https://translate.kagi.com)
+
+## API Surface Philosophy
+
+### What Gets Implemented
+
+1. **Documented APIs** - Official Kagi API endpoints
+2. **Stable Product Seams** - Web product features with stable interfaces
+3. **Public Endpoints** - No-auth features available to all
+4. **High-Value Features** - Most requested capabilities
+
+### What Gets Deferred
+
+1. **Fragile Interfaces** - Features requiring brittle reverse engineering
+2. **Breaking Changes** - APIs known to be unstable
+3. **Low Demand** - Rarely requested features
+4. **Maintenance Burden** - High-complexity, low-value features
+
+## Authentication Coverage
+
+### Supported Credential Types
+
+| Type | Support | Commands |
+|------|---------|----------|
+| Session Token | ✅ | search, summarize --subscriber, assistant |
+| API Token | ✅ | search, summarize, fastgpt, enrich |
+
+### Authentication Patterns
+
+| Pattern | Implementation |
+|---------|---------------|
+| Single token | ✅ Supported |
+| Dual token | ✅ Supported |
+| Environment variables | ✅ Supported |
+| Config file | ✅ Supported |
+| Token fallback | ✅ search only |
+
+## Output Format Coverage
+
+### JSON Output
+
+All commands output JSON:
+
+| Command | Schema Stability |
+|---------|-----------------|
+| search | Stable |
+| news | Stable |
+| smallweb | Stable |
+| summarize | Stable |
+| assistant | Stable |
+| fastgpt | Stable |
+| enrich | Stable |
+
+### Pretty Output
+
+| Command | Pretty Mode |
+|---------|------------|
+| search | ✅ Yes |
+| news | ❌ No (use jq) |
+| smallweb | ❌ No (use jq) |
+| Others | ❌ JSON only |
+
+## Platform Coverage
+
+### Operating Systems
+
+| Platform | Support |
+|----------|---------|
+| macOS (Intel) | ✅ |
+| macOS (Apple Silicon) | ✅ |
+| Linux (x86_64) | ✅ |
+| Linux (ARM64) | ✅ |
+| Windows (x64) | ✅ |
+| Windows (ARM64) | ✅ |
+
+### Installation Methods
+
+| Method | Support |
+|--------|---------|
+| Install script | ✅ |
+| Homebrew | ✅ |
+| Scoop | ✅ |
+| npm | ✅ |
+| Cargo | ✅ |
+| GitHub Releases | ✅ |
+| Build from source | ✅ |
+
+## Feature Comparison Matrix
+
+### vs Kagi Web Product
+
+| Feature | CLI | Web |
+|---------|-----|-----|
+| Search | ✅ | ✅ |
+| Lens Search | ✅ | ✅ |
+| Assistant | ✅ (basic) | ✅ (full) |
+| Summarizer | ✅ | ✅ |
+| Translate | ❌ | ✅ |
+| Settings | ❌ | ✅ |
+| Billing | ❌ | ✅ |
+
+### vs Kagi API
+
+| Endpoint | CLI | Direct API |
+|----------|-----|-----------|
+| Search | ✅ | ✅ |
+| Summarizer | ✅ | ✅ |
+| FastGPT | ✅ | ✅ |
+| Enrichment | ✅ | ✅ |
+| Requires auth handling | CLI manages | Manual |
+| JSON parsing | CLI does | Manual |
+| Error handling | CLI manages | Manual |
+
+- Document auth requirements
+
+## Roadmap
+
+### Near Term (Next 3 Months)
+
+- Bug fixes and stability improvements
+- Documentation enhancements
+- Platform-specific optimizations
+
+### Medium Term (3-6 Months)
+
+- Additional output formats
+- Enhanced error messages
+- Performance improvements
+
+### Long Term (6+ Months)
+
+- New Kagi API features as available
+- Community-requested enhancements
+- Integration improvements
+
+## Reporting Coverage Issues
+
+If you find:
+- Missing documented features
+- Broken functionality
+- Documentation errors
+
+Please open an issue:
+- [github.com/Microck/kagi-cli/issues](https://github.com/Microck/kagi-cli/issues)
+
+Include:
+- Expected behavior
+- Actual behavior
+- *kagi* version
+- OS/platform

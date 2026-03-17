@@ -1,0 +1,102 @@
+---
+title: "Contributing"
+description: "How to contribute to *kagi* CLI - bug reports, feature requests, documentation improvements, and code contributions."
+---
+
+# Contributing
+
+Thank you for your interest in contributing to *kagi* CLI! This document outlines how you can help improve the project.
+
+## Ways to Contribute
+
+### Report Bugs
+
+If you find a bug, please open an issue on GitHub with:
+
+- Clear description of the problem
+- Steps to reproduce
+- Expected vs actual behavior
+- Your environment (OS, shell, *kagi* version)
+- Any relevant error messages
+
+```bash
+# Include this output in your bug report
+kagi --version
+```
+
+### Request Features
+
+Feature requests are welcome! When proposing new features:
+
+- Explain the use case
+- Describe the desired behavior
+- Consider backward compatibility
+- Be open to discussion and alternatives
+
+### Documentation
+
+Documentation improvements are always appreciated:
+
+- Fix typos or unclear explanations
+- Add examples for complex workflows
+- Improve code comments
+- Update outdated information
+
+### Code Contributions
+
+#### Getting Started
+
+1. Fork the repository
+2. Clone your fork
+3. Build the project (see [Development](/project/development))
+4. Make your changes
+5. Test thoroughly
+6. Submit a pull request
+
+#### Development Setup
+
+```bash
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/kagi-cli.git
+cd kagi-cli
+
+# Build
+cargo build --release
+
+# Run tests
+cargo test -q
+```
+
+#### Code Style
+
+- Follow existing Rust conventions
+- Run `cargo fmt` before committing
+- Address any `cargo clippy` warnings
+- Keep functions focused and small
+- Add tests for new functionality
+
+#### Pull Request Process
+
+1. Update documentation if needed
+2. Add tests for new features
+3. Ensure all tests pass
+4. Update CHANGELOG.md if applicable
+5. Request review from maintainers
+
+## Commit Guidelines
+
+- Use clear, descriptive commit messages
+- Reference issues when applicable
+- Keep commits focused on a single change
+- Prefer present tense ("Add feature" not "Added feature")
+
+## Questions?
+
+- Check existing [documentation](/)
+- Search [existing issues](https://github.com/Microck/kagi-cli/issues)
+- Join discussions in issue threads
+- Reach out via GitHub Discussions
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the same license as the project.

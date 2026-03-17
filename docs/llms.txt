@@ -1,0 +1,38 @@
+# kagi CLI
+
+> Complete documentation for the `kagi` CLI, a Rust-based command-line interface for Kagi search, automation, and structured terminal workflows.
+
+## Guides
+
+- [Introduction](https://kagi.micr.dev/): Complete guide to the *kagi* CLI - a command-line interface for Kagi search, automation, and structured terminal workflows.
+- [Installation](https://kagi.micr.dev/guides/installation): Complete installation guide for *kagi* CLI on macOS, Linux, and Windows including package managers, manual installation, and troubleshooting.
+- [Quickstart](https://kagi.micr.dev/guides/quickstart): Get up and running with *kagi* CLI in minutes - from your first unauthenticated command to full subscriber workflows.
+- [Authentication](https://kagi.micr.dev/guides/authentication): Complete guide to understanding *kagi* CLI authentication - session tokens, API tokens, precedence rules, and security best practices.
+- [Common Workflows](https://kagi.micr.dev/guides/workflows): Practical task-oriented examples for *kagi* CLI - from daily automation to complex research pipelines.
+- [Advanced Usage](https://kagi.micr.dev/guides/advanced-usage): Advanced patterns for scripting, automation, CI/CD integration, and building with *kagi* CLI.
+- [Troubleshooting](https://kagi.micr.dev/guides/troubleshooting): Common issues, error messages, debugging techniques, and solutions for *kagi* CLI problems.
+
+## Commands
+
+- [search](https://kagi.micr.dev/commands/search): Complete reference for *kagi* search command - syntax, flags, authentication, output formats, and real-world examples.
+- [auth](https://kagi.micr.dev/commands/auth): Complete reference for *kagi* auth command - credential management, validation, and configuration.
+- [summarize](https://kagi.micr.dev/commands/summarize): Complete reference for *kagi* summarize command - summarize URLs and text using subscriber or public API modes.
+- [news](https://kagi.micr.dev/commands/news): Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category filtering.
+- [smallweb](https://kagi.micr.dev/commands/smallweb): Complete reference for *kagi* smallweb command - fetch the Kagi Small Web feed of independent websites.
+- [assistant](https://kagi.micr.dev/commands/assistant): Complete reference for *kagi* assistant command - interact with Kagi AI Assistant programmatically.
+- [fastgpt](https://kagi.micr.dev/commands/fastgpt): Complete reference for *kagi* fastgpt command - get quick answers using Kagi's FastGPT API.
+- [enrich](https://kagi.micr.dev/commands/enrich): Complete reference for *kagi* enrich command - query Kagi's enrichment indexes for web and news.
+
+## Reference
+
+- [Auth Matrix](https://kagi.micr.dev/reference/auth-matrix): Complete matrix showing which commands require which authentication tokens and how fallback works.
+- [Output Contract](https://kagi.micr.dev/reference/output-contract): Complete specification of *kagi* CLI output formats - JSON schemas, pretty mode, and error handling.
+- [Error Reference](https://kagi.micr.dev/reference/error-reference): Complete catalog of error messages, their meanings, and solutions.
+- [API and Product Coverage](https://kagi.micr.dev/reference/coverage): Complete reference of what APIs and product features are implemented today and what is intentionally unavailable.
+
+## Project
+
+- [Development](https://kagi.micr.dev/project/development): Build, test, and maintain *kagi* from a source checkout.
+- [Demos](https://kagi.micr.dev/project/demos): Recorded terminal demos and how to regenerate them.
+- [Support and Contribution](https://kagi.micr.dev/project/support): Where to file issues, how to contribute safely, and what not to commit.
+- [Contributing](https://kagi.micr.dev/project/contributing): How to contribute to *kagi* CLI - bug reports, feature requests, documentation improvements, and code contributions.

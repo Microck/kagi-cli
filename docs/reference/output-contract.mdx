@@ -1,0 +1,205 @@
+---
+title: "Output Contract"
+description: "Current output shapes for the kagi CLI, including JSON envelopes, pretty output, and stderr behavior."
+---
+
+# Output Contract
+
+This page documents the current CLI output behavior as implemented in the repo.
+
+## Core Rules
+
+1. Most commands print pretty-formatted JSON to stdout on success.
+2. `kagi search --pretty` is the only command with a non-JSON human-readable mode.
+3. Errors are plain text on stderr and exit with status code `1`.
+4. Output shapes differ by command. There is no single universal response envelope.
+
+## Success Shapes
+
+### `kagi search`
+
+```json
+{
+  "data": [
+    {
+      "t": 0,
+      "rank": 1,
+      "title": "Result Title",
+      "url": "https://example.com",
+      "snippet": "Description...",
+      "published": "2026-03-16T00:00:00Z"
+    }
+  ]
+}
+```
+
+### `kagi summarize`
+
+Public API mode:
+
+```json
+{
+  "meta": {
+    "id": "1",
+    "node": "us-east",
+    "ms": 10
+  },
+  "data": {
+    "output": "summary text",
+    "tokens": 42
+  }
+}
+```
+
+Subscriber mode:
+
+```json
+{
+  "meta": {
+    "version": "202603091651.stage.c128588",
+    "trace": "abc123"
+  },
+  "data": {
+    "thread_id": "thread-1",
+    "state": "done",
+    "output": "summary text",
+    "markdown": "summary text"
+  }
+}
+```
+
+### `kagi news`
+
+```json
+{
+  "latest_batch": {
+    "id": "batch-123",
+    "created_at": "2026-03-16T00:00:00Z"
+  },
+  "category": {
+    "category_id": "tech",
+    "category_name": "Technology"
+  },
+  "stories": [],
+  "total_stories": "20",
+  "domains": [],
+  "read_count": 1234
+}
+```
+
+`kagi news --list-categories` and `kagi news --chaos` return different JSON shapes with category metadata or chaos metadata.
+
+### `kagi assistant`
+
+```json
+{
+  "meta": {
+    "version": "202603091651.stage.c128588",
+    "trace": "trace-123"
+  },
+  "thread": {
+    "id": "thread-1",
+    "title": "Greeting",
+    "created_at": "2026-03-16T06:19:07Z"
+  },
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "created_at": "2026-03-16T06:19:07Z",
+    "state": "done",
+    "prompt": "Hello",
+    "markdown": "Hi"
+  }
+}
+```
+
+### `kagi fastgpt`
+
+```json
+{
+  "meta": {
+    "id": "1",
+    "node": "us-east",
+    "ms": 10
+  },
+  "data": {
+    "output": "answer text",
+    "tokens": 12,
+    "references": []
+  }
+}
+```
+
+### `kagi enrich`
+
+```json
+{
+  "meta": {
+    "id": "1",
+    "node": "us-east",
+    "ms": 10
+  },
+  "data": [
+    {
+      "title": "Result Title",
+      "url": "https://example.com",
+      "snippet": "Description...",
+      "published": "2026-03-16T00:00:00Z"
+    }
+  ]
+}
+```
+
+### `kagi smallweb`
+
+```json
+{
+  "xml": "<?xml version=\"1.0\"?><rss>...</rss>"
+}
+```
+
+## Pretty Search Output
+
+`kagi search --pretty` renders results like this:
+
+```text
+1. Result Title
+   https://example.com
+
+   Description...
+```
+
+If the result set is empty, the CLI prints:
+
+```text
+No results found.
+```
+
+## Error Behavior
+
+Errors are plain text on stderr. Typical examples:
+
+```text
+Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env), or add [auth] api_token/session_token to .kagi.toml
+Auth error: invalid or expired Kagi session token
+Network error: request to Kagi timed out
+```
+
+## jq Examples
+
+```bash
+# Search URLs
+kagi search "rust" | jq -r '.data[].url'
+
+# FastGPT answer text
+kagi fastgpt "What is Rust?" | jq -r '.data.output'
+
+# Assistant markdown reply
+kagi assistant "Hello" | jq -r '.message.markdown'
+
+# Subscriber summary text
+kagi summarize --subscriber --url https://example.com | jq -r '.data.output'
+
+# Small Web raw feed
+kagi smallweb | jq -r '.xml'
+```

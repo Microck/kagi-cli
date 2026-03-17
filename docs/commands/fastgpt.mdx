@@ -1,0 +1,217 @@
+---
+title: "fastgpt"
+description: "Complete reference for *kagi* fastgpt command - get quick answers using Kagi's FastGPT API."
+---
+
+# `kagi fastgpt`
+
+Answer queries using Kagi's FastGPT API for quick, factual responses.
+
+## Synopsis
+
+```bash
+kagi fastgpt [OPTIONS] <QUERY>
+```
+
+## Description
+
+The `kagi fastgpt` command queries Kagi's FastGPT API, which provides quick, factual answers optimized for speed and accuracy. Unlike the Assistant which maintains conversation threads, FastGPT is designed for single-question answering.
+
+**Key characteristics:**
+- Fast response times
+- Factual, concise answers
+- No conversation state
+- API-based (consumes credit)
+
+## Authentication
+
+**Required:** `KAGI_API_TOKEN`
+
+FastGPT requires API access and consumes API credit per request.
+
+## Arguments
+
+### `<QUERY>` (Required)
+
+The question or query to answer.
+
+**Example:**
+```bash
+kagi fastgpt "What is the capital of France?"
+kagi fastgpt "Explain machine learning in simple terms"
+```
+
+## Options
+
+### `--cache <BOOL>`
+
+Enable or disable response caching.
+
+**Values:** `true`, `false`
+**Default:** `true`
+
+When enabled, identical queries may return cached responses for faster results and reduced API usage.
+
+**Example:**
+```bash
+kagi fastgpt "What is Rust?" --cache false
+```
+
+### `--web-search <BOOL>`
+
+Enable web search augmentation.
+
+**Values:** `true`
+**Default:** `true` (web search enabled)
+
+**Note:** Kagi's documentation notes that values other than `true` for `--web-search` are currently unsupported in practice.
+
+## Output Format
+
+```json
+{
+  "meta": {
+    "id": "req-123",
+    "node": "us-east",
+    "ms": 275
+  },
+  "data": {
+    "output": "The answer to your question...",
+    "tokens": 57,
+    "references": []
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `meta` | object | Request metadata from the API |
+| `data.output` | string | FastGPT's answer |
+| `data.tokens` | integer | Token count reported by the API |
+| `data.references` | array | Supporting references when available |
+
+## Examples
+
+### Basic Queries
+
+```bash
+# Factual question
+kagi fastgpt "What is the speed of light?"
+
+# Explanation
+kagi fastgpt "How does photosynthesis work?"
+
+# Comparison
+kagi fastgpt "What's the difference between TCP and UDP?"
+```
+
+### Processing Output
+
+```bash
+# Extract just the answer
+kagi fastgpt "What is Docker?" | jq -r '.data.output'
+
+# Save response
+kagi fastgpt "Explain blockchain" > blockchain-explanation.json
+
+# Use in scripts
+ANSWER=$(kagi fastgpt "What is $TECHNOLOGY?" | jq -r '.data.output')
+echo "Technology: $TECHNOLOGY"
+echo "Explanation: $ANSWER"
+```
+
+### Quick Reference Tool
+
+```bash
+#!/bin/bash
+# quick-answer.sh
+
+TERM="$1"
+[ -z "$TERM" ] && { echo "Usage: quick-answer.sh <term>"; exit 1; }
+
+echo "🔍 Quick answer for: $TERM"
+echo ""
+kagi fastgpt "What is $TERM?" | jq -r '.data.output'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success - answer received |
+| 1 | Error - see stderr |
+
+**Common errors:**
+- Missing API token
+- Insufficient API credit
+- Rate limiting
+- Network error
+
+## Comparison with Assistant
+
+| Feature | FastGPT | Assistant |
+|---------|---------|-----------|
+| **Token** | API | Session |
+| **Speed** | Faster | Slightly slower |
+| **Conversations** | Single query | Threaded |
+| **Cost** | API credit | Included with subscription |
+| **Use case** | Quick facts | Complex discussions |
+
+## When to Use FastGPT
+
+**Good for:**
+- Quick factual questions
+- Simple explanations
+- Single-turn queries
+- Automated workflows
+- Cost-sensitive operations
+
+**Not ideal for:**
+- Multi-turn conversations
+- Complex reasoning chains
+- Context-dependent queries
+- Creative writing
+
+## Best Practices
+
+### Clear Questions
+
+```bash
+# Good - specific
+kagi fastgpt "What are the main differences between Python 2 and Python 3?"
+
+# Less effective - vague
+kagi fastgpt "Python"
+```
+
+### Error Handling
+
+```bash
+if ANSWER=$(kagi fastgpt "Question" 2>/dev/null | jq -r '.data.output'); then
+  echo "Answer: $ANSWER"
+else
+  echo "Failed to get answer - check API credit"
+fi
+```
+
+### Caching Strategy
+
+```bash
+# For frequently asked questions, caching reduces cost
+kagi fastgpt "What is REST?" --cache true
+
+# For time-sensitive queries, disable caching
+kagi fastgpt "What is the current weather in Tokyo?" --cache false
+```
+
+## See Also
+
+- [assistant](/commands/assistant) - Conversational AI
+- [summarize](/commands/summarize) - Content summarization
+- [Authentication](/guides/authentication) - API token setup
+
+---
+
+*Last updated: March 2026*

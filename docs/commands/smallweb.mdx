@@ -1,0 +1,131 @@
+---
+title: "smallweb"
+description: "Complete reference for *kagi* smallweb command - fetch the Kagi Small Web feed of independent websites."
+---
+
+# `kagi smallweb`
+
+Fetch the Kagi Small Web feed - a curated collection of posts from independent websites and personal blogs.
+
+## Synopsis
+
+```bash
+kagi smallweb [OPTIONS]
+```
+
+## Description
+
+The `kagi smallweb` command retrieves the Kagi Small Web feed, which features content from independent websites, personal blogs, and the "small web" - content outside the major platforms and corporate sites.
+
+This command requires no authentication and provides a window into independent web publishing.
+
+## Authentication
+
+**Required:** None
+
+Works immediately after installation, no tokens needed.
+
+## Options
+
+### `--limit <COUNT>`
+
+Number of posts to return.
+
+**Type:** Integer
+**Behavior:** forwarded directly to the Small Web feed endpoint when provided
+
+**Example:**
+```bash
+kagi smallweb --limit 10
+kagi smallweb --limit 50
+```
+
+## Output Format
+
+```json
+{
+  "xml": "<?xml version=\"1.0\"?><rss>...</rss>"
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `xml` | string | Raw Small Web RSS/Atom feed body |
+
+## Examples
+
+### Basic Usage
+
+```bash
+# Get the Small Web feed
+kagi smallweb
+
+# Request a smaller feed slice
+kagi smallweb --limit 50
+
+# Request fewer posts
+kagi smallweb --limit 5
+```
+
+### Processing Output
+
+```bash
+# Save the raw feed to disk
+kagi smallweb > smallweb-feed.json
+
+# Extract the XML payload
+kagi smallweb | jq -r '.xml' > smallweb.xml
+```
+
+### Daily Discovery
+
+```bash
+#!/bin/bash
+# small-web-discovery.sh
+
+echo "🌐 Today's Small Web Discoveries"
+echo "================================="
+echo ""
+
+kagi smallweb --limit 10 | jq -r '.xml'
+```
+
+### Archiving Workflow
+
+```bash
+#!/bin/bash
+# Archive Small Web posts
+
+OUTPUT_DIR="$HOME/smallweb-archive/$(date +%Y/%m)"
+mkdir -p "$OUTPUT_DIR"
+
+echo "Fetching Small Web feed..."
+kagi smallweb --limit 100 | jq -r '.xml' > "$OUTPUT_DIR/smallweb-$(date +%Y%m%d).xml"
+
+echo "Saved to: $OUTPUT_DIR"
+```
+
+## What is the Small Web?
+
+The Small Web refers to:
+- Personal blogs and websites
+- Independent publishers
+- Non-commercial content
+- Content outside major platforms
+- Individual voices and perspectives
+
+Kagi curates this feed to surface quality independent content.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error (network, etc.) |
+
+## See Also
+
+- [news](/commands/news) - Kagi News feed
+- [Workflows](/guides/workflows) - Automation patterns

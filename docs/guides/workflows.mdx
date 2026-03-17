@@ -1,0 +1,840 @@
+---
+title: "Common Workflows"
+description: "Practical task-oriented examples for *kagi* CLI - from daily automation to complex research pipelines."
+---
+
+# Common Workflows
+
+This guide presents real-world usage patterns and practical examples for the *kagi* CLI. Each workflow is designed to solve a specific problem or automate a common task, with complete copy-pasteable examples.
+
+## Workflow Categories
+
+- **Daily Automation** - News briefings, routine searches
+- **Research & Investigation** - Deep research workflows
+- **Content Processing** - Summarization and extraction
+- **Development** - Programming and debugging assistance
+- **AI Integration** - Assistant and FastGPT patterns
+- **Data Pipelines** - Processing multiple items
+
+## Daily Automation Workflows
+
+### Morning News Briefing
+
+Start your day with a curated news summary:
+
+```bash
+#!/bin/bash
+# ~/bin/morning-brief.sh
+
+echo "🌅 Morning Brief - $(date '+%Y-%m-%d %H:%M')"
+echo "================================================"
+echo ""
+
+echo "📰 Technology"
+echo "-------------"
+kagi news --category tech --limit 5 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+
+echo ""
+echo "🌍 World News"
+echo "-------------"
+kagi news --category world --limit 5 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+
+echo ""
+echo "💼 Business"
+echo "------------"
+kagi news --category business --limit 3 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+
+echo ""
+echo "🔬 Science"
+echo "-----------"
+kagi news --category science --limit 3 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+```
+
+**Usage:**
+
+```bash
+chmod +x ~/bin/morning-brief.sh
+~/bin/morning-brief.sh
+```
+
+**Add to cron for automated delivery:**
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add line for 8 AM daily
+0 8 * * * ~/bin/morning-brief.sh >> ~/news-brief.log 2>&1
+```
+
+### Weekly Research Digest
+
+Collect and summarize interesting articles:
+
+```bash
+#!/bin/bash
+# ~/bin/weekly-digest.sh
+
+WEEK_DIR="$HOME/research/$(date +%Y-week-%U)"
+mkdir -p "$WEEK_DIR"
+
+# Small Web discoveries
+echo "Saving Small Web feed..."
+kagi smallweb --limit 20 > "$WEEK_DIR/smallweb.json"
+
+# Extract URLs and summarize top 5
+jq -r '.data[0:5] | .[].url' "$WEEK_DIR/smallweb.json" | while read -r url; do
+  echo "Summarizing: $url"
+  filename=$(echo "$url" | sed 's/[^a-zA-Z0-9]/_/g').json
+  kagi summarize --subscriber --url "$url" --length overview > "$WEEK_DIR/$filename" 2>/dev/null || echo "Failed: $url"
+  sleep 2  # Be nice to the API
+done
+
+echo "Digest saved to: $WEEK_DIR"
+```
+
+### Daily Standup Helper
+
+Prepare answers for common standup questions:
+
+```bash
+#!/bin/bash
+# ~/bin/standup-prep.sh
+
+YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
+
+echo "📝 Standup Prep for $(date '+%Y-%m-%d')"
+echo "======================================"
+echo ""
+
+echo "Yesterday ($YESTERDAY):"
+echo "----------------------"
+# Search your notes or activity
+# Example: search for commits, PRs, tickets
+
+echo ""
+echo "Today:"
+echo "------"
+echo "- [ ] ..."
+echo "- [ ] ..."
+
+echo ""
+echo "Blockers:"
+echo "---------"
+echo "- None / ..."
+
+echo ""
+echo "📚 Quick Research:"
+echo "------------------"
+# Example: get latest on your tech stack
+kagi news --category tech --limit 3 | jq -r '.stories[] | "• \(.title)"'
+```
+
+## Research & Investigation Workflows
+
+### Deep Topic Research
+
+Systematically explore a topic across multiple dimensions:
+
+```bash
+#!/bin/bash
+# ~/bin/research-topic.sh
+
+TOPIC="$1"
+if [ -z "$TOPIC" ]; then
+  echo "Usage: research-topic.sh 'your research topic'"
+  exit 1
+fi
+
+RESEARCH_DIR="$HOME/research/$(echo "$TOPIC" | tr ' ' '_' | tr '[:upper:]' '[:lower:]')-$(date +%Y%m%d)"
+mkdir -p "$RESEARCH_DIR"
+
+echo "🔍 Researching: $TOPIC"
+echo "======================"
+echo ""
+
+# 1. Initial search
+echo "Step 1: General search..."
+kagi search --pretty "$TOPIC" > "$RESEARCH_DIR/01-general-search.txt"
+
+# 2. News coverage
+echo "Step 2: Recent news..."
+kagi news --limit 10 | jq -r '.stories[] | select(.title | contains("'$TOPIC'")) | "\(.title)\n\(.articles[0].link)\n"' > "$RESEARCH_DIR/02-news.txt"
+
+# 3. FastGPT overview
+echo "Step 3: Getting overview..."
+kagi fastgpt "Provide a comprehensive overview of $TOPIC" > "$RESEARCH_DIR/03-overview.txt"
+
+# 4. Web enrichment for deeper insights
+echo "Step 4: Deep web search..."
+kagi enrich web "$TOPIC" > "$RESEARCH_DIR/04-web-enrichment.json"
+
+# 5. Save top 5 results for later reading
+echo "Step 5: Saving top results..."
+kagi search "$TOPIC" | jq -r '.data[0:5] | .[].url' > "$RESEARCH_DIR/05-urls-to-read.txt"
+
+echo ""
+echo "✅ Research complete!"
+echo "📁 Saved to: $RESEARCH_DIR"
+echo ""
+echo "Next steps:"
+echo "  - Review $RESEARCH_DIR/03-overview.txt"
+echo "  - Read URLs in $RESEARCH_DIR/05-urls-to-read.txt"
+echo "  - Summarize key articles with kagi summarize"
+```
+
+### Competitor Analysis
+
+Research companies or products systematically:
+
+```bash
+#!/bin/bash
+# ~/bin/competitor-analysis.sh
+
+COMPANY="$1"
+RESEARCH_DIR="$HOME/competitor-research/$(echo "$COMPANY" | tr ' ' '_')-$(date +%Y%m%d)"
+mkdir -p "$RESEARCH_DIR"
+
+echo "🏢 Competitor Analysis: $COMPANY"
+echo "================================="
+echo ""
+
+# Company overview
+echo "1. Company Overview"
+kagi fastgpt "What does $COMPANY do? What are their main products and services?" > "$RESEARCH_DIR/01-overview.txt"
+
+# Recent news
+echo "2. Recent News"
+kagi search --pretty "$COMPANY news $(date +%Y)" > "$RESEARCH_DIR/02-recent-news.txt"
+
+# Product comparison
+echo "3. Product Information"
+kagi search --pretty "$COMPANY products features" > "$RESEARCH_DIR/03-products.txt"
+
+# Market position
+echo "4. Market Position"
+kagi fastgpt "What is $COMPANY's market position? Who are their main competitors?" > "$RESEARCH_DIR/04-market-position.txt"
+
+# Technical analysis (if applicable)
+echo "5. Technical Stack"
+kagi search --pretty "$COMPANY technology stack infrastructure" > "$RESEARCH_DIR/05-technology.txt"
+
+echo ""
+echo "Analysis complete! Check $RESEARCH_DIR"
+```
+
+### Academic Research Assistant
+
+```bash
+#!/bin/bash
+# ~/bin/academic-research.sh
+
+QUERY="$1"
+RESEARCH_DIR="$HOME/academic-research/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$RESEARCH_DIR"
+
+echo "📚 Academic Research: $QUERY"
+echo "============================="
+echo ""
+
+# Search for papers and resources
+echo "Searching academic resources..."
+kagi search --pretty "$QUERY filetype:pdf OR site:arxiv.org OR site:scholar.google.com" > "$RESEARCH_DIR/academic-sources.txt"
+
+# Get summary
+echo "Generating summary..."
+kagi fastgpt "Summarize the current state of research on: $QUERY" > "$RESEARCH_DIR/summary.txt"
+
+# Find key papers
+echo "Identifying key papers..."
+kagi search "$QUERY most cited papers" | jq -r '.data[0:5] | .[].url' > "$RESEARCH_DIR/key-papers.txt"
+
+echo "Saved to: $RESEARCH_DIR"
+```
+
+## Content Processing Workflows
+
+### URL Summarization Pipeline
+
+Process a list of URLs and generate summaries:
+
+```bash
+#!/bin/bash
+# ~/bin/summarize-urls.sh
+
+URL_FILE="$1"
+OUTPUT_DIR="${2:-./summaries}"
+
+if [ ! -f "$URL_FILE" ]; then
+  echo "Usage: summarize-urls.sh <urls-file> [output-directory]"
+  echo "File should contain one URL per line"
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+echo "📝 Processing URLs from: $URL_FILE"
+echo "Output directory: $OUTPUT_DIR"
+echo ""
+
+line_num=0
+while IFS= read -r url; do
+  line_num=$((line_num + 1))
+  
+  # Skip empty lines and comments
+  [[ -z "$url" || "$url" =~ ^# ]] && continue
+  
+  echo "[$line_num] Processing: $url"
+  
+  # Create safe filename
+  filename=$(echo "$url" | sed 's|https*://||; s|[^a-zA-Z0-9]|_|g; s|_$||').json
+  output_path="$OUTPUT_DIR/$filename"
+  
+  # Summarize with subscriber mode
+  if kagi summarize --subscriber --url "$url" --length overview --summary-type keypoints > "$output_path" 2>/dev/null; then
+    echo "  ✓ Saved to: $filename"
+  else
+    echo "  ✗ Failed to summarize"
+    echo "$url" >> "$OUTPUT_DIR/failed.txt"
+  fi
+  
+  # Rate limiting - be nice to the service
+  sleep 1
+done < "$URL_FILE"
+
+echo ""
+echo "✅ Complete!"
+echo "Summaries saved to: $OUTPUT_DIR"
+[ -f "$OUTPUT_DIR/failed.txt" ] && echo "Failed URLs: $OUTPUT_DIR/failed.txt"
+```
+
+**Usage:**
+
+```bash
+# Create URL list
+cat > urls.txt << 'EOF'
+https://example.com/article1
+https://example.com/article2
+https://example.com/article3
+EOF
+
+# Run pipeline
+summarize-urls.sh urls.txt ./my-summaries
+```
+
+### Content Curation
+
+Build a curated reading list with summaries:
+
+```bash
+#!/bin/bash
+# ~/bin/curate-reading-list.sh
+
+CATEGORY="$1"
+LIMIT="${2:-10}"
+
+echo "📖 Curating Reading List: $CATEGORY"
+echo "===================================="
+echo ""
+
+# Search for recent content
+echo "Finding recent articles..."
+kagi search --pretty "$CATEGORY $(date +%Y) guide tutorial" > /tmp/search-results.txt
+
+# Extract top URLs and summarize
+echo ""
+echo "Summarizing top $LIMIT articles..."
+kagi search "$CATEGORY $(date +%Y)" | jq -r ".data[0:$LIMIT] | .[].url" | while read -r url; do
+  echo ""
+  echo "Article: $url"
+  echo "---"
+  kagi summarize --subscriber --url "$url" --length headline 2>/dev/null | jq -r '.data.output' || echo "Could not summarize"
+  echo ""
+  sleep 1
+done
+```
+
+## Development Workflows
+
+### Error Investigation
+
+Research error messages and find solutions:
+
+```bash
+#!/bin/bash
+# ~/bin/debug-error.sh
+
+ERROR_MSG="$1"
+CONTEXT="${2:-}"
+
+echo "🐛 Debugging Error"
+echo "=================="
+echo "Error: $ERROR_MSG"
+[ -n "$CONTEXT" ] && echo "Context: $CONTEXT"
+echo ""
+
+# Search for the error
+echo "🔍 Searching for solutions..."
+kagi search --pretty "\"$ERROR_MSG\" solution fix"
+
+echo ""
+echo "🤖 AI Analysis..."
+FULL_CONTEXT="Error: $ERROR_MSG"
+[ -n "$CONTEXT" ] && FULL_CONTEXT="$FULL_CONTEXT. Context: $CONTEXT"
+kagi assistant "I'm getting this error in my code. Please help me understand what's causing it and how to fix it: $FULL_CONTEXT"
+```
+
+**Usage:**
+
+```bash
+debug-error.sh "TypeError: Cannot read property 'map' of undefined" "React component"
+```
+
+### Technology Evaluation
+
+Research technologies before adopting:
+
+```bash
+#!/bin/bash
+# ~/bin/evaluate-tech.sh
+
+TECH="$1"
+
+echo "🔬 Technology Evaluation: $TECH"
+echo "================================"
+echo ""
+
+# Overview
+echo "1. Overview"
+kagi fastgpt "What is $TECH and what problem does it solve?"
+
+# Pros and cons
+echo ""
+echo "2. Pros and Cons"
+kagi fastgpt "What are the main advantages and disadvantages of $TECH compared to alternatives?"
+
+# Community and ecosystem
+echo ""
+echo "3. Community"
+kagi search --pretty "$TECH github stars community adoption $(date +%Y)"
+
+# Recent developments
+echo ""
+echo "4. Recent News"
+kagi news --category tech --limit 5 | jq -r '.stories[] | select(.title | contains("'$TECH'")) | "\(.title)"'
+
+# Learning resources
+echo ""
+echo "5. Learning Resources"
+kagi search --pretty "$TECH tutorial getting started documentation"
+```
+
+### API Documentation Search
+
+Find relevant documentation quickly:
+
+```bash
+#!/bin/bash
+# ~/bin/api-docs.sh
+
+API="$1"
+QUERY="$2"
+
+echo "📖 $API Documentation Search"
+echo "============================"
+echo "Query: $QUERY"
+echo ""
+
+# Search specific documentation
+case "$API" in
+  "react")
+    kagi search --pretty "site:react.dev $QUERY"
+    ;;
+  "node")
+    kagi search --pretty "site:nodejs.org $QUERY"
+    ;;
+  "mdn")
+    kagi search --pretty "site:developer.mozilla.org $QUERY"
+    ;;
+  *)
+    kagi search --pretty "$API documentation $QUERY"
+    ;;
+esac
+```
+
+## AI Integration Workflows
+
+### Conversation Chains
+
+Build on previous Assistant responses:
+
+```bash
+#!/bin/bash
+# ~/bin/chain-conversation.sh
+
+# Initial prompt
+THREAD_ID=$(kagi assistant "Explain the concept of recursion in programming" | jq -r '.thread.id')
+echo "Started thread: $THREAD_ID"
+
+# Follow-up 1
+kagi assistant --thread-id "$THREAD_ID" "Can you provide a practical example in Python?"
+
+# Follow-up 2
+kagi assistant --thread-id "$THREAD_ID" "Now show me how to avoid stack overflow in deep recursion"
+
+# Follow-up 3
+kagi assistant --thread-id "$THREAD_ID" "Compare this to an iterative approach"
+
+echo ""
+echo "To continue this conversation later, use:"
+echo "kagi assistant --thread-id $THREAD_ID \"your question\""
+```
+
+### FastGPT Decision Support
+
+Use FastGPT for quick technical decisions:
+
+```bash
+#!/bin/bash
+# ~/bin/tech-decision.sh
+
+QUESTION="$1"
+
+echo "🤔 Decision Support"
+echo "==================="
+echo "Question: $QUESTION"
+echo ""
+
+# Get quick analysis
+kagi fastgpt "$QUESTION"
+
+echo ""
+echo "For deeper analysis, try:"
+echo "kagi assistant \"Provide a detailed analysis of: $QUESTION\""
+```
+
+### Content Generation
+
+Generate content with AI assistance:
+
+```bash
+#!/bin/bash
+# ~/bin/generate-content.sh
+
+TYPE="$1"  # email, doc, summary
+TOPIC="$2"
+
+echo "✍️  Content Generation: $TYPE"
+echo "Topic: $TOPIC"
+echo ""
+
+case "$TYPE" in
+  "email")
+    kagi assistant "Write a professional email about: $TOPIC"
+    ;;
+  "doc")
+    kagi assistant "Write technical documentation for: $TOPIC"
+    ;;
+  "summary")
+    kagi assistant "Create an executive summary of: $TOPIC"
+    ;;
+  *)
+    kagi assistant "Write about: $TOPIC"
+    ;;
+esac
+```
+
+## Data Pipeline Workflows
+
+### Batch URL Processing
+
+Process multiple URLs with error handling:
+
+```bash
+#!/bin/bash
+# ~/bin/batch-process.sh
+
+INPUT_FILE="$1"
+PROCESS_TYPE="${2:-summarize}"  # summarize, check, extract
+
+if [ ! -f "$INPUT_FILE" ]; then
+  echo "Usage: batch-process.sh <input-file> [process-type]"
+  exit 1
+fi
+
+OUTPUT_DIR="batch-output-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUTPUT_DIR"
+
+SUCCESS=0
+FAILED=0
+
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  
+  case "$PROCESS_TYPE" in
+    "summarize")
+      if kagi summarize --subscriber --url "$line" > "$OUTPUT_DIR/$(echo "$line" | md5sum | cut -d' ' -f1).json" 2>/dev/null; then
+        ((SUCCESS++))
+        echo "✓ $line"
+      else
+        ((FAILED++))
+        echo "✗ $line"
+        echo "$line" >> "$OUTPUT_DIR/failed.txt"
+      fi
+      ;;
+    "check")
+      # Check if URL is accessible
+      if curl -s -o /dev/null -w "%{http_code}" "$line" | grep -q "200"; then
+        echo "✓ $line (200 OK)"
+        ((SUCCESS++))
+      else
+        echo "✗ $line (failed)"
+        ((FAILED++))
+      fi
+      ;;
+    "extract")
+      # Extract just the titles
+      kagi summarize --subscriber --url "$line" --length headline 2>/dev/null | jq -r '.data.output' >> "$OUTPUT_DIR/titles.txt"
+      ((SUCCESS++))
+      ;;
+  esac
+  
+  sleep 1
+done < "$INPUT_FILE"
+
+echo ""
+echo "Results:"
+echo "  Success: $SUCCESS"
+echo "  Failed: $FAILED"
+echo "  Output: $OUTPUT_DIR"
+```
+
+### JSON Data Pipeline
+
+Process search results programmatically:
+
+```bash
+#!/bin/bash
+# ~/bin/search-pipeline.sh
+
+QUERY="$1"
+
+echo "🔍 Search Pipeline: $QUERY"
+echo "==========================="
+echo ""
+
+# Search and process
+kagi search "$QUERY" | jq -r '
+  .data |
+  group_by(.t) |
+  map({
+    type: (.[0].t | tostring),
+    count: length,
+    urls: [.[].url]
+  }) |
+  .[] |
+  "Type \(.type): \(.count) results"
+'
+
+# Extract just organic results
+kagi search "$QUERY" | jq -r '
+  .data |
+  map(select(.t == 0)) |
+  .[0:5] |
+  .[] |
+  "\(.title)\n\(.url)\n\(.snippet)\n---"
+'
+```
+
+## Workflow Best Practices
+
+### Rate Limiting
+
+Always include delays when processing multiple items:
+
+```bash
+# Good - includes delay
+for url in $URLS; do
+  kagi summarize --subscriber --url "$url"
+  sleep 1  # Be respectful
+done
+
+# Bad - hammers the API
+for url in $URLS; do
+  kagi summarize --subscriber --url "$url"
+done
+```
+
+### Error Handling
+
+Always handle failures gracefully:
+
+```bash
+# Good - handles errors
+if kagi search "$query" > result.json 2>/dev/null; then
+  echo "Success"
+else
+  echo "Failed to search"
+fi
+
+# With retry logic
+for i in 1 2 3; do
+  if kagi search "$query" > result.json 2>/dev/null; then
+    break
+  fi
+  sleep 5
+done
+```
+
+### Output Management
+
+Organize outputs systematically:
+
+```bash
+# Create dated directories
+OUTPUT_DIR="$HOME/kagi-output/$(date +%Y/%m/%d)"
+mkdir -p "$OUTPUT_DIR"
+
+# Use descriptive filenames
+kagi search "topic" > "$OUTPUT_DIR/search-topic-$(date +%H%M%S).json"
+
+# Log operations
+exec 1> >(tee -a "$OUTPUT_DIR/log.txt")
+exec 2>&1
+```
+
+### Configuration Management
+
+Use environment variables for flexibility:
+
+```bash
+#!/bin/bash
+# Configurable script
+
+RESULTS_LIMIT="${KAGI_RESULTS_LIMIT:-10}"
+SUMMARY_LENGTH="${KAGI_SUMMARY_LENGTH:-overview}"
+OUTPUT_FORMAT="${KAGI_OUTPUT_FORMAT:-json}"
+
+kagi search "$QUERY" | jq ".data[0:${RESULTS_LIMIT}]"
+```
+
+## Advanced Patterns
+
+### Combining Commands
+
+Chain *kagi* with other tools:
+
+```bash
+# Search and open first result in browser
+kagi search "$QUERY" | jq -r '.data[0].url' | xargs open
+
+# Search and add to todo list
+kagi search "$QUERY" | jq -r '.data[] | "- [ ] \(.title) - \(.url)"' >> todo.md
+
+# Generate report with template
+cat template.md | sed "s/{{QUERY}}/$QUERY/g" | kagi assistant "Fill in this template based on: $QUERY"
+```
+
+### Conditional Workflows
+
+Adapt based on available tokens:
+
+```bash
+#!/bin/bash
+
+# Check auth and adapt behavior
+if kagi auth check 2>/dev/null; then
+  # Full features available
+  kagi search --lens 2 "$QUERY"
+else
+  # Fallback to public commands
+  kagi news --limit 5
+  echo "Note: Set up authentication for full search capabilities"
+fi
+```
+
+### Parallel Processing
+
+Process independent items in parallel:
+
+```bash
+#!/bin/bash
+
+# Process URLs in parallel (be careful with rate limits!)
+cat urls.txt | xargs -P 3 -I {} bash -c '
+  kagi summarize --subscriber --url "$1" > "summaries/$(echo "$1" | md5sum | cut -d" " -f1).json" 2>/dev/null
+' _ {}
+```
+
+**Note:** Be very careful with parallelism to avoid rate limiting.
+
+## Workflow Templates
+
+### Template 1: Research Project
+
+```bash
+#!/bin/bash
+PROJECT="$1"
+DIR="$HOME/research-projects/$PROJECT"
+mkdir -p "$DIR"
+
+cd "$DIR" || exit
+
+# Initialize
+git init 2>/dev/null || true
+
+# Research phase
+kagi search "$PROJECT overview" > 01-overview.json
+kagi news "$PROJECT" > 02-news.json
+
+# Analysis phase
+kagi fastgpt "Analyze $PROJECT" > 03-analysis.txt
+
+# Documentation
+cat > README.md << EOF
+# Research: $PROJECT
+
+Date: $(date)
+
+## Overview
+See 01-overview.json
+
+## News
+See 02-news.json
+
+## Analysis
+See 03-analysis.txt
+EOF
+
+echo "Research project initialized in $DIR"
+```
+
+### Template 2: Weekly Review
+
+```bash
+#!/bin/bash
+WEEK="$(date +%Y-week-%U)"
+DIR="$HOME/weekly-reviews/$WEEK"
+mkdir -p "$DIR"
+
+echo "# Weekly Review: $WEEK" > "$DIR/review.md"
+echo "" >> "$DIR/review.md"
+echo "## Technology News" >> "$DIR/review.md"
+kagi news --category tech --limit 10 >> "$DIR/review.md"
+
+echo "" >> "$DIR/review.md"
+echo "## Small Web Highlights" >> "$DIR/review.md"
+kagi smallweb --limit 10 >> "$DIR/review.md"
+
+echo "Weekly review saved to $DIR/review.md"
+```
+
+## Next Steps
+
+- **[Advanced Usage](/guides/advanced-usage)** - Scripting, CI/CD, automation
+- **[Command Reference](/commands/search)** - Detailed command documentation
+- **[Troubleshooting](/guides/troubleshooting)** - Debugging workflows
+
+---
+
+*Create your own workflows and share them with the community!*

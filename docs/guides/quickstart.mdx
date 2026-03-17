@@ -1,0 +1,471 @@
+---
+title: "Quickstart"
+description: "Get up and running with *kagi* CLI in minutes - from your first unauthenticated command to full subscriber workflows."
+---
+
+# Quickstart Guide
+
+This guide follows a progressive disclosure approach: you'll start with commands that work immediately without any setup, then gradually unlock more powerful features as you configure authentication. By the end, you'll have a fully functional *kagi* CLI setup tailored to your needs.
+
+## Progression Overview
+
+```
+Step 1: Unauthenticated Commands (30 seconds)
+    ↓
+Step 2: Verify Installation (1 minute)
+    ↓
+Step 3: Subscriber Setup with Session Token (3 minutes)
+    ↓
+Step 4: Paid API Setup with API Token (optional)
+    ↓
+Step 5: Persistent Configuration (2 minutes)
+    ↓
+Step 6: First Real Workflows (5 minutes)
+```
+
+## Step 1: Unauthenticated Commands (30 seconds)
+
+The fastest way to verify *kagi* is working is to run commands that don't require authentication. These use Kagi's public endpoints.
+
+### Test 1: Kagi News
+
+```bash
+kagi news --category world --limit 3
+```
+
+**Demo:**
+
+![News command demo](/images/demos/news.gif)
+
+**Expected output:**
+
+```json
+{
+  "data": [
+    {
+      "title": "Example News Story",
+      "url": "https://example.com/news/123",
+      "snippet": "Summary of the news story..."
+    }
+  ]
+}
+```
+
+### Test 2: Small Web Feed
+
+```bash
+kagi smallweb --limit 3
+```
+
+This fetches the latest posts from Kagi's Small Web curation.
+
+### What These Commands Prove
+
+- ✅ Binary is installed and in PATH
+- ✅ Network connectivity to Kagi works
+- ✅ CLI can parse and output JSON
+- ✅ You can run *kagi* successfully
+
+If these commands work, your installation is successful. If not, see the [Troubleshooting](/guides/troubleshooting) guide.
+
+## Step 2: Verify Installation (1 minute)
+
+Before moving to authenticated commands, let's verify the installation details:
+
+```bash
+# Check version
+kagi --version
+
+# View all available commands
+kagi --help
+
+# Check which credentials are configured (if any)
+kagi auth status
+```
+
+At this stage, `kagi auth status` will likely show:
+
+```
+selected: none
+api token: not configured
+session token: not configured
+config path: .kagi.toml
+```
+
+This is expected - we'll configure credentials next.
+
+## Step 3: Subscriber Setup with Session Token
+
+To unlock subscriber-only features (lens search, Assistant, subscriber Summarizer), you need a Kagi Session Token.
+
+### Getting Your Session Token
+
+1. **Log into Kagi** in your web browser
+2. **Go to Settings** → [Account Settings](https://kagi.com/settings)
+3. **Find "Session Link"** in the API section
+4. **Copy the full URL** (looks like `https://kagi.com/search?token=abc123...`)
+
+**Important:** This token is tied to your Kagi account and subscription. Keep it secure.
+
+### Option A: Environment Variable (Quick Testing)
+
+For immediate testing without saving to disk:
+
+```bash
+export KAGI_SESSION_TOKEN='https://kagi.com/search?token=YOUR_TOKEN_HERE'
+```
+
+**Verify it works:**
+
+```bash
+kagi auth check
+```
+
+Expected output:
+
+```
+auth check passed: session_token (env)
+```
+
+### Option B: Persistent Configuration (Recommended)
+
+Save the token to a config file:
+
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN_HERE'
+```
+
+This creates `./.kagi.toml` with your token. The CLI accepts either:
+- The full Session Link URL (recommended)
+- Just the raw token value
+
+**Verify it works:**
+
+```bash
+kagi auth status
+```
+
+Expected output:
+
+```
+selected: session-token (config)
+api token: not configured
+session token: configured via config
+config path: .kagi.toml
+```
+
+### Testing Subscriber Features
+
+Now that you're authenticated, test the subscriber commands:
+
+```bash
+# Basic search (uses session token)
+kagi search --pretty "rust programming language"
+
+# Search with a lens (replace 2 with your lens index)
+kagi search --lens 2 "developer documentation"
+```
+
+**Search Demo:**
+
+![Search command demo](/images/demos/search.gif)
+
+```bash
+# Test Assistant
+kagi assistant "What are the key features of Rust?"
+
+# Test subscriber Summarizer
+kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
+```
+
+**Assistant Demo:**
+
+![Assistant command demo](/images/demos/assistant.gif)
+
+**Subscriber Summarize Demo:**
+
+![Summarize command demo](/images/demos/summarize.gif)
+
+## Step 4: Paid API Setup with API Token (Optional)
+
+If you have Kagi API access (separate from your subscription), you can add an API token for additional commands.
+
+### Getting Your API Token
+
+1. **Log into Kagi** in your web browser
+2. **Go to Settings** → [API Settings](https://kagi.com/settings/api)
+3. **Generate a new API token** if you don't have one
+4. **Copy the token** (looks like a long alphanumeric string)
+
+**Note:** API access requires available credit. Check your Kagi account for API credit balance.
+
+### Setting Up the API Token
+
+**Option A: Environment Variable**
+
+```bash
+export KAGI_API_TOKEN='your_api_token_here'
+```
+
+**Option B: Persistent Configuration**
+
+```bash
+kagi auth set --api-token 'your_api_token_here'
+```
+
+**Note:** If you previously set a session token, this will add the API token alongside it. Both can coexist.
+
+### Testing Paid API Commands
+
+```bash
+# Test API authentication
+kagi auth check
+
+# Test public Summarizer
+kagi summarize --url https://example.com --engine cecil
+
+# Test FastGPT
+kagi fastgpt "Explain quantum computing"
+
+# Test Enrichment
+kagi enrich web "artificial intelligence"
+```
+
+### Understanding Dual Token Setup
+
+When you have both tokens configured:
+
+- **Session Token**: Enables lens search, Assistant, subscriber Summarizer
+- **API Token**: Enables FastGPT, public Summarizer, Enrichment APIs
+- **Base Search**: Prefers API token, falls back to session token if needed
+
+See the [Auth Matrix](/reference/auth-matrix) for the complete command-to-token mapping.
+
+## Step 5: Persistent Configuration
+
+Now that you've tested everything, let's create a robust configuration.
+
+### The .kagi.toml File
+
+Kagi uses a TOML configuration file located at `./.kagi.toml`.
+
+**Basic configuration:**
+
+```toml
+[auth]
+api_token = "your_api_token_here"
+session_token = "your_session_token_here"
+```
+
+**Creating the file manually:**
+
+```bash
+# Create the file
+cat > ./.kagi.toml << 'EOF'
+[auth]
+api_token = "your_api_token_here"
+session_token = "your_session_token_here"
+EOF
+
+# Set secure permissions
+chmod 600 ./.kagi.toml
+```
+
+### Configuration Precedence
+
+Kagi resolves credentials in this order (first match wins):
+
+1. **Environment variables** (`KAGI_API_TOKEN`, `KAGI_SESSION_TOKEN`)
+2. **Config file** (`./.kagi.toml`)
+
+This means you can override file configuration with environment variables for specific workflows or CI/CD.
+
+### Shell Profile Integration
+
+For convenience, add environment variables to your shell profile:
+
+**Bash (~/.bashrc):**
+
+```bash
+# Kagi CLI
+export KAGI_SESSION_TOKEN='your_session_token'
+export KAGI_API_TOKEN='your_api_token'
+```
+
+**Zsh (~/.zshrc):**
+
+```bash
+# Kagi CLI
+export KAGI_SESSION_TOKEN='your_session_token'
+export KAGI_API_TOKEN='your_api_token'
+```
+
+**Fish (~/.config/fish/config.fish):**
+
+```fish
+# Kagi CLI
+set -x KAGI_SESSION_TOKEN 'your_session_token'
+set -x KAGI_API_TOKEN 'your_api_token'
+```
+
+**PowerShell ($PROFILE):**
+
+```powershell
+# Kagi CLI
+$env:KAGI_SESSION_TOKEN = 'your_session_token'
+$env:KAGI_API_TOKEN = 'your_api_token'
+```
+
+### Security Best Practices
+
+1. **File permissions**: Set `./.kagi.toml` to 600 (readable only by you)
+2. **Environment variables**: Don't commit these to version control
+3. **Token rotation**: Regenerate tokens periodically
+4. **Separate contexts**: Use different tokens for different environments (dev/staging/prod)
+
+## Step 6: First Real Workflows
+
+Now let's put it all together with practical workflows.
+
+### Workflow 1: Daily News Briefing
+
+```bash
+#!/bin/bash
+# save as ~/bin/news-brief.sh
+
+echo "=== Technology News ==="
+kagi news --category tech --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
+
+echo "=== World News ==="
+kagi news --category world --limit 5 | jq -r '.stories[] | "\(.title)\n  \(.articles[0].link)\n"'
+```
+
+Make it executable and run:
+
+```bash
+chmod +x ~/bin/news-brief.sh
+~/bin/news-brief.sh
+```
+
+### Workflow 2: Research Assistant
+
+```bash
+# Search for documentation
+kagi search --lens 2 "error handling rust" --pretty
+
+# Summarize a relevant article
+kagi summarize --subscriber --url https://doc.rust-lang.org/book/ch09-00-error-handling.html --summary-type keypoints
+
+# Ask Assistant for clarification
+kagi assistant "Explain the difference between Result and Option in Rust"
+```
+
+### Workflow 3: Content Pipeline
+
+```bash
+#!/bin/bash
+# Process a list of URLs and generate summaries
+
+URLS=(
+  "https://example.com/article1"
+  "https://example.com/article2"
+  "https://example.com/article3"
+)
+
+for url in "${URLS[@]}"; do
+  echo "Processing: $url"
+  kagi summarize --subscriber --url "$url" --length overview > "summary_$(basename $url).json"
+done
+```
+
+### Workflow 4: Development Research
+
+```bash
+# Quick answer without opening browser
+kagi fastgpt "What are the new features in Python 3.12?"
+
+# Deep research with web enrichment
+kagi enrich web "Python 3.12 performance improvements"
+
+# Search for specific implementation examples
+kagi search "python 3.12 generic types examples" --pretty
+```
+
+## Common First Commands Reference
+
+Here's a quick reference of useful commands organized by category:
+
+### Information Commands
+
+```bash
+kagi --version              # Show version
+kagi --help                 # Show all commands
+kagi auth status            # Check credential status
+kagi auth check             # Validate credentials
+kagi news --list-categories # Show available news categories
+```
+
+### Search Commands
+
+```bash
+kagi search "query"                      # JSON output
+kagi search --pretty "query"             # Human-readable
+kagi search --lens 2 "query"             # With lens
+kagi search --lens 2 --pretty "query"    # Combined
+```
+
+### Content Commands
+
+```bash
+kagi summarize --url https://example.com                    # Public API
+kagi summarize --subscriber --url https://example.com       # Subscriber
+kagi fastgpt "question"                                     # Quick answer
+kagi assistant "prompt"                                     # AI assistant
+kagi enrich web "query"                                     # Web enrichment
+kagi enrich news "query"                                    # News enrichment
+```
+
+### Feed Commands
+
+```bash
+kagi news --category tech --limit 5     # Tech news
+kagi news --category world --limit 10   # World news
+kagi smallweb --limit 20                # Small Web feed
+kagi news --chaos                       # Chaos index
+```
+
+## What You've Learned
+
+By completing this quickstart, you now understand:
+
+- ✅ How to verify installation works
+- ✅ The difference between session and API tokens
+- ✅ How to configure credentials (env vars and config file)
+- ✅ Basic search and content commands
+- ✅ How to combine commands in workflows
+- ✅ Where to find help and documentation
+
+## Next Steps
+
+Continue your *kagi* journey:
+
+- **[Authentication Deep Dive](/guides/authentication)** - Understand the complete auth system
+- **[Common Workflows](/guides/workflows)** - More real-world patterns
+- **[Command Reference](/commands/search)** - Complete command documentation
+- **[Advanced Usage](/guides/advanced-usage)** - Scripting and automation
+
+## Troubleshooting Quick Reference
+
+| Problem | Solution |
+|---------|----------|
+| "command not found" | Check PATH, reload shell |
+| "missing credentials" | Set KAGI_SESSION_TOKEN or KAGI_API_TOKEN |
+| "auth check failed" | Verify token is valid and not expired |
+| Empty search results | Try different query or check rate limits |
+| JSON parse errors | Verify *kagi* version, check for CLI updates |
+
+For detailed troubleshooting, see the [Troubleshooting](/guides/troubleshooting) guide.
+
+---
+
+*Congratulations! You're now ready to use *kagi* CLI effectively. Happy searching!*

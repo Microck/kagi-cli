@@ -1,0 +1,356 @@
+---
+title: "summarize"
+description: "Complete reference for *kagi* summarize command - summarize URLs and text using subscriber or public API modes."
+---
+
+# `kagi summarize`
+
+Summarize URLs or text content using either the paid public API or the subscriber web Summarizer.
+
+![Summarize demo](/images/demos/summarize.gif)
+
+## Synopsis
+
+```bash
+kagi summarize [OPTIONS]
+```
+
+## Description
+
+The `kagi summarize` command provides access to two different summarization systems:
+
+1. **Public API Mode** - Uses Kagi's paid Universal Summarizer API (requires `KAGI_API_TOKEN`)
+2. **Subscriber Mode** - Uses your Kagi subscription's web-based Summarizer (requires `KAGI_SESSION_TOKEN`)
+
+The two modes have different capabilities, pricing models, and output options. Choose the mode that best fits your use case.
+
+## Authentication Modes
+
+### Public API Mode (Default)
+
+**Requires:** `KAGI_API_TOKEN`
+
+Uses the documented Universal Summarizer API endpoint. This is a paid service that consumes API credit.
+
+**Features:**
+- Multiple summary engines (cecil, agnes, etc.)
+- Caching support
+- Structured JSON output
+- Consistent API behavior
+
+**Cost:** Consumes API credit per request
+
+### Subscriber Mode
+
+**Requires:** `KAGI_SESSION_TOKEN` + `--subscriber` flag
+
+Uses the subscriber web product's summarization feature. This is included with your Kagi subscription.
+
+**Features:**
+- Multiple summary lengths (headline to long)
+- Multiple summary types (summary, keypoints, eli5)
+- Translation support
+- Web product integration
+
+**Cost:** Included with subscription (no additional charges)
+
+## Options
+
+### Content Input (One Required)
+
+#### `--url <URL>`
+
+URL of the page to summarize.
+
+**Example:**
+```bash
+kagi summarize --url https://example.com/article
+```
+
+#### `--text <TEXT>`
+
+Raw text to summarize.
+
+**Example:**
+```bash
+kagi summarize --text "Long text content to summarize..."
+```
+
+**Note:** Choose either `--url` or `--text`, not both.
+
+### Mode Selection
+
+#### `--subscriber`
+
+Use subscriber web Summarizer instead of public API.
+
+**Requires:** `KAGI_SESSION_TOKEN`
+
+**Example:**
+```bash
+kagi summarize --subscriber --url https://example.com
+```
+
+### Public API Options
+
+#### `--engine <ENGINE>`
+
+Summarization engine to use (public API only).
+
+**Values:**
+- `cecil` - Balanced summarization (default)
+- `agnes` - Alternative engine
+- Additional engines as documented
+
+**Example:**
+```bash
+kagi summarize --url https://example.com --engine cecil
+```
+
+#### `--cache <BOOL>`
+
+Enable/disable response caching (public API only).
+
+**Values:** `true`, `false`
+**Default:** `true`
+
+**Example:**
+```bash
+kagi summarize --url https://example.com --cache false
+```
+
+### Subscriber Mode Options
+
+#### `--length <LENGTH>`
+
+Summary length (subscriber mode only).
+
+**Values:**
+- `headline` - Briefest (1-2 sentences)
+- `overview` - Short summary (3-5 sentences)
+- `digest` - Medium length (paragraph)
+- `medium` - Detailed (multiple paragraphs)
+- `long` - Most comprehensive
+
+**Example:**
+```bash
+kagi summarize --subscriber --url https://example.com --length digest
+```
+
+#### `--summary-type <TYPE>`
+
+Style of summary (subscriber mode only).
+
+**Values:**
+- `summary` - Standard summary
+- `keypoints` - Bullet point key points
+- `eli5` - Explain Like I'm 5 (simplified)
+
+**Example:**
+```bash
+kagi summarize --subscriber --url https://example.com --summary-type keypoints
+```
+
+### Universal Options
+
+#### `--target-language <LANG>`
+
+Target language for summary output.
+
+**Example:**
+```bash
+kagi summarize --url https://example.com --target-language es
+```
+
+## Output Format
+
+### Public API Output
+
+```json
+{
+  "meta": {
+    "id": "1",
+    "node": "us-east",
+    "ms": 10
+  },
+  "data": {
+    "output": "The summarized text...",
+    "tokens": 42
+  }
+}
+```
+
+### Subscriber Mode Output
+
+```json
+{
+  "meta": {
+    "version": "202603091651.stage.c128588",
+    "trace": "abc123"
+  },
+  "data": {
+    "thread_id": "thread-1",
+    "state": "done",
+    "output": "The summarized text...",
+    "markdown": "The summarized text..."
+  }
+}
+```
+
+## Examples
+
+### Public API Examples
+
+```bash
+# Basic URL summarization
+kagi summarize --url https://www.rust-lang.org
+
+# With specific engine
+kagi summarize --url https://example.com --engine cecil
+
+# Disable caching
+kagi summarize --url https://example.com --cache false
+
+# Text summarization
+kagi summarize --text "Long text content here..."
+```
+
+### Subscriber Mode Examples
+
+```bash
+# Basic subscriber summarization
+kagi summarize --subscriber --url https://www.rust-lang.org
+
+# Key points format
+kagi summarize --subscriber --url https://example.com --summary-type keypoints
+
+# Short length
+kagi summarize --subscriber --url https://example.com --length overview
+
+# Full options
+kagi summarize --subscriber --url https://example.com --summary-type keypoints --length digest --target-language en
+```
+
+### Processing Examples
+
+```bash
+# Extract just the summary text
+kagi summarize --url https://example.com | jq -r '.data.output'
+
+# Save to file
+kagi summarize --url https://example.com > summary.json
+
+# Batch process URLs
+cat urls.txt | while read url; do
+  kagi summarize --subscriber --url "$url" > "summaries/$(basename $url).json"
+  sleep 1
+done
+```
+
+## Mode Comparison
+
+| Feature | Public API | Subscriber Mode |
+|---------|-----------|-----------------|
+| **Token Required** | `KAGI_API_TOKEN` | `KAGI_SESSION_TOKEN` |
+| **Cost** | API credit | Included with subscription |
+| **Engines** | Multiple (cecil, agnes, etc.) | Web product default |
+| **Lengths** | Standard | headline, overview, digest, medium, long |
+| **Types** | Standard | summary, keypoints, eli5 |
+| **Caching** | Optional | N/A |
+| **Flag** | None (default) | `--subscriber` |
+
+## Common Patterns
+
+### Research Pipeline
+
+```bash
+#!/bin/bash
+# Summarize articles for research
+
+URLS=(
+  "https://example.com/article1"
+  "https://example.com/article2"
+)
+
+for url in "${URLS[@]}"; do
+  echo "Processing: $url"
+  kagi summarize --subscriber --url "$url" --summary-type keypoints | jq -r '.data.output'
+  echo "---"
+  sleep 1
+done
+```
+
+### Quick Reference
+
+```bash
+# Quick overview of a page
+kagi summarize --subscriber --url "$URL" --length overview | jq -r '.data.output'
+
+# Detailed reading
+kagi summarize --subscriber --url "$URL" --length long | jq -r '.data.output'
+
+# Key points only
+kagi summarize --subscriber --url "$URL" --summary-type keypoints | jq -r '.data.output'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success - summary generated |
+| 1 | Error - see stderr for details |
+
+**Common errors:**
+- Missing required token
+- Invalid URL
+- Network error
+- Rate limiting
+
+## Troubleshooting
+
+### "this command requires KAGI_API_TOKEN"
+
+You're using public API mode without an API token. Either:
+- Set API token: `kagi auth set --api-token '...'`
+- Or use subscriber mode: add `--subscriber` flag
+
+### "this command requires KAGI_SESSION_TOKEN"
+
+You're using `--subscriber` mode without a session token. Set it:
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+```
+
+### "--length requires --subscriber"
+
+The `--length` option only works with subscriber mode:
+```bash
+# Wrong
+kagi summarize --url https://example.com --length digest
+
+# Right
+kagi summarize --subscriber --url https://example.com --length digest
+```
+
+### "--engine is only supported for the paid public summarizer API"
+
+The `--engine` option only works with public API mode:
+```bash
+# Right (public API)
+kagi summarize --url https://example.com --engine cecil
+
+# Wrong (subscriber mode doesn't support engine selection)
+kagi summarize --subscriber --url https://example.com --engine cecil
+```
+
+### Empty output
+
+- Verify URL is accessible and not blocked
+- Check that content is text-based (not just images/video)
+- Try different summary type or length
+
+## See Also
+
+- [Authentication Guide](/guides/authentication) - Token setup
+- [Workflows](/guides/workflows) - Usage patterns
+- [Auth Matrix](/reference/auth-matrix) - Command auth requirements
