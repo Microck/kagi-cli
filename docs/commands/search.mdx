@@ -17,7 +17,7 @@ kagi search [OPTIONS] <QUERY>
 
 ## Description
 
-The `kagi search` command performs a search query against Kagi's search index and returns results in a structured format. By default, output is JSON suitable for programmatic processing. With the `--pretty` flag, results are formatted for human readability.
+The `kagi search` command performs a search query against Kagi's search index and returns results in a structured format. By default, output is JSON suitable for programmatic processing. With the `--format pretty` flag, results are formatted for human readability.
 
 This command has sophisticated authentication behavior: it prefers the API token path when available but can automatically fall back to the session token path if the API path is rejected. This ensures maximum utility regardless of which token type you have configured.
 
@@ -62,7 +62,7 @@ kagi search "site:github.com rust cli"
 kagi search '"exact phrase match"'
 ```
 
-### `--pretty`
+### `--format pretty`
 
 Render output in human-readable format instead of JSON.
 
@@ -84,7 +84,7 @@ Render output in human-readable format instead of JSON.
 }
 ```
 
-**Pretty Output (`--pretty`):**
+**Pretty Output (`--format pretty`):**
 ```
 1. Rust Programming Language
    https://www.rust-lang.org
@@ -97,7 +97,7 @@ Render output in human-readable format instead of JSON.
    The Rust Programming Language book.
 ```
 
-**Note:** `--pretty` only changes output formatting. It does not affect:
+**Note:** `--format pretty` only changes output formatting. It does not affect:
 - Which authentication is used
 - Transport method (API vs web)
 - Command semantics
@@ -122,7 +122,7 @@ Search using a specific Kagi lens.
 kagi search --lens 2 "error handling"
 
 # Combine with pretty output
-kagi search --lens 2 --pretty "rust async"
+kagi search --lens 2 --format pretty "rust async"
 ```
 
 **Important:** Lens indices are user-specific. Your lens #2 is different from another user's lens #2.
@@ -176,7 +176,7 @@ Results are numbered and formatted with title, URL, and optional snippet:
 kagi search "rust programming language"
 
 # Human-readable output
-kagi search --pretty "rust programming language"
+kagi search --format pretty "rust programming language"
 ```
 
 ### Lens Search
@@ -305,7 +305,7 @@ flowchart TD
 ### Best Practices
 
 1. **Use appropriate token:** If you have both, base search uses API first
-2. **Pretty for humans:** Use `--pretty` for interactive use
+2. **Pretty for humans:** Use `--format pretty` for interactive use
 3. **JSON for automation:** Default JSON is perfect for piping
 4. **Lens for focus:** Use lenses to scope searches to relevant domains
 5. **Limit results:** Use `--limit` to reduce payload size

@@ -124,7 +124,7 @@ flowchart TB
 All commands follow a consistent output contract:
 
 1. **Default**: Machine-readable JSON on stdout
-2. **Pretty Mode**: Human-friendly formatting with `--pretty` flag
+2. **Pretty Mode**: Human-friendly formatting with `--format pretty` flag
 3. **Errors**: Clear error messages on stderr with appropriate exit codes
 4. **Consistency**: Same command semantics regardless of output format
 
@@ -179,7 +179,7 @@ Consider the `kagi search` command. It demonstrates several design principles:
 kagi search "rust programming" | jq '.data[0].url'
 
 # Pretty output for humans
-kagi search --pretty "rust programming"
+kagi search --format pretty "rust programming"
 
 # Lens search for subscriber features
 kagi search --lens 2 "developer documentation"

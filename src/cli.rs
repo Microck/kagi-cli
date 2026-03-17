@@ -1,20 +1,77 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    #[value(name = "powershell")]
+    PowerShell,
+}
+
+/// Output format options for search results
+#[derive(Debug, Clone, ValueEnum)]
+pub enum OutputFormat {
+    /// JSON output (default) - structured data for scripts and APIs
+    Json,
+    /// Pretty formatted output with colors - human-readable terminal display
+    Pretty,
+    /// Compact JSON output - minified JSON for reduced size
+    Compact,
+    /// Markdown formatted output - headers and links for documentation
+    Markdown,
+    /// CSV formatted output - spreadsheet-compatible table format
+    Csv,
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Json => write!(f, "json"),
+            OutputFormat::Pretty => write!(f, "pretty"),
+            OutputFormat::Compact => write!(f, "compact"),
+            OutputFormat::Markdown => write!(f, "markdown"),
+            OutputFormat::Csv => write!(f, "csv"),
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
     name = "kagi",
     version,
-    about = "Agent-native CLI for Kagi subscribers",
-    long_about = "Search Kagi from the command line with JSON-first output for agents."
+    about = "Agent-native CLI for Kagi subscribers with shell completion and batch processing",
+    long_about = "Search Kagi from the command line with JSON-first output for agents.
+
+Features:
+• Shell completion generation (bash, zsh, fish, powershell)
+• Multiple output formats (json, pretty, compact, markdown, csv)
+• Parallel batch searches with rate limiting
+• Colorized terminal output (disable with --no-color)
+• Full Kagi API coverage with session token support",
+    propagate_version = true
 )]
+#[command(disable_help_subcommand = true)]
+#[command(arg_required_else_help = true)]
 pub struct Cli {
+    /// Generate shell completion script and print to stdout
+    #[arg(long, value_name = "SHELL", value_enum)]
+    pub generate_completion: Option<CompletionShell>,
+
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Search Kagi and emit structured JSON
+    ///
+    /// Example: kagi search "rust programming" --format pretty
+    ///
+    /// Features:
+    /// • Multiple output formats: json (default), pretty, compact, markdown, csv
+    /// • Colorized pretty output (disable with --no-color)
+    /// • Lens support for scoped searches
     Search(SearchArgs),
     /// Inspect and validate configured credentials
     Auth(AuthCommand),
@@ -30,6 +87,17 @@ pub enum Commands {
     Enrich(EnrichCommand),
     /// Fetch the Kagi Small Web feed
     Smallweb(SmallWebArgs),
+    /// Execute multiple searches in parallel with rate limiting
+    ///
+    /// Example: kagi batch "rust" "python" "go" --concurrency 5 --rate-limit 120
+    ///
+    /// Features:
+    /// • Parallel execution with configurable concurrency
+    /// • Token bucket rate limiting to respect API limits
+    /// • All output formats supported (json, pretty, compact, markdown, csv)
+    /// • Lens support for scoped searches
+    /// • Color output control with --no-color
+    Batch(BatchSearchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -38,9 +106,13 @@ pub struct SearchArgs {
     #[arg(value_name = "QUERY", required = true)]
     pub query: String,
 
-    /// Render results in a human-readable terminal format instead of JSON.
+    /// Output format
+    #[arg(long, value_name = "FORMAT", default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
+
+    /// Disable colored terminal output (only affects pretty format)
     #[arg(long)]
-    pub pretty: bool,
+    pub no_color: bool,
 
     /// Scope search to a Kagi lens by numeric index (e.g., "0", "1", "2").
     ///
@@ -50,6 +122,45 @@ pub struct SearchArgs {
     /// 3. Check the URL for the "l=" parameter value
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchSearchArgs {
+    /// List of search queries to execute in parallel
+    #[arg(value_name = "QUERIES", required = true)]
+    pub queries: Vec<String>,
+
+    /// Maximum number of concurrent requests (default: 3)
+    #[arg(long, value_name = "NUM", default_value_t = 3)]
+    pub concurrency: usize,
+
+    /// Maximum requests per minute (default: 60)
+    #[arg(long, value_name = "RPM", default_value_t = 60)]
+    pub rate_limit: u32,
+
+    /// Output format for batch results
+    #[arg(long, value_name = "FORMAT", default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
+
+    /// Disable colored terminal output
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Scope all searches to a Kagi lens by numeric index
+    #[arg(long, value_name = "INDEX")]
+    pub lens: Option<String>,
+}
+
+impl BatchSearchArgs {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.concurrency == 0 {
+            return Err("concurrency must be at least 1".to_string());
+        }
+        if self.rate_limit == 0 {
+            return Err("rate-limit must be at least 1".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Args)]

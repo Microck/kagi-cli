@@ -103,7 +103,7 @@ export KAGI_API_TOKEN='...'
 | --- | --- |
 | `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
-| none | `news`, `smallweb`, `auth status` |
+| none | `news`, `smallweb`, `auth status`, `--help` |
 
 example config:
 
@@ -133,7 +133,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 
 | command | purpose |
 | --- | --- |
-| `kagi search` | search Kagi with JSON by default or `--pretty` for terminal output |
+| `kagi search` | search Kagi with JSON by default or `--format pretty` for terminal output |
+| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output |
 | `kagi auth` | inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
@@ -142,26 +143,55 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
 
-for automation, stdout stays JSON by default. `--pretty` only changes rendering for humans.
+for automation, stdout stays JSON by default. `--format pretty` only changes rendering for humans.
+
+## shell completion
+
+generate a completion script and install it with your shell of choice:
+
+```bash
+# bash
+kagi --generate-completion bash > ~/.local/share/bash-completion/completions/kagi
+
+# zsh
+kagi --generate-completion zsh > ~/.zsh/completion/_kagi
+
+# fish
+kagi --generate-completion fish > ~/.config/fish/completions/kagi.fish
+```
+
+see the [installation guide](https://kagi.micr.dev/guides/installation) for platform-specific setup details.
 
 ## examples
 
 use search as part of a shell pipeline:
 
 ```bash
-kagi search "what is mullvad"'
+kagi search "what is mullvad"
 ```
 
 switch the same command to terminal-readable output:
 
 ```bash
-kagi search --pretty "how do i exit vim"
+kagi search --format pretty "how do i exit vim"
 ```
 
 scope search to one of your lenses:
 
 ```bash
 kagi search --lens 2 "developer documentation"
+```
+
+run a few searches in parallel:
+
+```bash
+kagi batch "rust programming" "python tutorial" "go language"
+```
+
+change batch output format for shell pipelines:
+
+```bash
+kagi batch "rust" "python" "go" --format compact
 ```
 
 continue research with assistant:
@@ -195,7 +225,6 @@ kagi enrich web "local-first software"
 kagi enrich news "browser privacy"
 ```
 
-
 ## what it looks like
 
 if you want a quick feel for the cli before installing it, this is the kind of output you get from the subscriber summarizer, assistant, and public news feed:
@@ -205,6 +234,19 @@ if you want a quick feel for the cli before installing it, this is the kind of o
 ![assistant demo](images/demos/assistant.gif)
 
 ![news demo](images/demos/news.gif)
+
+## building from source
+
+if you are working on the cli itself, build from a local checkout:
+
+```bash
+git clone https://github.com/Microck/kagi-cli.git
+cd kagi-cli
+cargo build --release
+./target/release/kagi --help
+```
+
+for the fuller install matrix and platform-specific setup, use the [installation guide](https://kagi.micr.dev/guides/installation).
 
 ## documentation
 

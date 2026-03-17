@@ -10,7 +10,7 @@ This page documents the current CLI output behavior as implemented in the repo.
 ## Core Rules
 
 1. Most commands print pretty-formatted JSON to stdout on success.
-2. `kagi search --pretty` is the only command with a non-JSON human-readable mode.
+2. `kagi search` and `kagi batch` support human-readable output via `--format pretty`.
 3. Errors are plain text on stderr and exit with status code `1`.
 4. Output shapes differ by command. There is no single universal response envelope.
 
@@ -28,6 +28,30 @@ This page documents the current CLI output behavior as implemented in the repo.
       "url": "https://example.com",
       "snippet": "Description...",
       "published": "2026-03-16T00:00:00Z"
+    }
+  ]
+}
+```
+
+### `kagi batch`
+
+Default JSON output uses a structured envelope:
+
+```json
+{
+  "queries": ["rust", "go"],
+  "results": [
+    {
+      "data": [
+        {
+          "t": 0,
+          "rank": 1,
+          "title": "Result Title",
+          "url": "https://example.com",
+          "snippet": "Description...",
+          "published": "2026-03-16T00:00:00Z"
+        }
+      ]
     }
   ]
 }
@@ -160,7 +184,7 @@ Subscriber mode:
 
 ## Pretty Search Output
 
-`kagi search --pretty` renders results like this:
+`kagi search --format pretty` renders results like this:
 
 ```text
 1. Result Title

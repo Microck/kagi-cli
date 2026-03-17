@@ -371,7 +371,7 @@ query="$1"
 [ -z "$query" ] && { echo "Usage: kagi-dev <query>"; exit 1; }
 
 echo "🔍 Searching dev resources..."
-kagi search --pretty "site:stackoverflow.com OR site:github.com OR site:docs.rs $query"
+kagi search --format pretty "site:stackoverflow.com OR site:github.com OR site:docs.rs $query"
 
 echo ""
 echo "💡 Quick answer..."

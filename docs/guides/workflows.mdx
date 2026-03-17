@@ -155,7 +155,7 @@ echo ""
 
 # 1. Initial search
 echo "Step 1: General search..."
-kagi search --pretty "$TOPIC" > "$RESEARCH_DIR/01-general-search.txt"
+kagi search --format pretty "$TOPIC" > "$RESEARCH_DIR/01-general-search.txt"
 
 # 2. News coverage
 echo "Step 2: Recent news..."
@@ -205,11 +205,11 @@ kagi fastgpt "What does $COMPANY do? What are their main products and services?"
 
 # Recent news
 echo "2. Recent News"
-kagi search --pretty "$COMPANY news $(date +%Y)" > "$RESEARCH_DIR/02-recent-news.txt"
+kagi search --format pretty "$COMPANY news $(date +%Y)" > "$RESEARCH_DIR/02-recent-news.txt"
 
 # Product comparison
 echo "3. Product Information"
-kagi search --pretty "$COMPANY products features" > "$RESEARCH_DIR/03-products.txt"
+kagi search --format pretty "$COMPANY products features" > "$RESEARCH_DIR/03-products.txt"
 
 # Market position
 echo "4. Market Position"
@@ -217,7 +217,7 @@ kagi fastgpt "What is $COMPANY's market position? Who are their main competitors
 
 # Technical analysis (if applicable)
 echo "5. Technical Stack"
-kagi search --pretty "$COMPANY technology stack infrastructure" > "$RESEARCH_DIR/05-technology.txt"
+kagi search --format pretty "$COMPANY technology stack infrastructure" > "$RESEARCH_DIR/05-technology.txt"
 
 echo ""
 echo "Analysis complete! Check $RESEARCH_DIR"
@@ -239,7 +239,7 @@ echo ""
 
 # Search for papers and resources
 echo "Searching academic resources..."
-kagi search --pretty "$QUERY filetype:pdf OR site:arxiv.org OR site:scholar.google.com" > "$RESEARCH_DIR/academic-sources.txt"
+kagi search --format pretty "$QUERY filetype:pdf OR site:arxiv.org OR site:scholar.google.com" > "$RESEARCH_DIR/academic-sources.txt"
 
 # Get summary
 echo "Generating summary..."
@@ -339,7 +339,7 @@ echo ""
 
 # Search for recent content
 echo "Finding recent articles..."
-kagi search --pretty "$CATEGORY $(date +%Y) guide tutorial" > /tmp/search-results.txt
+kagi search --format pretty "$CATEGORY $(date +%Y) guide tutorial" > /tmp/search-results.txt
 
 # Extract top URLs and summarize
 echo ""
@@ -375,7 +375,7 @@ echo ""
 
 # Search for the error
 echo "🔍 Searching for solutions..."
-kagi search --pretty "\"$ERROR_MSG\" solution fix"
+kagi search --format pretty "\"$ERROR_MSG\" solution fix"
 
 echo ""
 echo "🤖 AI Analysis..."
@@ -416,7 +416,7 @@ kagi fastgpt "What are the main advantages and disadvantages of $TECH compared t
 # Community and ecosystem
 echo ""
 echo "3. Community"
-kagi search --pretty "$TECH github stars community adoption $(date +%Y)"
+kagi search --format pretty "$TECH github stars community adoption $(date +%Y)"
 
 # Recent developments
 echo ""
@@ -426,7 +426,7 @@ kagi news --category tech --limit 5 | jq -r '.stories[] | select(.title | contai
 # Learning resources
 echo ""
 echo "5. Learning Resources"
-kagi search --pretty "$TECH tutorial getting started documentation"
+kagi search --format pretty "$TECH tutorial getting started documentation"
 ```
 
 ### API Documentation Search
@@ -448,16 +448,16 @@ echo ""
 # Search specific documentation
 case "$API" in
   "react")
-    kagi search --pretty "site:react.dev $QUERY"
+    kagi search --format pretty "site:react.dev $QUERY"
     ;;
   "node")
-    kagi search --pretty "site:nodejs.org $QUERY"
+    kagi search --format pretty "site:nodejs.org $QUERY"
     ;;
   "mdn")
-    kagi search --pretty "site:developer.mozilla.org $QUERY"
+    kagi search --format pretty "site:developer.mozilla.org $QUERY"
     ;;
   *)
-    kagi search --pretty "$API documentation $QUERY"
+    kagi search --format pretty "$API documentation $QUERY"
     ;;
 esac
 ```

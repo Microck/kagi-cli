@@ -373,13 +373,13 @@ To enable tab completion, add to your shell configuration:
 
 ```bash
 # Bash (~/.bashrc)
-eval "$(kagi completions bash)"
+eval "$(kagi --generate-completion bash)"
 
 # Zsh (~/.zshrc)
-eval "$(kagi completions zsh)"
+eval "$(kagi --generate-completion zsh)"
 
 # Fish (~/.config/fish/config.fish)
-kagi completions fish | source
+kagi --generate-completion fish | source
 ```
 
 ### Windows
@@ -429,7 +429,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 kagi auth check
 
 # Test search
-kagi search --pretty "test query"
+kagi search --format pretty "test query"
 ```
 
 ## Troubleshooting

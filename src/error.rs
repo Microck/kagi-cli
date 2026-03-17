@@ -13,4 +13,13 @@ pub enum KagiError {
 
     #[error("configuration error: {0}")]
     Config(String),
+
+    #[error("batch error: {0}")]
+    Batch(String),
+}
+
+impl From<serde_json::Error> for KagiError {
+    fn from(err: serde_json::Error) -> Self {
+        KagiError::Parse(format!("JSON serialization error: {}", err))
+    }
 }

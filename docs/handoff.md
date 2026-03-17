@@ -9,7 +9,7 @@ The CLI is no longer search-only. It currently implements:
 ### Working / implemented
 - **Search** via session-token HTML flow
 - **Lens-aware search** via session-token HTML flow (`--lens <INDEX>`)
-- **Pretty output** for search (`--pretty`)
+- **Pretty output** for search (`--format pretty`)
 - **Subscriber web Summarizer** via session-token web-product flow (`kagi summarize --subscriber ...`)
 - **Kagi News** via live public product JSON (`kagi news ...`)
 - **Subscriber web Assistant prompt flow** via session-token tagged stream (`kagi assistant ...`)
@@ -45,7 +45,7 @@ The CLI is no longer search-only. It currently implements:
 These worked with session token only:
 - `kagi auth check`
 - `kagi search "rust lang"`
-- `kagi search --pretty "rust lang"`
+- `kagi search --format pretty "rust lang"`
 - `kagi search --lens 2 "rust lang"`
 
 ### API-token flow: implementation exists, but account constraints observed

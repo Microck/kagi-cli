@@ -160,7 +160,7 @@ Now that you're authenticated, test the subscriber commands:
 
 ```bash
 # Basic search (uses session token)
-kagi search --pretty "rust programming language"
+kagi search --format pretty "rust programming language"
 
 # Search with a lens (replace 2 with your lens index)
 kagi search --lens 2 "developer documentation"
@@ -351,7 +351,7 @@ chmod +x ~/bin/news-brief.sh
 
 ```bash
 # Search for documentation
-kagi search --lens 2 "error handling rust" --pretty
+kagi search --lens 2 "error handling rust" --format pretty
 
 # Summarize a relevant article
 kagi summarize --subscriber --url https://doc.rust-lang.org/book/ch09-00-error-handling.html --summary-type keypoints
@@ -388,7 +388,7 @@ kagi fastgpt "What are the new features in Python 3.12?"
 kagi enrich web "Python 3.12 performance improvements"
 
 # Search for specific implementation examples
-kagi search "python 3.12 generic types examples" --pretty
+kagi search "python 3.12 generic types examples" --format pretty
 ```
 
 ## Common First Commands Reference
@@ -409,9 +409,9 @@ kagi news --list-categories # Show available news categories
 
 ```bash
 kagi search "query"                      # JSON output
-kagi search --pretty "query"             # Human-readable
+kagi search --format pretty "query"             # Human-readable
 kagi search --lens 2 "query"             # With lens
-kagi search --lens 2 --pretty "query"    # Combined
+kagi search --lens 2 --format pretty "query"    # Combined
 ```
 
 ### Content Commands
