@@ -18,13 +18,22 @@
 
 ---
 
-`kagi` brings Kagi into the terminal with one CLI for search, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want fast interactive use and clean JSON output for scripts, agents, and shell workflows.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
-the best part is the session-link flow: paste your full Kagi session-link URL into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
+the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
 [documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [github](https://github.com/Microck/kagi-cli)
 
 ![search demo](images/demos/search.gif)
+
+## why
+
+if you already use Kagi and want to access it from scripts, shell workflows, or small tools, this CLI gives you a practical path without making the paid API flow the starting point.
+
+- use your existing session-link URL for subscriber features
+- get structured JSON for scripts and agents
+- use one CLI for search, assistant, summarization, and feeds
+- add `KAGI_API_TOKEN` only when you want the paid public API commands
 
 ## quickstart
 
@@ -78,18 +87,16 @@ add an API token when you want the paid public API commands:
 ```bash
 export KAGI_API_TOKEN='...'
 kagi summarize --url https://example.com
-kagi fastgpt "what changed in rust 1.86?"
+kagi fastgpt "best practices for private browsing"
 kagi enrich web "privacy focused browsers"
 ```
 
 ## what it covers
 
-- `search` for structured Kagi results with optional `--pretty` output
-- `search --lens` for subscriber lens-aware search
-- `assistant` for subscriber Kagi Assistant prompts and threads
-- `summarize --subscriber` for the subscriber web summarizer
-- `summarize`, `fastgpt`, and `enrich` for paid public API usage
-- `news` and `smallweb` for public feeds that work without credentials
+- `search` returns structured Kagi results, with `--pretty` when you want terminal output
+- `search --lens`, `assistant`, and `summarize --subscriber` use the subscriber session path
+- `news` and `smallweb` work without credentials
+- `summarize`, `fastgpt`, and `enrich` use `KAGI_API_TOKEN` for paid public API access
 
 ## auth model
 
@@ -134,42 +141,25 @@ for the full command-to-token matrix, use the docs page at [`kagi.micr.dev/refer
 
 for automation, stdout stays JSON by default. `--pretty` only changes rendering for humans.
 
-## demos
+## what it looks like
 
-subscriber summarization:
+if you want a quick feel for the cli before installing it, this is the kind of output you get from the subscriber summarizer, assistant, and public news feed:
 
 ![summarize demo](images/demos/summarize.gif)
 
-assistant in the terminal:
-
 ![assistant demo](images/demos/assistant.gif)
-
-public news with no auth:
 
 ![news demo](images/demos/news.gif)
 
-## docs
+## documentation
 
 - [installation guide](https://kagi.micr.dev/guides/installation)
 - [quickstart guide](https://kagi.micr.dev/guides/quickstart)
 - [authentication guide](https://kagi.micr.dev/guides/authentication)
 - [workflows](https://kagi.micr.dev/guides/workflows)
-- [advanced usage](https://kagi.micr.dev/guides/advanced-usage)
-- [search command](https://kagi.micr.dev/commands/search)
-- [auth command](https://kagi.micr.dev/commands/auth)
-- [summarize command](https://kagi.micr.dev/commands/summarize)
-- [assistant command](https://kagi.micr.dev/commands/assistant)
-- [news command](https://kagi.micr.dev/commands/news)
-- [smallweb command](https://kagi.micr.dev/commands/smallweb)
-- [auth matrix](https://kagi.micr.dev/reference/auth-matrix)
-- [output contract](https://kagi.micr.dev/reference/output-contract)
 
-## project links
+## license
 
-- [releases](https://github.com/Microck/kagi-cli/releases)
-- [contributing](CONTRIBUTING.md)
-- [support](SUPPORT.md)
-- [security](SECURITY.md)
-- [license](LICENSE)
+released under the [mit license](LICENSE).
 
-last reviewed: March 16, 2026
+last reviewed: March 17, 2026
