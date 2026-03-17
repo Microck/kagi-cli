@@ -18,9 +18,7 @@ use crate::auth::{
     Credential, CredentialKind, SearchCredentials, format_status, load_credential_inventory,
     save_credentials,
 };
-use crate::cli::{
-    AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand,
-};
+use crate::cli::{AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand};
 use crate::error::KagiError;
 use crate::types::{
     AssistantPromptRequest, FastGptRequest, SearchResponse, SubscriberSummarizeRequest,
@@ -165,7 +163,7 @@ async fn run() -> Result<(), KagiError> {
         }
         Commands::Batch(args) => {
             // Validate batch arguments
-            args.validate().map_err(|e| KagiError::Config(e))?;
+            args.validate().map_err(KagiError::Config)?;
 
             let format_str = match args.format {
                 cli::OutputFormat::Json => "json",
