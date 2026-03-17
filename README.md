@@ -6,9 +6,6 @@
   </picture>
 </p>
 
-<p align="center">
-  use kagi from your terminal with your session-link url, or drop in an api token when you want the paid api commands too.
-</p>
 
 <p align="center">
   <a href="https://github.com/Microck/kagi-cli/releases"><img src="https://img.shields.io/github/v/release/Microck/kagi-cli?display_name=tag&style=flat-square&label=release&color=000000" alt="release badge"></a>
