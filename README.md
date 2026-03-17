@@ -69,10 +69,9 @@ add your subscriber session token:
 how to get it:
 
 1. click the top-right menu icon
-2. click `Settings`
-3. click `Advanced` in the left sidebar
-4. scroll down to `Session Link`
-5. click `Copy`
+2. go into `Settings`
+3. click `Account` in the left sidebar
+4. in `Session Link`, click `Copy`
 
 ![session-link tutorial](images/tutorials/session-link.gif)
 
@@ -87,11 +86,10 @@ add an api token when you want the paid public api commands:
 how to get it:
 
 1. click the top-right menu icon
-2. click `Settings`
+2. go into `Settings`
 3. click `Advanced` in the left sidebar
-4. scroll down to `API`
-5. click `Generate API Token`
-6. click `Copy`
+4. go into `Open API Portal`
+5. under `API Token`, click `Generate New Token`
 
 ![api token tutorial](images/tutorials/api-token.gif)
 
