@@ -183,11 +183,12 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
         source: CredentialSource::Env,
         value,
     });
-    let env_session = read_env_credential(SESSION_TOKEN_ENV).map(|value| Credential {
-        kind: CredentialKind::SessionToken,
-        source: CredentialSource::Env,
-        value,
-    });
+    let env_session = normalize_optional_session_token(read_env_credential(SESSION_TOKEN_ENV))?
+        .map(|value| Credential {
+            kind: CredentialKind::SessionToken,
+            source: CredentialSource::Env,
+            value,
+        });
 
     let config_api = config
         .auth
@@ -201,17 +202,19 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
             value,
         });
 
-    let config_session = config
-        .auth
-        .as_ref()
-        .and_then(|auth| auth.session_token.as_ref())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(|value| Credential {
-            kind: CredentialKind::SessionToken,
-            source: CredentialSource::Config,
-            value,
-        });
+    let config_session = normalize_optional_session_token(
+        config
+            .auth
+            .as_ref()
+            .and_then(|auth| auth.session_token.as_ref())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+    )?
+    .map(|value| Credential {
+        kind: CredentialKind::SessionToken,
+        source: CredentialSource::Config,
+        value,
+    });
 
     Ok(CredentialInventory {
         api_token: env_api.or(config_api),
@@ -280,7 +283,7 @@ pub fn save_credentials(
     }
 
     if let Some(session_input) = session_input {
-        let normalized = normalize_session_token_input(session_input)?;
+        let normalized = normalize_session_token(session_input)?;
         auth.session_token = Some(normalized);
     }
 
@@ -300,7 +303,13 @@ pub fn save_credentials(
     load_credential_inventory()
 }
 
-fn normalize_session_token_input(input: &str) -> Result<String, KagiError> {
+fn normalize_optional_session_token(input: Option<String>) -> Result<Option<String>, KagiError> {
+    input
+        .map(|value| normalize_session_token(&value))
+        .transpose()
+}
+
+pub fn normalize_session_token(input: &str) -> Result<String, KagiError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(KagiError::Config(
@@ -572,22 +581,31 @@ mod tests {
 
     #[test]
     fn extracts_token_from_session_link_url() {
-        let token =
-            normalize_session_token_input("https://kagi.com/search?token=abc123.def456&foo=bar")
-                .expect("session link parses");
+        let token = normalize_session_token("https://kagi.com/search?token=abc123.def456&foo=bar")
+            .expect("session link parses");
         assert_eq!(token, "abc123.def456");
     }
 
     #[test]
     fn keeps_raw_session_token_input() {
-        let token = normalize_session_token_input("abc123.def456").expect("raw token accepted");
+        let token = normalize_session_token("abc123.def456").expect("raw token accepted");
         assert_eq!(token, "abc123.def456");
     }
 
     #[test]
     fn rejects_session_link_without_token_param() {
-        let error = normalize_session_token_input("https://kagi.com/search?q=test")
+        let error = normalize_session_token("https://kagi.com/search?q=test")
             .expect_err("missing token param should fail");
         assert!(error.to_string().contains("token="));
+    }
+
+    #[test]
+    fn normalizes_session_link_from_environment_style_input() {
+        let normalized = normalize_optional_session_token(Some(
+            "https://kagi.com/search?token=env-session-token".to_string(),
+        ))
+        .expect("session token should normalize");
+
+        assert_eq!(normalized.as_deref(), Some("env-session-token"));
     }
 }

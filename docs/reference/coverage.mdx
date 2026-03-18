@@ -31,6 +31,7 @@ These features use the subscriber web product (Session Token):
 | Lens Search | `kagi search --lens` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
 | Assistant | `kagi assistant` | ✅ Implemented |
+| Translate (text mode) | `kagi translate` | ✅ Implemented |
 
 ### Public Product Endpoints
 
@@ -56,6 +57,7 @@ These require no authentication:
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
 | `assistant` | AI assistant | Session | ✅ |
+| `translate` | Kagi Translate text mode | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
@@ -81,6 +83,8 @@ These require no authentication:
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--from`, `--to` | translate | ✅ |
+| `--no-alternatives`, `--no-word-insights`, `--no-suggestions`, `--no-alignments` | translate | ✅ |
 
 ## Not Available
 
@@ -88,15 +92,7 @@ These require no authentication:
 
 These features were evaluated and left out of the public CLI surface:
 
-#### Translate
-
-**Status:** ❌ Not implemented
-
-**Reason:** The current Session Link implementation is not sufficient for `translate.kagi.com` as deployed. The endpoint requires additional authentication mechanisms that are incompatible with the Session Link token model.
-
-**Decision:** Rather than ship a fragile compatibility layer that might break, the feature is excluded until there is a viable authentication path.
-
-**Alternative:** Use the web interface at [translate.kagi.com](https://translate.kagi.com)
+There is no public CLI support today for document, website, image, proofread, dictionary, or voice modes from Kagi Translate. The implemented scope is text mode only.
 
 ## API Surface Philosophy
 
@@ -120,7 +116,7 @@ These features were evaluated and left out of the public CLI surface:
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, summarize --subscriber, assistant |
+| Session Token | ✅ | search, summarize --subscriber, assistant, translate |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -146,6 +142,7 @@ All commands output JSON:
 | smallweb | Stable |
 | summarize | Stable |
 | assistant | Stable |
+| translate | Stable |
 | fastgpt | Stable |
 | enrich | Stable |
 
@@ -183,6 +180,8 @@ All commands output JSON:
 | GitHub Releases | ✅ |
 | Build from source | ✅ |
 
+**Translate runtime note:** `kagi translate` additionally requires `python3` with the `curl_cffi` package installed.
+
 ## Feature Comparison Matrix
 
 ### vs Kagi Web Product
@@ -193,7 +192,7 @@ All commands output JSON:
 | Lens Search | ✅ | ✅ |
 | Assistant | ✅ (basic) | ✅ (full) |
 | Summarizer | ✅ | ✅ |
-| Translate | ❌ | ✅ |
+| Translate | ✅ (text mode) | ✅ |
 | Settings | ❌ | ✅ |
 | Billing | ❌ | ✅ |
 

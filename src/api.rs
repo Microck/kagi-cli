@@ -1,23 +1,29 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::process::Stdio;
 
 use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 use serde_json::json;
+use serde_json::{Map, Value};
+use tokio::process::Command;
 
 use crate::error::KagiError;
 #[cfg(test)]
 use crate::types::ApiMeta;
 use crate::types::{
-    AssistantMessage, AssistantMeta, AssistantPromptRequest, AssistantPromptResponse,
-    AssistantThread, EnrichResponse, FastGptRequest, FastGptResponse, NewsBatchCategories,
-    NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata, NewsCategoryMetadataList,
-    NewsChaos, NewsChaosResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
-    NewsStoriesResponse, SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta,
-    SubscriberSummarizeRequest, SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse,
+    AlternativeTranslationsResponse, AssistantMessage, AssistantMeta, AssistantPromptRequest,
+    AssistantPromptResponse, AssistantThread, EnrichResponse, FastGptRequest, FastGptResponse,
+    NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata,
+    NewsCategoryMetadataList, NewsChaos, NewsChaosResponse, NewsLatestBatch, NewsResolvedCategory,
+    NewsStoriesPayload, NewsStoriesResponse, SmallWebFeed, SubscriberSummarization,
+    SubscriberSummarizeMeta, SubscriberSummarizeRequest, SubscriberSummarizeResponse,
+    SummarizeRequest, SummarizeResponse, TextAlignmentsResponse, TranslateBootstrapMetadata,
+    TranslateCommandRequest, TranslateDetectedLanguage, TranslateOptionState, TranslateResponse,
+    TranslateTextResponse, TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
 const USER_AGENT: &str = "kagi-cli/0.1.0 (+https://github.com/)";
@@ -31,6 +37,14 @@ const KAGI_FASTGPT_URL: &str = "https://kagi.com/api/v0/fastgpt";
 const KAGI_ENRICH_WEB_URL: &str = "https://kagi.com/api/v0/enrich/web";
 const KAGI_ENRICH_NEWS_URL: &str = "https://kagi.com/api/v0/enrich/news";
 const KAGI_SMALLWEB_FEED_URL: &str = "https://kagi.com/api/v1/smallweb/feed/";
+const KAGI_TRANSLATE_DETECT_URL: &str = "https://translate.kagi.com/api/detect";
+const KAGI_TRANSLATE_URL: &str = "https://translate.kagi.com/api/translate";
+const KAGI_TRANSLATE_ALTERNATIVES_URL: &str =
+    "https://translate.kagi.com/api/alternative-translations";
+const KAGI_TRANSLATE_ALIGNMENTS_URL: &str = "https://translate.kagi.com/api/text-alignments";
+const KAGI_TRANSLATE_SUGGESTIONS_URL: &str =
+    "https://translate.kagi.com/api/translation-suggestions";
+const KAGI_TRANSLATE_WORD_INSIGHTS_URL: &str = "https://translate.kagi.com/api/word-insights";
 const ASSISTANT_ZERO_BRANCH_UUID: &str = "00000000-0000-4000-0000-000000000000";
 
 pub async fn execute_summarize(
@@ -365,6 +379,137 @@ pub async fn execute_assistant_prompt(
     }
 }
 
+pub async fn execute_translate(
+    request: &TranslateCommandRequest,
+    session_token: &str,
+) -> Result<TranslateResponse, KagiError> {
+    if session_token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    if request.text.trim().is_empty() {
+        return Err(KagiError::Config(
+            "translate text cannot be empty".to_string(),
+        ));
+    }
+
+    if request.from.trim().is_empty() {
+        return Err(KagiError::Config(
+            "translate --from cannot be empty".to_string(),
+        ));
+    }
+
+    if request.to.trim().is_empty() {
+        return Err(KagiError::Config(
+            "translate --to cannot be empty".to_string(),
+        ));
+    }
+
+    let bootstrap = bootstrap_translate_session(session_token).await?;
+    let client = build_client()?;
+    let cookie_header = build_translate_cookie_header(session_token, &bootstrap.translate_session);
+    let detected_language =
+        execute_translate_detect(&client, &cookie_header, request.text.trim()).await?;
+    let effective_source_language =
+        effective_translate_source_language(&request.from, &detected_language);
+    let translation = execute_translate_text(
+        &client,
+        &cookie_header,
+        request,
+        &bootstrap.translate_session,
+        &effective_source_language,
+    )
+    .await?;
+    let translation_options = build_translate_option_state(request);
+    let translated_text = translation.translation.clone();
+    let target_language = request.to.clone();
+    let translate_session = bootstrap.translate_session.clone();
+
+    let (alternatives_result, alignments_result, suggestions_result, insights_result) = tokio::join!(
+        capture_optional_translate_section(
+            "alternatives",
+            request.fetch_alternatives,
+            execute_translate_alternatives(
+                &client,
+                &cookie_header,
+                &translate_session,
+                request,
+                &effective_source_language,
+                &translated_text,
+                translation_options.as_ref(),
+            ),
+        ),
+        capture_optional_translate_section(
+            "text_alignments",
+            request.fetch_alignments,
+            execute_translate_text_alignments(
+                &client,
+                &cookie_header,
+                &translate_session,
+                request.text.trim(),
+                &translated_text,
+            ),
+        ),
+        capture_optional_translate_section(
+            "translation_suggestions",
+            request.fetch_suggestions,
+            execute_translate_suggestions(
+                &client,
+                &cookie_header,
+                &translate_session,
+                request.text.trim(),
+                &translated_text,
+                &effective_source_language,
+                &target_language,
+                translation_options.as_ref(),
+            ),
+        ),
+        capture_optional_translate_section(
+            "word_insights",
+            request.fetch_word_insights,
+            execute_translate_word_insights(
+                &client,
+                &cookie_header,
+                &translate_session,
+                request.text.trim(),
+                &translated_text,
+                translation_options.as_ref(),
+            ),
+        ),
+    );
+
+    let (alternatives, alternatives_warning) = alternatives_result;
+    let (text_alignments, alignments_warning) = alignments_result;
+    let (translation_suggestions, suggestions_warning) = suggestions_result;
+    let (word_insights, insights_warning) = insights_result;
+
+    let warnings = vec![
+        alternatives_warning,
+        alignments_warning,
+        suggestions_warning,
+        insights_warning,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    Ok(TranslateResponse {
+        bootstrap: TranslateBootstrapMetadata {
+            method: bootstrap.method,
+            authenticated: true,
+        },
+        detected_language,
+        translation,
+        alternatives,
+        text_alignments,
+        translation_suggestions,
+        word_insights,
+        warnings,
+    })
+}
+
 pub async fn execute_fastgpt(
     request: &FastGptRequest,
     token: &str,
@@ -443,6 +588,388 @@ async fn execute_enrich(
         .map_err(map_transport_error)?;
 
     decode_kagi_json(response, surface).await
+}
+
+async fn bootstrap_translate_session(
+    session_token: &str,
+) -> Result<TranslateBootstrapResult, KagiError> {
+    const BOOTSTRAP_SCRIPT: &str = r#"import json
+import os
+import sys
+
+def finish(ok, **kwargs):
+    payload = {"ok": ok}
+    payload.update(kwargs)
+    print(json.dumps(payload))
+    sys.exit(0 if ok else 1)
+
+token = os.environ.get("KAGI_SESSION_TOKEN_RAW", "").strip()
+if not token:
+    finish(False, kind="config", message="missing normalized KAGI session token")
+
+try:
+    from curl_cffi import requests
+except Exception as exc:
+    finish(
+        False,
+        kind="config",
+        message="kagi translate requires python3 with the curl_cffi package installed",
+        detail=str(exc),
+    )
+
+try:
+    session = requests.Session(impersonate="chrome136")
+    session.cookies.set("kagi_session", token, domain=".kagi.com", path="/", secure=True)
+    response = session.get("https://translate.kagi.com/", timeout=30, allow_redirects=True)
+except Exception as exc:
+    finish(False, kind="network", message="translate bootstrap request failed", detail=str(exc))
+
+if response.status_code >= 400:
+    finish(
+        False,
+        kind="network",
+        message=f"translate bootstrap returned HTTP {response.status_code}",
+    )
+
+translate_session = ""
+for cookie in session.cookies.jar:
+    if cookie.name == "translate_session" and cookie.value:
+        translate_session = cookie.value
+        break
+
+if not translate_session:
+    finish(
+        False,
+        kind="auth",
+        message="translate bootstrap did not mint a translate_session cookie",
+    )
+
+finish(
+    True,
+    translate_session=translate_session,
+    method="python3+curl_cffi(chrome136)",
+)
+"#;
+
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(BOOTSTRAP_SCRIPT)
+        .env("KAGI_SESSION_TOKEN_RAW", session_token)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => KagiError::Config(
+                "kagi translate requires `python3` with the `curl_cffi` package installed"
+                    .to_string(),
+            ),
+            _ => KagiError::Config(format!(
+                "failed to start translate bootstrap helper: {error}"
+            )),
+        })?;
+
+    let stdout = String::from_utf8(output.stdout).map_err(|error| {
+        KagiError::Parse(format!(
+            "translate bootstrap helper returned non-UTF-8 output: {error}"
+        ))
+    })?;
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let trimmed_stdout = stdout.trim();
+
+    if trimmed_stdout.is_empty() {
+        return Err(KagiError::Config(if stderr.is_empty() {
+            "translate bootstrap helper returned no output".to_string()
+        } else {
+            format!("translate bootstrap helper failed: {stderr}")
+        }));
+    }
+
+    let parsed: TranslateBootstrapScriptOutput =
+        serde_json::from_str(trimmed_stdout).map_err(|error| {
+            KagiError::Parse(format!(
+                "failed to parse translate bootstrap helper output: {error}"
+            ))
+        })?;
+
+    if parsed.ok {
+        let translate_session = parsed.translate_session.ok_or_else(|| {
+            KagiError::Parse(
+                "translate bootstrap helper did not return translate_session".to_string(),
+            )
+        })?;
+        let method = parsed
+            .method
+            .unwrap_or_else(|| "python3+curl_cffi".to_string());
+
+        return Ok(TranslateBootstrapResult {
+            translate_session,
+            method,
+        });
+    }
+
+    let mut message = parsed
+        .message
+        .unwrap_or_else(|| "translate bootstrap failed".to_string());
+    if !stderr.is_empty() {
+        message.push_str(&format!("; stderr: {stderr}"));
+    }
+
+    Err(map_bootstrap_kind_to_error(
+        parsed.kind.as_deref().unwrap_or("config"),
+        &message,
+    ))
+}
+
+async fn execute_translate_detect(
+    client: &Client,
+    cookie_header: &str,
+    text: &str,
+) -> Result<TranslateDetectedLanguage, KagiError> {
+    let response = client
+        .post(KAGI_TRANSLATE_DETECT_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&json!({
+            "text": text,
+            "include_alternatives": true,
+        }))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    let value: Value = decode_translate_json(response, "language detection").await?;
+    parse_translate_detect_value(value)
+}
+
+async fn execute_translate_text(
+    client: &Client,
+    cookie_header: &str,
+    request: &TranslateCommandRequest,
+    translate_session: &str,
+    effective_source_language: &str,
+) -> Result<TranslateTextResponse, KagiError> {
+    let response = client
+        .post(KAGI_TRANSLATE_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&build_translate_payload(
+            request,
+            translate_session,
+            effective_source_language,
+        ))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    decode_translate_json(response, "translation").await
+}
+
+async fn execute_translate_alternatives(
+    client: &Client,
+    cookie_header: &str,
+    translate_session: &str,
+    request: &TranslateCommandRequest,
+    effective_source_language: &str,
+    translated_text: &str,
+    translation_options: Option<&TranslateOptionState>,
+) -> Result<AlternativeTranslationsResponse, KagiError> {
+    let mut payload = Map::new();
+    payload.insert(
+        "original_text".to_string(),
+        Value::String(request.text.clone()),
+    );
+    payload.insert(
+        "existing_translation".to_string(),
+        Value::String(translated_text.to_string()),
+    );
+    payload.insert(
+        "source_lang".to_string(),
+        Value::String(effective_source_language.to_string()),
+    );
+    payload.insert("target_lang".to_string(), Value::String(request.to.clone()));
+    payload.insert(
+        "session_token".to_string(),
+        Value::String(translate_session.to_string()),
+    );
+
+    if let Some(quality) = normalize_aux_quality(request.quality.as_deref()) {
+        payload.insert("quality".to_string(), Value::String(quality));
+    }
+
+    if let Some(options) = translation_options {
+        payload.insert(
+            "translation_options".to_string(),
+            serde_json::to_value(options).map_err(|error| {
+                KagiError::Parse(format!(
+                    "failed to serialize translate alternatives options: {error}"
+                ))
+            })?,
+        );
+    }
+
+    let response = client
+        .post(KAGI_TRANSLATE_ALTERNATIVES_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&Value::Object(payload))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    decode_translate_json(response, "alternative translations").await
+}
+
+async fn execute_translate_text_alignments(
+    client: &Client,
+    cookie_header: &str,
+    translate_session: &str,
+    source_text: &str,
+    target_text: &str,
+) -> Result<TextAlignmentsResponse, KagiError> {
+    let response = client
+        .post(KAGI_TRANSLATE_ALIGNMENTS_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&json!({
+            "source_text": source_text,
+            "target_text": target_text,
+            "session_token": translate_session,
+        }))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    decode_translate_json(response, "text alignments").await
+}
+
+async fn execute_translate_suggestions(
+    client: &Client,
+    cookie_header: &str,
+    translate_session: &str,
+    source_text: &str,
+    target_text: &str,
+    source_language: &str,
+    target_language: &str,
+    translation_options: Option<&TranslateOptionState>,
+) -> Result<TranslationSuggestionsResponse, KagiError> {
+    let mut payload = Map::new();
+    payload.insert(
+        "originalText".to_string(),
+        Value::String(source_text.to_string()),
+    );
+    payload.insert(
+        "translatedText".to_string(),
+        Value::String(target_text.to_string()),
+    );
+    payload.insert(
+        "sourceLanguage".to_string(),
+        Value::String(source_language.to_string()),
+    );
+    payload.insert(
+        "targetLanguage".to_string(),
+        Value::String(target_language.to_string()),
+    );
+    payload.insert("language".to_string(), Value::String("en".to_string()));
+    payload.insert(
+        "session_token".to_string(),
+        Value::String(translate_session.to_string()),
+    );
+
+    if let Some(options) = translation_options {
+        payload.insert(
+            "translationOptions".to_string(),
+            serde_json::to_value(options).map_err(|error| {
+                KagiError::Parse(format!(
+                    "failed to serialize translate suggestion options: {error}"
+                ))
+            })?,
+        );
+    }
+
+    let response = client
+        .post(KAGI_TRANSLATE_SUGGESTIONS_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&Value::Object(payload))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    decode_translate_json(response, "translation suggestions").await
+}
+
+async fn execute_translate_word_insights(
+    client: &Client,
+    cookie_header: &str,
+    translate_session: &str,
+    source_text: &str,
+    target_text: &str,
+    translation_options: Option<&TranslateOptionState>,
+) -> Result<WordInsightsResponse, KagiError> {
+    let mut payload = Map::new();
+    payload.insert(
+        "original_text".to_string(),
+        Value::String(source_text.to_string()),
+    );
+    payload.insert(
+        "translated_text".to_string(),
+        Value::String(target_text.to_string()),
+    );
+    payload.insert(
+        "target_explanation_language".to_string(),
+        Value::String("en".to_string()),
+    );
+    payload.insert(
+        "session_token".to_string(),
+        Value::String(translate_session.to_string()),
+    );
+
+    if let Some(options) = translation_options {
+        payload.insert(
+            "translation_options".to_string(),
+            serde_json::to_value(options).map_err(|error| {
+                KagiError::Parse(format!(
+                    "failed to serialize translate word-insight options: {error}"
+                ))
+            })?,
+        );
+    }
+
+    let response = client
+        .post(KAGI_TRANSLATE_WORD_INSIGHTS_URL)
+        .header(header::COOKIE, cookie_header)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&Value::Object(payload))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    decode_translate_json(response, "word insights").await
+}
+
+async fn capture_optional_translate_section<T, F>(
+    section: &'static str,
+    enabled: bool,
+    future: F,
+) -> (Option<T>, Option<TranslateWarning>)
+where
+    F: Future<Output = Result<T, KagiError>>,
+{
+    if !enabled {
+        return (None, None);
+    }
+
+    match future.await {
+        Ok(value) => (Some(value), None),
+        Err(error) => (
+            None,
+            Some(TranslateWarning {
+                section: section.to_string(),
+                message: error.to_string(),
+            }),
+        ),
+    }
 }
 
 fn normalize_subscriber_summary_input(
@@ -732,6 +1259,177 @@ fn format_client_error_suffix(body: &str) -> String {
     format!("; {trimmed}")
 }
 
+fn build_translate_cookie_header(session_token: &str, translate_session: &str) -> String {
+    format!("kagi_session={session_token}; translate_session={translate_session}")
+}
+
+fn effective_translate_source_language(
+    requested_from: &str,
+    detected_language: &TranslateDetectedLanguage,
+) -> String {
+    if requested_from.eq_ignore_ascii_case("auto") && !detected_language.iso.trim().is_empty() {
+        detected_language.iso.clone()
+    } else {
+        requested_from.to_string()
+    }
+}
+
+fn build_translate_option_state(request: &TranslateCommandRequest) -> Option<TranslateOptionState> {
+    let options = TranslateOptionState {
+        formality: request.formality.clone(),
+        speaker_gender: request.speaker_gender.clone(),
+        addressee_gender: request.addressee_gender.clone(),
+        language_complexity: request.language_complexity.clone(),
+        style: request.translation_style.clone(),
+        context: request.context.clone(),
+    };
+
+    if options.formality.is_none()
+        && options.speaker_gender.is_none()
+        && options.addressee_gender.is_none()
+        && options.language_complexity.is_none()
+        && options.style.is_none()
+        && options.context.is_none()
+    {
+        None
+    } else {
+        Some(options)
+    }
+}
+
+fn build_translate_payload(
+    request: &TranslateCommandRequest,
+    translate_session: &str,
+    effective_source_language: &str,
+) -> Value {
+    let mut payload = Map::new();
+    payload.insert("text".to_string(), Value::String(request.text.clone()));
+    payload.insert(
+        "from".to_string(),
+        Value::String(effective_source_language.to_string()),
+    );
+    payload.insert("to".to_string(), Value::String(request.to.clone()));
+    payload.insert("stream".to_string(), Value::Bool(false));
+    payload.insert(
+        "session_token".to_string(),
+        Value::String(translate_session.to_string()),
+    );
+
+    insert_optional_string(&mut payload, "quality", request.quality.as_deref());
+    insert_optional_string(&mut payload, "model", request.model.as_deref());
+    insert_optional_string(&mut payload, "prediction", request.prediction.as_deref());
+    insert_optional_string(
+        &mut payload,
+        "predicted_language",
+        request.predicted_language.as_deref(),
+    );
+    insert_optional_string(&mut payload, "formality", request.formality.as_deref());
+    insert_optional_string(
+        &mut payload,
+        "speaker_gender",
+        request.speaker_gender.as_deref(),
+    );
+    insert_optional_string(
+        &mut payload,
+        "addressee_gender",
+        request.addressee_gender.as_deref(),
+    );
+    insert_optional_string(
+        &mut payload,
+        "language_complexity",
+        request.language_complexity.as_deref(),
+    );
+    insert_optional_string(
+        &mut payload,
+        "translation_style",
+        request.translation_style.as_deref(),
+    );
+    insert_optional_string(&mut payload, "context", request.context.as_deref());
+    insert_optional_string(
+        &mut payload,
+        "dictionary_language",
+        request.dictionary_language.as_deref(),
+    );
+    insert_optional_string(&mut payload, "time_format", request.time_format.as_deref());
+    insert_optional_bool(
+        &mut payload,
+        "use_definition_context",
+        request.use_definition_context,
+    );
+    insert_optional_bool(
+        &mut payload,
+        "enable_language_features",
+        request.enable_language_features,
+    );
+    insert_optional_bool(
+        &mut payload,
+        "preserve_formatting",
+        request.preserve_formatting,
+    );
+
+    if let Some(context_memory) = &request.context_memory {
+        payload.insert(
+            "context_memory".to_string(),
+            Value::Array(context_memory.clone()),
+        );
+    }
+
+    Value::Object(payload)
+}
+
+fn insert_optional_string(payload: &mut Map<String, Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        payload.insert(key.to_string(), Value::String(value.to_string()));
+    }
+}
+
+fn insert_optional_bool(payload: &mut Map<String, Value>, key: &str, value: Option<bool>) {
+    if let Some(value) = value {
+        payload.insert(key.to_string(), Value::Bool(value));
+    }
+}
+
+fn normalize_aux_quality(raw: Option<&str>) -> Option<String> {
+    raw.map(|value| {
+        if value == "best" || value.starts_with("deep_") {
+            "best".to_string()
+        } else {
+            "standard".to_string()
+        }
+    })
+}
+
+fn parse_translate_detect_value(value: Value) -> Result<TranslateDetectedLanguage, KagiError> {
+    let candidate = match value {
+        Value::Array(mut values) => values.drain(..).next().ok_or_else(|| {
+            KagiError::Parse(
+                "failed to parse translate language detection response: empty array".to_string(),
+            )
+        })?,
+        Value::Object(_) => value,
+        other => {
+            return Err(KagiError::Parse(format!(
+                "failed to parse translate language detection response: unexpected payload {other}"
+            )));
+        }
+    };
+
+    serde_json::from_value(candidate).map_err(|error| {
+        KagiError::Parse(format!(
+            "failed to parse translate language detection response: {error}"
+        ))
+    })
+}
+
+fn map_bootstrap_kind_to_error(kind: &str, message: &str) -> KagiError {
+    match kind {
+        "auth" => KagiError::Auth(message.to_string()),
+        "network" => KagiError::Network(message.to_string()),
+        "parse" => KagiError::Parse(message.to_string()),
+        _ => KagiError::Config(message.to_string()),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiErrorBody {
     #[allow(dead_code)]
@@ -805,6 +1503,25 @@ struct AssistantMessagePayload {
     profile: Option<Value>,
 }
 
+#[derive(Debug, Deserialize)]
+struct TranslateBootstrapScriptOutput {
+    ok: bool,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    translate_session: Option<String>,
+    #[serde(default)]
+    method: Option<String>,
+}
+
+#[derive(Debug)]
+struct TranslateBootstrapResult {
+    translate_session: String,
+    method: String,
+}
+
 async fn decode_kagi_json<T>(response: reqwest::Response, surface: &str) -> Result<T, KagiError>
 where
     T: DeserializeOwned,
@@ -871,6 +1588,50 @@ where
     }
 }
 
+async fn decode_translate_json<T>(
+    response: reqwest::Response,
+    surface: &str,
+) -> Result<T, KagiError>
+where
+    T: DeserializeOwned,
+{
+    match response.status() {
+        StatusCode::OK => {
+            let body = response.text().await.map_err(|error| {
+                KagiError::Network(format!(
+                    "failed to read Kagi Translate {surface} response body: {error}"
+                ))
+            })?;
+            if looks_like_html_document(&body) {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token for Kagi Translate".to_string(),
+                ));
+            }
+            serde_json::from_str(&body).map_err(|error| {
+                KagiError::Parse(format!(
+                    "failed to parse Kagi Translate {surface} response: {error}"
+                ))
+            })
+        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
+            "invalid or expired Kagi session token for Kagi Translate".to_string(),
+        )),
+        status if status.is_client_error() => {
+            let body = response.text().await.unwrap_or_else(|_| String::new());
+            Err(KagiError::Config(format!(
+                "Kagi Translate {surface} request rejected: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status if status.is_server_error() => Err(KagiError::Network(format!(
+            "Kagi Translate {surface} server error: HTTP {status}"
+        ))),
+        status => Err(KagiError::Network(format!(
+            "unexpected Kagi Translate {surface} response status: HTTP {status}"
+        ))),
+    }
+}
+
 fn build_client() -> Result<Client, KagiError> {
     Client::builder()
         .user_agent(USER_AGENT)
@@ -901,14 +1662,17 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, KagiEnvelope, normalize_subscriber_summary_input,
-        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
-        parse_assistant_prompt_stream, parse_subscriber_summarize_stream, resolve_news_category,
+        ApiErrorBody, KagiEnvelope, build_translate_payload, normalize_aux_quality,
+        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
+        normalize_subscriber_summary_type, parse_assistant_prompt_stream,
+        parse_subscriber_summarize_stream, parse_translate_detect_value, resolve_news_category,
     };
     use crate::types::SubscriberSummarizeRequest;
     use crate::types::{
         FastGptAnswer, NewsBatchCategory, NewsCategoryMetadata, Reference, Summarization,
+        TranslateCommandRequest,
     };
+    use serde_json::{Value, json};
 
     #[test]
     fn parses_summarize_envelope() {
@@ -1120,5 +1884,88 @@ mod tests {
         assert_eq!(parsed.meta.trace.as_deref(), Some("trace-123"));
         assert_eq!(parsed.thread.id, "thread-1");
         assert_eq!(parsed.message.markdown.as_deref(), Some("Hi"));
+    }
+
+    #[test]
+    fn parses_translate_detect_from_object_or_array() {
+        let object = json!({
+            "iso": "fr",
+            "label": "French",
+            "isUncertain": false,
+            "isMixed": false
+        });
+        let array = json!([
+            {
+                "iso": "fr",
+                "label": "French",
+                "isUncertain": false,
+                "isMixed": false
+            }
+        ]);
+
+        let parsed_object = parse_translate_detect_value(object).expect("object should parse");
+        let parsed_array = parse_translate_detect_value(array).expect("array should parse");
+
+        assert_eq!(parsed_object.iso, "fr");
+        assert_eq!(parsed_array.label, "French");
+    }
+
+    #[test]
+    fn builds_translate_payload_with_optional_fields() {
+        let request = TranslateCommandRequest {
+            text: "Bonjour".to_string(),
+            from: "auto".to_string(),
+            to: "en".to_string(),
+            quality: Some("best".to_string()),
+            model: Some("kagi".to_string()),
+            prediction: Some("Hello".to_string()),
+            predicted_language: Some("fr".to_string()),
+            formality: Some("formal".to_string()),
+            speaker_gender: Some("female".to_string()),
+            addressee_gender: Some("male".to_string()),
+            language_complexity: Some("simple".to_string()),
+            translation_style: Some("natural".to_string()),
+            context: Some("Office email".to_string()),
+            dictionary_language: Some("en".to_string()),
+            time_format: Some("24h".to_string()),
+            use_definition_context: Some(true),
+            enable_language_features: Some(true),
+            preserve_formatting: Some(true),
+            context_memory: Some(vec![json!({"kind": "glossary"})]),
+            fetch_alternatives: true,
+            fetch_word_insights: true,
+            fetch_suggestions: true,
+            fetch_alignments: true,
+        };
+
+        let payload = build_translate_payload(&request, "translate-session", "fr");
+        let object = payload.as_object().expect("payload should be object");
+
+        assert_eq!(object.get("from"), Some(&Value::String("fr".to_string())));
+        assert_eq!(
+            object.get("translation_style"),
+            Some(&Value::String("natural".to_string()))
+        );
+        assert_eq!(
+            object.get("context_memory"),
+            Some(&Value::Array(vec![json!({"kind": "glossary"})]))
+        );
+        assert_eq!(
+            object.get("session_token"),
+            Some(&Value::String("translate-session".to_string()))
+        );
+    }
+
+    #[test]
+    fn normalizes_aux_quality_values() {
+        assert_eq!(normalize_aux_quality(Some("best")).as_deref(), Some("best"));
+        assert_eq!(
+            normalize_aux_quality(Some("deep_contextual")).as_deref(),
+            Some("best")
+        );
+        assert_eq!(
+            normalize_aux_quality(Some("standard")).as_deref(),
+            Some("standard")
+        );
     }
 }

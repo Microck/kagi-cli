@@ -51,6 +51,8 @@ Unlock the full potential of your Kagi subscription:
 
 - **Assistant Integration**: Prompt Kagi Assistant programmatically and continue conversations across sessions.
 
+- **Translate Integration**: Run Kagi Translate text mode from the terminal with one JSON response envelope.
+
 - **Subscriber Features**: Access subscriber-only capabilities like the web-based Summarizer with full control over output length and style.
 
 ## Feature Overview
@@ -69,13 +71,14 @@ The `kagi search` command provides multiple pathways depending on your authentic
 
 Two credential types serve different purposes:
 
-- **KAGI_SESSION_TOKEN**: Unlocks subscriber features including lens search, Assistant, and subscriber Summarizer. Obtained from your Kagi Session Link URL.
+- **KAGI_SESSION_TOKEN**: Unlocks subscriber features including lens search, Assistant, subscriber Summarizer, and Translate text mode. Obtained from your Kagi Session Link URL.
 
 - **KAGI_API_TOKEN**: Enables paid public API commands including FastGPT, public Summarizer, and enrichment APIs. Requires API credit.
 
 ### Content Processing
 
 - **Summarization**: Both paid public API and subscriber web paths with multiple engines, styles, and output lengths
+- **Translation**: Text-mode Kagi Translate with detection, alternatives, alignments, suggestions, and word insights
 - **FastGPT**: Quick answers powered by Kagi's FastGPT API
 - **Enrichment**: Query specialized web and news indexes
 - **Assistant**: Full conversation support with thread continuation
@@ -106,7 +109,8 @@ flowchart TB
         web1["search --lens"]
         web2["assistant"]
         web3["summarize --subscriber"]
-        web4["search (session)"]
+        web4["translate"]
+        web5["search (session)"]
     end
     
     subgraph PublicFeeds["Public Feeds (No Auth)"]
@@ -158,7 +162,6 @@ Choose your path based on your current needs:
 
 ### Runtime Requirements
 
-- No runtime dependencies (self-contained binary)
 - Network connectivity to kagi.com
 - Shell environment (Bash, Zsh, Fish, PowerShell, or CMD)
 
@@ -167,6 +170,7 @@ Choose your path based on your current needs:
 - **For scripting**: `jq` for JSON processing (recommended)
 - **For development**: Rust toolchain 1.70+
 - **For npm install**: Node.js 16+ and npm, pnpm, or bun
+- **For `kagi translate`**: `python3` with the `curl_cffi` package installed
 
 ## Design Principles in Practice
 

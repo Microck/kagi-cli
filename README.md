@@ -15,7 +15,7 @@
 
 ---
 
-`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, assistant, translate, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
 the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
@@ -29,7 +29,7 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 
 - use your existing session-link URL for subscriber features
 - get structured JSON for scripts, agents, and other tooling
-- use one CLI for search, assistant, summarization, and feeds
+- use one CLI for search, assistant, translate, summarization, and feeds
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
 ## quickstart
@@ -101,7 +101,7 @@ export KAGI_API_TOKEN='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `translate`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
@@ -125,6 +125,7 @@ notes:
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
 - `search --lens` always requires `KAGI_SESSION_TOKEN`
+- `translate` currently also requires `python3` with the `curl_cffi` package installed
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.
@@ -139,6 +140,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
 | `kagi assistant` | prompt Kagi Assistant with a subscriber session token |
+| `kagi translate` | translate text through Kagi Translate with a subscriber session token |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
@@ -200,6 +202,18 @@ continue research with assistant:
 kagi assistant "plan a focused research session in the terminal"
 ```
 
+translate text and keep all text-mode extras:
+
+```bash
+kagi translate "Bonjour tout le monde"
+```
+
+translate only the core text result:
+
+```bash
+kagi translate "Bonjour tout le monde" --no-alternatives --no-word-insights --no-suggestions --no-alignments
+```
+
 use the subscriber summarizer:
 
 ```bash
@@ -258,6 +272,3 @@ for the fuller install matrix and platform-specific setup, use the [installation
 ## license
 
 [mit license](LICENSE)
-
-### todo
-- add https://translate.kagi.com/

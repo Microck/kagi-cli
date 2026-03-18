@@ -137,6 +137,37 @@ Subscriber mode:
 }
 ```
 
+### `kagi translate`
+
+```json
+{
+  "bootstrap": {
+    "method": "python3+curl_cffi(chrome136)",
+    "authenticated": true
+  },
+  "detected_language": {
+    "iso": "fr",
+    "label": "French"
+  },
+  "translation": {
+    "translation": "Hello everyone"
+  },
+  "alternatives": {
+    "elements": []
+  },
+  "text_alignments": {
+    "alignments": []
+  },
+  "translation_suggestions": {
+    "suggestions": []
+  },
+  "word_insights": {
+    "insights": []
+  },
+  "warnings": []
+}
+```
+
 ### `kagi fastgpt`
 
 ```json
@@ -220,6 +251,9 @@ kagi fastgpt "What is Rust?" | jq -r '.data.output'
 
 # Assistant markdown reply
 kagi assistant "Hello" | jq -r '.message.markdown'
+
+# Translate text
+kagi translate "Bonjour tout le monde" | jq -r '.translation.translation'
 
 # Subscriber summary text
 kagi summarize --subscriber --url https://example.com | jq -r '.data.output'

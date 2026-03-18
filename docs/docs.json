@@ -85,6 +85,7 @@
             "group": "AI & Enrichment",
             "pages": [
               "commands/assistant",
+              "commands/translate",
               "commands/fastgpt",
               "commands/enrich"
             ]

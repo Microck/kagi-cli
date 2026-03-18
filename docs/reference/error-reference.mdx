@@ -155,6 +155,21 @@ rm ./.kagi.toml
 kagi auth set --session-token 'YOUR_TOKEN'
 ```
 
+### "kagi translate requires `python3` with the `curl_cffi` package installed"
+
+**Meaning:** The translate bootstrap helper is missing a local runtime dependency.
+
+**Solution:**
+```bash
+python3 -m pip install --user curl_cffi
+```
+
+Then retry:
+
+```bash
+kagi translate "Bonjour tout le monde"
+```
+
 ## Command Errors
 
 ### "--length requires --subscriber"
