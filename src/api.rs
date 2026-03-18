@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::process::Stdio;
 
 use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
@@ -9,7 +8,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use serde_json::{Map, Value};
-use tokio::process::Command;
 
 use crate::error::KagiError;
 #[cfg(test)]
@@ -583,132 +581,41 @@ async fn execute_enrich(
 async fn bootstrap_translate_session(
     session_token: &str,
 ) -> Result<TranslateBootstrapResult, KagiError> {
-    const BOOTSTRAP_SCRIPT: &str = r#"import json
-import os
-import sys
-
-def finish(ok, **kwargs):
-    payload = {"ok": ok}
-    payload.update(kwargs)
-    print(json.dumps(payload))
-    sys.exit(0 if ok else 1)
-
-token = os.environ.get("KAGI_SESSION_TOKEN_RAW", "").strip()
-if not token:
-    finish(False, kind="config", message="missing normalized KAGI session token")
-
-try:
-    from curl_cffi import requests
-except Exception as exc:
-    finish(
-        False,
-        kind="config",
-        message="kagi translate requires python3 with the curl_cffi package installed",
-        detail=str(exc),
-    )
-
-try:
-    session = requests.Session(impersonate="chrome136")
-    session.cookies.set("kagi_session", token, domain=".kagi.com", path="/", secure=True)
-    response = session.get("https://translate.kagi.com/", timeout=30, allow_redirects=True)
-except Exception as exc:
-    finish(False, kind="network", message="translate bootstrap request failed", detail=str(exc))
-
-if response.status_code >= 400:
-    finish(
-        False,
-        kind="network",
-        message=f"translate bootstrap returned HTTP {response.status_code}",
-    )
-
-translate_session = ""
-for cookie in session.cookies.jar:
-    if cookie.name == "translate_session" and cookie.value:
-        translate_session = cookie.value
-        break
-
-if not translate_session:
-    finish(
-        False,
-        kind="auth",
-        message="translate bootstrap did not mint a translate_session cookie",
-    )
-
-finish(
-    True,
-    translate_session=translate_session,
-    method="python3+curl_cffi(chrome136)",
-)
-"#;
-
-    let output = Command::new("python3")
-        .arg("-c")
-        .arg(BOOTSTRAP_SCRIPT)
-        .env("KAGI_SESSION_TOKEN_RAW", session_token)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+    let client = build_client()?;
+    let response = client
+        .get("https://translate.kagi.com/")
+        .header(header::COOKIE, format!("kagi_session={session_token}"))
+        .send()
         .await
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => KagiError::Config(
-                "kagi translate requires `python3` with the `curl_cffi` package installed"
-                    .to_string(),
-            ),
-            _ => KagiError::Config(format!(
-                "failed to start translate bootstrap helper: {error}"
-            )),
-        })?;
+        .map_err(map_transport_error)?;
 
-    let stdout = String::from_utf8(output.stdout).map_err(|error| {
-        KagiError::Parse(format!(
-            "translate bootstrap helper returned non-UTF-8 output: {error}"
-        ))
-    })?;
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let trimmed_stdout = stdout.trim();
-
-    if trimmed_stdout.is_empty() {
-        return Err(KagiError::Config(if stderr.is_empty() {
-            "translate bootstrap helper returned no output".to_string()
-        } else {
-            format!("translate bootstrap helper failed: {stderr}")
-        }));
-    }
-
-    let parsed: TranslateBootstrapScriptOutput =
-        serde_json::from_str(trimmed_stdout).map_err(|error| {
-            KagiError::Parse(format!(
-                "failed to parse translate bootstrap helper output: {error}"
-            ))
-        })?;
-
-    if parsed.ok {
-        let translate_session = parsed.translate_session.ok_or_else(|| {
-            KagiError::Parse(
-                "translate bootstrap helper did not return translate_session".to_string(),
+    match response.status() {
+        StatusCode::OK => {
+            let translate_session = extract_set_cookie_value(
+                response.headers(),
+                "translate_session",
             )
-        })?;
-        let method = parsed
-            .method
-            .unwrap_or_else(|| "python3+curl_cffi".to_string());
+            .ok_or_else(|| {
+                KagiError::Auth(
+                    "translate bootstrap did not mint a translate_session cookie".to_string(),
+                )
+            })?;
 
-        return Ok(TranslateBootstrapResult {
-            translate_session,
-            method,
-        });
+            Ok(TranslateBootstrapResult {
+                translate_session,
+                method: "reqwest(set-cookie bootstrap)".to_string(),
+            })
+        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
+            "invalid or expired Kagi session token for Kagi Translate".to_string(),
+        )),
+        status if status.is_server_error() => Err(KagiError::Network(format!(
+            "Kagi Translate bootstrap server error: HTTP {status}"
+        ))),
+        status => Err(KagiError::Network(format!(
+            "unexpected Kagi Translate bootstrap response status: HTTP {status}"
+        ))),
     }
-
-    let mut message = parsed
-        .message
-        .unwrap_or_else(|| "translate bootstrap failed".to_string());
-    if !stderr.is_empty() {
-        message.push_str(&format!("; stderr: {stderr}"));
-    }
-
-    Err(map_bootstrap_kind_to_error(
-        parsed.kind.as_deref().unwrap_or("config"),
-        &message,
-    ))
 }
 
 async fn execute_translate_detect(
@@ -1453,13 +1360,33 @@ fn parse_translate_detect_value(value: Value) -> Result<TranslateDetectedLanguag
     })
 }
 
-fn map_bootstrap_kind_to_error(kind: &str, message: &str) -> KagiError {
-    match kind {
-        "auth" => KagiError::Auth(message.to_string()),
-        "network" => KagiError::Network(message.to_string()),
-        "parse" => KagiError::Parse(message.to_string()),
-        _ => KagiError::Config(message.to_string()),
+fn extract_set_cookie_value(headers: &header::HeaderMap, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
+
+    headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .find_map(|value| {
+            let raw = value.to_str().ok()?;
+            let cookie = raw.strip_prefix(&prefix)?;
+            cookie
+                .split(';')
+                .next()
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+}
+
+#[cfg(test)]
+fn fake_header_map(set_cookies: &[&str]) -> header::HeaderMap {
+    let mut headers = header::HeaderMap::new();
+    for value in set_cookies {
+        headers.append(
+            header::SET_COOKIE,
+            header::HeaderValue::from_str(value).expect("header value should parse"),
+        );
     }
+    headers
 }
 
 #[derive(Debug, Deserialize)]
@@ -1533,19 +1460,6 @@ struct AssistantMessagePayload {
     documents: Vec<Value>,
     #[serde(default)]
     profile: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TranslateBootstrapScriptOutput {
-    ok: bool,
-    #[serde(default)]
-    kind: Option<String>,
-    #[serde(default)]
-    message: Option<String>,
-    #[serde(default)]
-    translate_session: Option<String>,
-    #[serde(default)]
-    method: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1696,11 +1610,11 @@ mod tests {
     use super::{
         ApiErrorBody, KagiEnvelope, build_translate_option_state, build_translate_payload,
         capture_optional_translate_section, effective_translate_source_language,
-        finalize_translate_text_response, normalize_aux_quality,
-        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_prompt_stream,
-        parse_subscriber_summarize_stream, parse_translate_detect_value, resolve_news_category,
-        validate_translate_request,
+        extract_set_cookie_value, fake_header_map, finalize_translate_text_response,
+        normalize_aux_quality, normalize_subscriber_summary_input,
+        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
+        parse_assistant_prompt_stream, parse_subscriber_summarize_stream,
+        parse_translate_detect_value, resolve_news_category, validate_translate_request,
     };
     use crate::auth::normalize_session_token;
     use crate::types::SubscriberSummarizeRequest;
@@ -2008,6 +1922,30 @@ mod tests {
 
         let error = validate_translate_request(&request).expect_err("auto target should fail");
         assert!(error.to_string().contains("explicit target language code"));
+    }
+
+    #[test]
+    fn extracts_translate_session_from_set_cookie_headers() {
+        let headers = fake_header_map(&[
+            "translate_language=en; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax",
+            "translate_session=abc.def.ghi; Path=/; Expires=Wed, 18 Mar 2026 23:41:41 GMT; HttpOnly; Secure; SameSite=Lax",
+        ]);
+
+        let cookie = extract_set_cookie_value(&headers, "translate_session");
+
+        assert_eq!(cookie.as_deref(), Some("abc.def.ghi"));
+    }
+
+    #[test]
+    fn returns_none_when_set_cookie_name_is_missing() {
+        let headers = fake_header_map(&[
+            "translate_language=en; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax",
+        ]);
+
+        assert_eq!(
+            extract_set_cookie_value(&headers, "translate_session"),
+            None
+        );
     }
 
     #[test]

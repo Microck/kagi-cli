@@ -42,14 +42,9 @@ The command follows the same Session Link auth story as other subscriber feature
 kagi auth set --session-token 'https://kagi.com/search?token=...'
 ```
 
-## Runtime Dependency
+## Bootstrap
 
-Translate bootstrap currently requires:
-
-- `python3`
-- the Python package `curl_cffi`
-
-The CLI shells out once to mint `translate_session`, then uses normal Rust HTTP requests for the rest of the flow.
+The CLI uses your existing `KAGI_SESSION_TOKEN` to fetch `https://translate.kagi.com/`, reads the returned `translate_session` cookie from `Set-Cookie`, then uses normal Rust HTTP requests for the rest of the flow.
 
 ## Arguments
 
@@ -165,7 +160,7 @@ Skip the text alignments call.
 ```json
 {
   "bootstrap": {
-    "method": "python3+curl_cffi(chrome136)",
+    "method": "reqwest(set-cookie bootstrap)",
     "authenticated": true
   },
   "detected_language": {
@@ -173,7 +168,9 @@ Skip the text alignments call.
     "label": "French"
   },
   "translation": {
-    "translation": "Hello everyone"
+    "translation": "Hello everyone",
+    "source_language": "fr",
+    "target_language": "en"
   },
   "alternatives": {
     "elements": []
@@ -240,9 +237,9 @@ kagi translate "Bonjour tout le monde" | jq -r '.translation.translation'
 
 ## Troubleshooting
 
-### Missing bootstrap dependency
+### Bootstrap failure
 
-If you see an error mentioning `python3` or `curl_cffi`, install the missing dependency and retry.
+If translate bootstrap fails before detection or translation starts, the session token is likely invalid for the current account state or Kagi changed the cookie bootstrap behavior.
 
 ### Invalid session token
 

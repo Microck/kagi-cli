@@ -36,8 +36,7 @@ This CLI also implements non-public or product-only seams:
 - Base-search fallback to session-token search happens on the user-facing `search` command only. `auth check` validates the selected primary credential without fallback.
 - The paid public Summarizer, FastGPT, and Enrichment APIs require `KAGI_API_TOKEN` and sufficient API credit.
 - The subscriber web Summarizer requires `KAGI_SESSION_TOKEN` and uses the authenticated `GET /mother/summary_labs?...` stream path instead of the public `/api/v0/summarize` endpoint.
-- Live verification on March 18, 2026 showed that direct raw-cookie HTTP bootstrap still fails, but a browserless `python3 + curl_cffi` bootstrap can mint `translate_session` from the same `KAGI_SESSION_TOKEN`.
+- Live verification on March 18, 2026 showed that direct HTTP bootstrap can mint `translate_session` from the same `KAGI_SESSION_TOKEN` by reading the `Set-Cookie` header from `https://translate.kagi.com/`.
 - After bootstrap, the CLI uses normal Rust HTTP requests for `/api/detect`, `/api/translate`, `/api/alternative-translations`, `/api/text-alignments`, `/api/translation-suggestions`, and `/api/word-insights`.
-- `translate` requires `python3` with the `curl_cffi` package installed at runtime.
 - Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt` with the same tagged stream protocol used by the web app.
 - News uses `https://news.kagi.com/api/...` JSON endpoints and does not require auth.

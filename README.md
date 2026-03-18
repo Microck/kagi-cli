@@ -125,7 +125,6 @@ notes:
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
 - `search --lens` always requires `KAGI_SESSION_TOKEN`
-- `translate` currently also requires `python3` with the `curl_cffi` package installed
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.

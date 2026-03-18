@@ -155,18 +155,24 @@ rm ./.kagi.toml
 kagi auth set --session-token 'YOUR_TOKEN'
 ```
 
-### "kagi translate requires `python3` with the `curl_cffi` package installed"
+### "translate bootstrap did not mint a translate_session cookie"
 
-**Meaning:** The translate bootstrap helper is missing a local runtime dependency.
+**Meaning:** The translate site accepted the request but did not issue the session cookie the CLI needs for follow-on API calls.
+
+**Likely causes:**
+- `KAGI_SESSION_TOKEN` is invalid or expired
+- the current Kagi account state no longer authorizes Translate
+- Kagi changed the bootstrap cookie behavior
 
 **Solution:**
 ```bash
-python3 -m pip install --user curl_cffi
-```
+# refresh and save the current Session Link
+kagi auth set --session-token 'https://kagi.com/search?token=...'
 
-Then retry:
+# verify the token still works for subscriber features
+kagi auth check
 
-```bash
+# retry translate
 kagi translate "Bonjour tout le monde"
 ```
 

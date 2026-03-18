@@ -20,7 +20,7 @@ This reference provides a complete mapping of which commands require which authe
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
 | `news` | None | None | Public endpoint |
 | `assistant` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
-| `translate` | `KAGI_SESSION_TOKEN` | None | Text mode only; runtime bootstrap needs `python3 + curl_cffi` |
+| `translate` | `KAGI_SESSION_TOKEN` | None | Text mode only; bootstraps `translate_session` over HTTP |
 | `fastgpt` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich web` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich news` | `KAGI_API_TOKEN` | None | Paid public API |
