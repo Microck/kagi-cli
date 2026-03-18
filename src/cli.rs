@@ -82,7 +82,7 @@ pub enum Commands {
     /// Prompt Kagi Assistant with subscriber session-token auth
     Assistant(AssistantArgs),
     /// Translate text through Kagi Translate using session-token auth
-    Translate(TranslateArgs),
+    Translate(Box<TranslateArgs>),
     /// Answer a query with Kagi's FastGPT API
     Fastgpt(FastGptArgs),
     /// Query Kagi's enrichment indexes

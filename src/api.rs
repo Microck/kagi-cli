@@ -447,11 +447,13 @@ pub async fn execute_translate(
                 &client,
                 &cookie_header,
                 &translate_session,
-                request.text.trim(),
-                &translated_text,
-                &effective_source_language,
-                &target_language,
-                translation_options.as_ref(),
+                TranslateSuggestionContext {
+                    source_text: request.text.trim(),
+                    target_text: &translated_text,
+                    source_language: &effective_source_language,
+                    target_language: &target_language,
+                    translation_options: translation_options.as_ref(),
+                },
             ),
         ),
         capture_optional_translate_section(
@@ -740,32 +742,36 @@ async fn execute_translate_text_alignments(
     decode_translate_json(response, "text alignments").await
 }
 
+struct TranslateSuggestionContext<'a> {
+    source_text: &'a str,
+    target_text: &'a str,
+    source_language: &'a str,
+    target_language: &'a str,
+    translation_options: Option<&'a TranslateOptionState>,
+}
+
 async fn execute_translate_suggestions(
     client: &Client,
     cookie_header: &str,
     translate_session: &str,
-    source_text: &str,
-    target_text: &str,
-    source_language: &str,
-    target_language: &str,
-    translation_options: Option<&TranslateOptionState>,
+    context: TranslateSuggestionContext<'_>,
 ) -> Result<TranslationSuggestionsResponse, KagiError> {
     let mut payload = Map::new();
     payload.insert(
         "originalText".to_string(),
-        Value::String(source_text.to_string()),
+        Value::String(context.source_text.to_string()),
     );
     payload.insert(
         "translatedText".to_string(),
-        Value::String(target_text.to_string()),
+        Value::String(context.target_text.to_string()),
     );
     payload.insert(
         "sourceLanguage".to_string(),
-        Value::String(source_language.to_string()),
+        Value::String(context.source_language.to_string()),
     );
     payload.insert(
         "targetLanguage".to_string(),
-        Value::String(target_language.to_string()),
+        Value::String(context.target_language.to_string()),
     );
     payload.insert("language".to_string(), Value::String("en".to_string()));
     payload.insert(
@@ -773,7 +779,7 @@ async fn execute_translate_suggestions(
         Value::String(translate_session.to_string()),
     );
 
-    if let Some(options) = translation_options {
+    if let Some(options) = context.translation_options {
         payload.insert(
             "translationOptions".to_string(),
             serde_json::to_value(options).map_err(|error| {

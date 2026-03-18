@@ -144,7 +144,7 @@ async fn run() -> Result<(), KagiError> {
         }
         Commands::Translate(args) => {
             let token = resolve_session_token()?;
-            let request = build_translate_request(args)?;
+            let request = build_translate_request(*args)?;
             let response = execute_translate(&request, &token).await?;
             print_json(&response)
         }
