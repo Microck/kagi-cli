@@ -119,7 +119,7 @@ pub enum Commands {
     /// • Lens support for scoped searches
     /// • Region, time, date, order, verbatim, and personalization filters
     Search(SearchArgs),
-    /// Inspect and validate configured credentials
+    /// Launch the auth setup wizard or use credential management subcommands
     Auth(AuthCommand),
     /// Summarize a URL or text with Kagi's public API or subscriber web Summarizer
     Summarize(SummarizeArgs),

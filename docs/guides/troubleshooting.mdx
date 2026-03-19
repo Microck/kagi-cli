@@ -14,8 +14,9 @@ When encountering any issue, follow these steps first:
 1. **Check version:** `kagi --version`
 2. **Verify installation:** `kagi --help`
 3. **Test unauthenticated:** `kagi news --limit 1`
-4. **Check auth status:** `kagi auth status`
-5. **Validate credentials:** `kagi auth check`
+4. **Run the auth wizard on a TTY:** `kagi auth`
+5. **Check auth status:** `kagi auth status`
+6. **Validate credentials:** `kagi auth check`
 
 ## Installation Issues
 
@@ -714,6 +715,7 @@ kagi auth check 2>&1 || echo "Auth check failed"
 | `command not found` | Not in PATH | Reload shell or add to PATH |
 | `Permission denied` | Not executable | `chmod +x *kagi*` |
 | `missing credentials` | No token set | Set KAGI_SESSION_TOKEN or KAGI_API_TOKEN |
+| `kagi auth is interactive on TTYs` | Bare `kagi auth` was run in CI, a pipe, or another non-interactive environment | Use `kagi auth set`, `kagi auth status`, or `kagi auth check` instead |
 | `auth check failed` | Invalid token | Regenerate token in Kagi settings |
 | `403 Forbidden` | Auth issue | Check token validity |
 | `No results found` | Empty query result | Try different query |
@@ -740,6 +742,28 @@ If you've tried the solutions above and still have issues:
 - **Session Token**: For subscriber features (lens, assistant)
 - **API Token**: For paid API (fastgpt, summarize, enrich)
 - Both can exist, different commands need different ones
+
+### Bare `kagi auth` Fails in a Script
+
+**Symptom:**
+
+```text
+configuration error: kagi auth is interactive on TTYs; use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments
+```
+
+**Cause:**
+
+Bare `kagi auth` is the interactive onboarding wizard. It is meant for real terminals, not pipes or CI jobs.
+
+**Fix:**
+
+Use one of the explicit non-interactive subcommands:
+
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth status
+kagi auth check
+```
 
 ### Variable Name Typos
 

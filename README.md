@@ -17,7 +17,7 @@
 
 `kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, lenses, ask-page, assistant, translate, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
-the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
+the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link` or `API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
 [documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [github](https://github.com/Microck/kagi-cli)
 
@@ -64,7 +64,24 @@ scoop install kagi
 
 ### auth
 
-add your subscriber session token:
+run the guided setup:
+
+```bash
+kagi auth
+```
+
+![auth demo](images/demos/auth.gif)
+
+the wizard is the default setup path. it guides you through:
+
+- `Session Link` from `https://kagi.com/settings/user_details`
+- `API Token` from `https://kagi.com/settings/api`
+- saving into `./.kagi.toml`
+- immediate validation
+
+non-interactive alternative:
+
+add your subscriber session token directly:
 
 how to get it:
 
@@ -120,6 +137,7 @@ preferred_auth = "api"
 ```
 notes:
 
+- `kagi auth` is interactive on TTYs and becomes the default onboarding path
 - `kagi auth set --session-token` accepts either the raw token or the full session-link URL
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
@@ -135,7 +153,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | --- | --- |
 | `kagi search` | search Kagi with JSON by default, optional live filters, or `--format pretty` for terminal output |
 | `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
-| `kagi auth` | inspect, validate, and save credentials |
+| `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
 | `kagi quick` | get a Quick Answer with references from the subscriber web product |
@@ -275,7 +293,9 @@ kagi enrich news "browser privacy"
 
 ## what it looks like
 
-if you want a quick feel for the cli before installing it, this is the kind of output you get from quick answer, translate, ask-page, the subscriber summarizer, assistant, and the public news feed:
+if you want a quick feel for the cli before installing it, this is the kind of output you get from auth setup, quick answer, translate, ask-page, the subscriber summarizer, assistant, and the public news feed:
+
+![auth demo](images/demos/auth.gif)
 
 ![quick demo](images/demos/quick.gif)
 
