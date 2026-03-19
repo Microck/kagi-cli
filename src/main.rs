@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod auth_wizard;
 mod cli;
 mod error;
 mod parser;
@@ -21,6 +22,7 @@ use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
     load_credential_inventory, save_credentials,
 };
+use crate::auth_wizard::{run_auth_wizard, supports_interactive_auth, validate_credential};
 use crate::cli::{
     AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
     AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand, SearchOrder, SearchTime,
@@ -33,6 +35,7 @@ use crate::types::{
     SubscriberSummarizeRequest, SummarizeRequest, TranslateCommandRequest,
 };
 use serde_json::Value;
+use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
@@ -59,6 +62,17 @@ async fn main() {
 }
 
 async fn run() -> Result<(), KagiError> {
+    if is_bare_auth_invocation() {
+        if supports_interactive_auth() {
+            return run_auth_wizard().await;
+        }
+
+        return Err(KagiError::Config(
+            "kagi auth is interactive on TTYs; use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments"
+                .to_string(),
+        ));
+    }
+
     let cli = Cli::parse();
 
     if cli.generate_completion.is_some() && cli.command.is_some() {
@@ -304,6 +318,16 @@ async fn run() -> Result<(), KagiError> {
     }
 }
 
+fn is_bare_auth_invocation() -> bool {
+    let args: Vec<String> = env::args().collect();
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    is_bare_auth_invocation_from(&arg_refs)
+}
+
+fn is_bare_auth_invocation_from(args: &[&str]) -> bool {
+    args.len() == 2 && args[1] == "auth"
+}
+
 fn print_completion(shell: CompletionShell) {
     let mut cmd = Cli::command();
 
@@ -334,10 +358,9 @@ async fn run_auth_check() -> Result<(), KagiError> {
     let inventory = load_credential_inventory()?;
     let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
 
-    let request = search::SearchRequest::new("rust lang");
     let selected_kind = credentials.primary.kind;
     let selected_source = credentials.primary.source;
-    execute_primary_search_request(&request, &credentials.primary).await?;
+    validate_credential(&credentials.primary).await?;
 
     println!(
         "auth check passed: {} ({})",
@@ -826,8 +849,8 @@ async fn run_batch_search(
 mod tests {
     use super::{
         RateLimiter, SearchRequestOptions, build_search_request, format_csv_response,
-        format_markdown_response, format_pretty_response, parse_context_memory_json,
-        should_fallback_to_session,
+        format_markdown_response, format_pretty_response, is_bare_auth_invocation_from,
+        parse_context_memory_json, should_fallback_to_session,
     };
     use crate::cli::{SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -867,6 +890,14 @@ mod tests {
             output,
             "1. Rust Programming Language\n   https://www.rust-lang.org\n\n   A language empowering everyone to build reliable and efficient software.\n\n2. The Rust Book\n   https://doc.rust-lang.org/book/\n\n   Learn Rust with the official book."
         );
+    }
+
+    #[test]
+    fn detects_exact_bare_auth_invocation() {
+        assert!(is_bare_auth_invocation_from(&["kagi", "auth"]));
+        assert!(!is_bare_auth_invocation_from(&["kagi", "auth", "status"]));
+        assert!(!is_bare_auth_invocation_from(&["kagi", "auth", "--help"]));
+        assert!(!is_bare_auth_invocation_from(&["kagi", "search"]));
     }
 
     #[test]

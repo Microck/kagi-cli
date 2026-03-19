@@ -59,7 +59,7 @@ impl SearchAuthPreference {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Session => "session",
             Self::Api => "api",
@@ -184,9 +184,22 @@ struct AuthConfig {
     preferred_auth: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ConfigAuthSnapshot {
+    pub config_path: PathBuf,
+    pub api_token: Option<String>,
+    pub session_token: Option<String>,
+    pub search_preference: SearchAuthPreference,
+}
+
 pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
-    let config_path = PathBuf::from(DEFAULT_CONFIG_PATH);
-    let config = read_config_file(&config_path)?;
+    load_credential_inventory_from_path(Path::new(DEFAULT_CONFIG_PATH))
+}
+
+fn load_credential_inventory_from_path(
+    config_path: &Path,
+) -> Result<CredentialInventory, KagiError> {
+    let config = read_config_file(config_path)?;
     let search_preference = config
         .auth
         .as_ref()
@@ -229,7 +242,7 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
         api_token: env_api.or(config_api),
         session_token: env_session.or(config_session),
         search_preference,
-        config_path,
+        config_path: config_path.to_path_buf(),
     })
 }
 
@@ -253,6 +266,45 @@ pub fn format_status(inventory: &CredentialInventory) -> String {
         inventory.search_preference.as_str(),
         inventory.config_path.display(),
     )
+}
+
+pub fn load_config_auth_snapshot() -> Result<ConfigAuthSnapshot, KagiError> {
+    load_config_auth_snapshot_from_path(Path::new(DEFAULT_CONFIG_PATH))
+}
+
+fn load_config_auth_snapshot_from_path(
+    config_path: &Path,
+) -> Result<ConfigAuthSnapshot, KagiError> {
+    let config = read_config_file(config_path)?;
+    let search_preference = config
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.preferred_auth.as_deref())
+        .map(SearchAuthPreference::parse)
+        .transpose()?
+        .unwrap_or(SearchAuthPreference::Session);
+
+    let api_token = config
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.api_token.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let session_token = config
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.session_token.as_deref())
+        .map(normalize_session_token)
+        .transpose()?;
+
+    Ok(ConfigAuthSnapshot {
+        config_path: config_path.to_path_buf(),
+        api_token,
+        session_token,
+        search_preference,
+    })
 }
 
 fn format_status_line(label: &str, credential: Option<&Credential>) -> String {
@@ -280,9 +332,40 @@ fn build_session_credential(
     })
 }
 
+pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(KagiError::Config("api token cannot be empty".to_string()));
+    }
+
+    Ok(trimmed.to_string())
+}
+
 pub fn save_credentials(
     api_token: Option<&str>,
     session_input: Option<&str>,
+) -> Result<CredentialInventory, KagiError> {
+    save_credentials_with_preference(api_token, session_input, None)
+}
+
+pub fn save_credentials_with_preference(
+    api_token: Option<&str>,
+    session_input: Option<&str>,
+    preferred_auth: Option<SearchAuthPreference>,
+) -> Result<CredentialInventory, KagiError> {
+    save_credentials_with_preference_to_path(
+        Path::new(DEFAULT_CONFIG_PATH),
+        api_token,
+        session_input,
+        preferred_auth,
+    )
+}
+
+fn save_credentials_with_preference_to_path(
+    config_path: &Path,
+    api_token: Option<&str>,
+    session_input: Option<&str>,
+    preferred_auth: Option<SearchAuthPreference>,
 ) -> Result<CredentialInventory, KagiError> {
     if api_token.is_none() && session_input.is_none() {
         return Err(KagiError::Config(
@@ -290,21 +373,20 @@ pub fn save_credentials(
         ));
     }
 
-    let config_path = PathBuf::from(DEFAULT_CONFIG_PATH);
-    let mut config = read_config_file(&config_path)?;
+    let mut config = read_config_file(config_path)?;
     let auth = config.auth.get_or_insert_with(AuthConfig::default);
 
     if let Some(api_token) = api_token {
-        let normalized = api_token.trim();
-        if normalized.is_empty() {
-            return Err(KagiError::Config("api token cannot be empty".to_string()));
-        }
-        auth.api_token = Some(normalized.to_string());
+        auth.api_token = Some(normalize_api_token(api_token)?);
     }
 
     if let Some(session_input) = session_input {
         let normalized = normalize_session_token(session_input)?;
         auth.session_token = Some(normalized);
+    }
+
+    if let Some(preferred_auth) = preferred_auth {
+        auth.preferred_auth = Some(preferred_auth.as_str().to_string());
     }
 
     let raw = toml::to_string(&config).map_err(|error| {
@@ -313,14 +395,15 @@ pub fn save_credentials(
             config_path.display()
         ))
     })?;
-    fs::write(&config_path, raw).map_err(|error| {
+    fs::write(config_path, raw).map_err(|error| {
         KagiError::Config(format!(
             "failed to write config file {}: {error}",
             config_path.display()
         ))
     })?;
+    secure_config_permissions(config_path)?;
 
-    load_credential_inventory()
+    load_credential_inventory_from_path(config_path)
 }
 
 #[cfg(test)]
@@ -379,6 +462,24 @@ fn read_config_file(path: &Path) -> Result<ConfigFile, KagiError> {
             path.display()
         ))
     })
+}
+
+#[cfg(unix)]
+fn secure_config_permissions(path: &Path) -> Result<(), KagiError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = fs::Permissions::from_mode(0o600);
+    fs::set_permissions(path, permissions).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to secure config file permissions for {}: {error}",
+            path.display()
+        ))
+    })
+}
+
+#[cfg(not(unix))]
+fn secure_config_permissions(_path: &Path) -> Result<(), KagiError> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -464,6 +565,12 @@ mod tests {
         remove_env_var(API_TOKEN_ENV);
         remove_env_var(SESSION_TOKEN_ENV);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_empty_api_token_input() {
+        let error = normalize_api_token("   ").expect_err("empty api token should fail");
+        assert!(error.to_string().contains("api token cannot be empty"));
     }
 
     #[test]
@@ -674,5 +781,77 @@ mod tests {
         .expect("session token should normalize");
 
         assert_eq!(normalized.as_deref(), Some("env-session-token"));
+    }
+
+    #[test]
+    fn load_config_auth_snapshot_normalizes_session_link_and_preference() {
+        let path = unique_path();
+        fs::write(
+            &path,
+            "[auth]\npreferred_auth = \"api\"\nsession_token = \"https://kagi.com/search?token=session-from-link\"\n",
+        )
+        .expect("write config");
+
+        let snapshot =
+            load_config_auth_snapshot_from_path(&path).expect("config snapshot should load");
+
+        assert_eq!(snapshot.search_preference, SearchAuthPreference::Api);
+        assert_eq!(snapshot.session_token.as_deref(), Some("session-from-link"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_credentials_preserves_existing_values_when_only_one_is_updated() {
+        let path = unique_path();
+        fs::write(
+            &path,
+            "[auth]\napi_token = \"existing-api\"\nsession_token = \"existing-session\"\npreferred_auth = \"api\"\n",
+        )
+        .expect("write config");
+
+        save_credentials_with_preference_to_path(
+            &path,
+            None,
+            Some("https://kagi.com/search?token=new-session"),
+            None,
+        )
+        .expect("save should succeed");
+        let snapshot =
+            load_config_auth_snapshot_from_path(&path).expect("config snapshot should load");
+
+        assert_eq!(snapshot.api_token.as_deref(), Some("existing-api"));
+        assert_eq!(snapshot.session_token.as_deref(), Some("new-session"));
+        assert_eq!(snapshot.search_preference, SearchAuthPreference::Api);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_credentials_updates_preference_when_requested() {
+        let path = unique_path();
+
+        let inventory = save_credentials_with_preference_to_path(
+            &path,
+            Some("new-api"),
+            Some("https://kagi.com/search?token=new-session"),
+            Some(SearchAuthPreference::Api),
+        )
+        .expect("save should succeed");
+
+        assert_eq!(inventory.search_preference, SearchAuthPreference::Api);
+
+        let raw = fs::read_to_string(&path).expect("read saved config");
+        assert!(raw.contains("preferred_auth = \"api\""));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        let _ = fs::remove_file(path);
     }
 }

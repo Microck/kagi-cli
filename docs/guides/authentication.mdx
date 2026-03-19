@@ -7,6 +7,18 @@ description: "Complete guide to understanding *kagi* CLI authentication - sessio
 
 Authentication is the foundation of the *kagi* CLI's functionality. This comprehensive guide explains the two credential types, how they're used, when each is required, and how to configure them securely.
 
+## Recommended Setup Path
+
+On a real terminal, the default setup path is:
+
+```bash
+kagi auth
+```
+
+The wizard lets you choose `Session Link` or `API Token`, points you to the correct Kagi settings page, accepts a paste, saves into `./.kagi.toml`, and validates the selected credential immediately.
+
+Use `kagi auth set ...` only when you want a non-interactive or scripted flow.
+
 ## Authentication Overview
 
 The *kagi* CLI supports two distinct credential types that unlock different capabilities:
@@ -20,7 +32,11 @@ The *kagi* CLI supports two distinct credential types that unlock different capa
 **What it unlocks:**
 - Subscriber-only web product features
 - Lens-aware search (`kagi search --lens`)
+- Session-backed filtered search
+- Kagi Quick Answer (`kagi quick`)
 - Kagi Assistant (`kagi assistant`)
+- Ask Page (`kagi ask-page`)
+- Kagi Translate (`kagi translate`)
 - Subscriber Summarizer (`kagi summarize --subscriber`)
 - Base search via the web product path
 
@@ -72,10 +88,8 @@ flowchart TD
 Your Session Token is available in your Kagi account settings:
 
 1. **Log into Kagi** at [kagi.com](https://kagi.com)
-2. **Navigate to Settings** by clicking your profile picture
-3. **Select "Account Settings"** from the dropdown
-4. **Scroll to "Session Link"** section
-5. **Copy the full URL** that looks like:
+2. **Open** [Session Link settings](https://kagi.com/settings/user_details)
+3. **Copy the full Session Link** that looks like:
    ```
    https://kagi.com/search?token=abc123def456...
    ```
@@ -92,10 +106,9 @@ Your Session Token is available in your Kagi account settings:
 Your API Token is available separately in API settings:
 
 1. **Log into Kagi** at [kagi.com](https://kagi.com)
-2. **Navigate to Settings**
-3. **Select "API Settings"** or "API"
-4. **Generate a new token** if you don't have one
-5. **Copy the token** (long alphanumeric string)
+2. **Open** [API settings](https://kagi.com/settings/api)
+3. **Generate a new token** if you don't have one
+4. **Copy the token** (long alphanumeric string)
 
 **Important API Notes:**
 - API access requires available credit
@@ -194,7 +207,15 @@ api_token = "your_api_token_here"
 session_token = "https://kagi.com/search?token=your_session_token_here"
 ```
 
-**Creating via CLI:**
+**Creating via the auth wizard:**
+
+```bash
+kagi auth
+```
+
+The wizard is the preferred setup flow.
+
+**Creating via CLI flags:**
 
 ```bash
 # Set session token (extracts token from URL automatically)
@@ -354,7 +375,11 @@ These commands work without any tokens:
 These commands require `KAGI_SESSION_TOKEN`:
 
 - `kagi search --lens <INDEX>` - Lens-aware search
+- `kagi search --region ...`, `--time ...`, `--from-date ...`, `--to-date ...`, `--order ...`, `--verbatim`, personalization flags - session-backed filtered search
 - `kagi assistant` - AI Assistant
+- `kagi quick` - Quick Answer
+- `kagi ask-page` - Ask Assistant about one page
+- `kagi translate` - Kagi Translate text mode
 - `kagi summarize --subscriber` - Subscriber Summarizer
 - Base search (if no API token configured)
 
@@ -370,10 +395,10 @@ These commands require `KAGI_API_TOKEN`:
 
 ### Dual Token Support
 
-Base search (`kagi search` without `--lens`) supports both tokens:
+Base search (`kagi search` without `--lens` or runtime filters) supports both tokens:
 
-- **Prefers API token** when available
-- **Falls back to session token** if API search is rejected
+- **Defaults to session** unless `[auth.preferred_auth] = "api"`
+- **Falls back to session token** only when API-first mode is enabled and the Search API rejects the request
 - **Enables seamless operation** regardless of which token you have
 
 See the [Auth Matrix](/reference/auth-matrix) for a complete reference.
@@ -386,31 +411,48 @@ The `kagi search` command has special authentication logic:
 
 ```mermaid
 flowchart TD
-    Start([User runs: kagi search "query"]) --> CheckLens{CLI checks for lens flag}
-    
-    CheckLens -->|Lens specified| LensReq[Requires session_token]
-    CheckLens -->|No lens| TryAPI[Try API token first]
-    
-    TryAPI --> APIToken{With API token}
-    APIToken -->|Try Search API| SearchAPI{Search API}
-    SearchAPI -->|Success| ReturnResults[Return results]
-    SearchAPI -->|Auth error| Fallback[Fallback to session]
-    APIToken -->|No API token| SessionPath[Use session_token path]
-    
-    SessionPath --> TryWeb{Session token path}
-    TryWeb -->|Try web product| WebProd{Web product}
-    WebProd -->|Success| ReturnResults
-    WebProd -->|Error| ReportFail[Report failure]
-    TryWeb -->|No session_token| Error[Error]
-    
-    Fallback --> SessionPath
+    Start([User runs: kagi search "query"]) --> Filtered{Lens or runtime filters?}
+
+    Filtered -->|Yes| NeedSession[Requires session token]
+    NeedSession --> SessionPath1[Use web product path]
+    SessionPath1 --> ReturnResults1[Return results]
+
+    Filtered -->|No| Preference{[auth.preferred_auth] = api?}
+
+    Preference -->|No or unset| PreferSession{Session token configured?}
+    PreferSession -->|Yes| SessionPath2[Use web product path]
+    SessionPath2 --> ReturnResults2[Return results]
+    PreferSession -->|No| PreferApiFallback{API token configured?}
+    PreferApiFallback -->|Yes| ApiPath1[Use Search API]
+    ApiPath1 --> ReturnResults3[Return results]
+    PreferApiFallback -->|No| Error1[Error]
+
+    Preference -->|Yes| PreferApi{API token configured?}
+    PreferApi -->|Yes| ApiPath2[Use Search API]
+    ApiPath2 -->|Success| ReturnResults4[Return results]
+    ApiPath2 -->|Auth error| SessionFallback{Session token configured?}
+    SessionFallback -->|Yes| SessionPath3[Fallback to web product path]
+    SessionPath3 --> ReturnResults5[Return results]
+    SessionFallback -->|No| Error2[Error]
+    PreferApi -->|No| SessionIfPresent{Session token configured?}
+    SessionIfPresent -->|Yes| SessionPath4[Use web product path]
+    SessionPath4 --> ReturnResults6[Return results]
+    SessionIfPresent -->|No| Error3[Error]
 ```
 
 ### Base Search Behavior
 
 The base search command follows the configured base-search preference.
 
-**Scenario 1: API-first mode works**
+**Scenario 1: Default session-first behavior**
+```bash
+export KAGI_SESSION_TOKEN='valid_token'
+kagi search "test"
+# Uses session token path directly
+# Returns results
+```
+
+**Scenario 2: API-first mode works**
 ```bash
 export KAGI_API_TOKEN='valid_token'
 # .kagi.toml contains: [auth] preferred_auth = "api"
@@ -418,7 +460,7 @@ kagi search "test"
 # Uses Search API, returns results
 ```
 
-**Scenario 2: API-first mode rejected, fallback to session**
+**Scenario 3: API-first mode rejected, fallback to session**
 ```bash
 export KAGI_API_TOKEN='valid_token'
 export KAGI_SESSION_TOKEN='also_valid'
@@ -426,14 +468,6 @@ export KAGI_SESSION_TOKEN='also_valid'
 kagi search "test"
 # Tries Search API → gets auth error
 # Falls back to session token path
-# Returns results
-```
-
-**Scenario 3: Default session-first behavior**
-```bash
-export KAGI_SESSION_TOKEN='valid_token'
-kagi search "test"
-# Uses session token path directly
 # Returns results
 ```
 
@@ -450,6 +484,7 @@ kagi search "test"
 ### Token Storage
 
 **DO:**
+- ✅ Use `kagi auth` for local setup so the CLI validates the credential as you save it
 - ✅ Store tokens in `./.kagi.toml` with 600 permissions
 - ✅ Use environment variables in CI/CD secrets
 - ✅ Use secret managers (1Password, Vault, etc.)
@@ -563,7 +598,7 @@ KAGI_API_TOKEN=...
 **Solutions:**
 1. Check current status: `kagi auth status`
 2. Verify token is set: `echo $KAGI_SESSION_TOKEN`
-3. Set token if missing: `kagi auth set --session-token '...'`
+3. Set token if missing: `kagi auth` or `kagi auth set --session-token '...'`
 4. Check correct variable name (SESSION not SESSSION)
 
 ### "auth check failed" Error
@@ -582,7 +617,7 @@ KAGI_API_TOKEN=...
 
 **Solutions:**
 1. Get Session Token from Kagi settings
-2. Set session token: `kagi auth set --session-token '...'`
+2. Set session token: `kagi auth` or `kagi auth set --session-token '...'`
 3. Verify: `kagi auth status`
 
 ### "this command requires KAGI_API_TOKEN"
@@ -592,7 +627,7 @@ KAGI_API_TOKEN=...
 **Solutions:**
 1. Get API Token from Kagi settings
 2. Check you have API credit available
-3. Set API token: `kagi auth set --api-token '...'`
+3. Set API token: `kagi auth` or `kagi auth set --api-token '...'`
 4. Verify: `kagi auth status`
 
 ### Token Not Being Used from Config File
@@ -691,10 +726,11 @@ alias kagi-personal='KAGI_SESSION_TOKEN=personal_token kagi'
 **Key takeaways:**
 
 1. **Two token types:** Session (subscriber features) and API (paid API features)
-2. **Clear precedence:** Environment variables override config files
-3. **Configured search preference:** Base search defaults to session unless `[auth.preferred_auth] = "api"`
-4. **Security first:** Never commit tokens, rotate regularly, use secret managers
-5. **Easy verification:** Use `kagi auth status` and `kagi auth check`
+2. **Best local setup path:** `kagi auth`
+3. **Clear precedence:** Environment variables override config files
+4. **Configured search preference:** Base search defaults to session unless `[auth.preferred_auth] = "api"`
+5. **Security first:** Never commit tokens, rotate regularly, use secret managers
+6. **Easy verification:** Use `kagi auth status` and `kagi auth check`
 
 **Remember:**
 - Session Token = Personal subscription features

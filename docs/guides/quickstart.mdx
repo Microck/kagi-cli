@@ -96,18 +96,32 @@ This is expected - we'll configure credentials next.
 
 ## Step 3: Subscriber Setup with Session Token
 
-To unlock subscriber-only features (lens search, Assistant, subscriber Summarizer), you need a Kagi Session Token.
+To unlock subscriber-only features (lens search, Quick Answer, Assistant, ask-page, translate, and subscriber Summarizer), you need a Kagi Session Token.
 
 ### Getting Your Session Token
 
 1. **Log into Kagi** in your web browser
-2. **Go to Settings** → [Account Settings](https://kagi.com/settings)
-3. **Find "Session Link"** in the API section
+2. **Open** [Session Link settings](https://kagi.com/settings/user_details)
+3. **Find "Session Link"**
 4. **Copy the full URL** (looks like `https://kagi.com/search?token=abc123...`)
 
 **Important:** This token is tied to your Kagi account and subscription. Keep it secure.
 
-### Option A: Environment Variable (Quick Testing)
+### Option A: Auth Wizard (Recommended)
+
+Run:
+
+```bash
+kagi auth
+```
+
+Choose `Session Link`, paste the full Session Link or raw token, and let the wizard save and validate it.
+
+**Auth Demo:**
+
+![Auth command demo](/images/demos/auth.gif)
+
+### Option B: Environment Variable (Quick Testing)
 
 For immediate testing without saving to disk:
 
@@ -124,10 +138,10 @@ kagi auth check
 Expected output:
 
 ```
-auth check passed: session_token (env)
+auth check passed: session-token (env)
 ```
 
-### Option B: Persistent Configuration (Recommended)
+### Option C: Persistent Configuration Without the Wizard
 
 Save the token to a config file:
 
@@ -228,13 +242,21 @@ If you have Kagi API access (separate from your subscription), you can add an AP
 
 ### Setting Up the API Token
 
-**Option A: Environment Variable**
+**Option A: Auth Wizard**
+
+```bash
+kagi auth
+```
+
+Choose `API Token`, paste it, and let the wizard add it alongside your existing Session Link.
+
+**Option B: Environment Variable**
 
 ```bash
 export KAGI_API_TOKEN='your_api_token_here'
 ```
 
-**Option B: Persistent Configuration**
+**Option C: Persistent Configuration**
 
 ```bash
 kagi auth set --api-token 'your_api_token_here'
@@ -262,9 +284,9 @@ kagi enrich web "artificial intelligence"
 
 When you have both tokens configured:
 
-- **Session Token**: Enables lens search, Assistant, subscriber Summarizer
+- **Session Token**: Enables lens search, Quick Answer, filtered search, ask-page, assistant, translate, and subscriber Summarizer
 - **API Token**: Enables FastGPT, public Summarizer, Enrichment APIs
-- **Base Search**: Prefers API token, falls back to session token if needed
+- **Base Search**: Defaults to session unless `[auth.preferred_auth] = "api"`
 
 See the [Auth Matrix](/reference/auth-matrix) for the complete command-to-token mapping.
 

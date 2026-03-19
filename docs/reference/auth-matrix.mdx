@@ -14,6 +14,7 @@ This reference provides a complete mapping of which commands require which authe
 | `search` (base) | Configured base-search preference | Session fallback only when API-first mode is enabled | Defaults to session unless `[auth.preferred_auth] = "api"` |
 | `search --lens` | `KAGI_SESSION_TOKEN` | None | Lens requires session token |
 | `search` with filters | `KAGI_SESSION_TOKEN` | None | Region, time, date, order, verbatim, and personalization filters require session token |
+| `auth` | None | None | Interactive TTY wizard; writes config and validates the selected credential |
 | `auth status` | None | None | Reads config only |
 | `auth check` | Primary credential | None | Tests selected token |
 | `auth set` | None | None | Saves credentials |
@@ -91,6 +92,14 @@ flowchart TD
 **No fallback:** filtered search requires session token exclusively.
 
 ### Authentication Commands
+
+#### `kagi auth`
+
+- **Purpose:** Interactive setup wizard
+- **Network:** Yes, during credential validation
+- **Uses:** The credential the user just pasted
+- **Writes:** `./.kagi.toml`
+- **TTY only:** In non-interactive environments, use `auth set`, `status`, or `check`
 
 #### `kagi auth status`
 
