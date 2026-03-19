@@ -276,7 +276,7 @@ fn build_session_credential(
     Ok(Credential {
         kind: CredentialKind::SessionToken,
         source,
-        value: normalize_session_token_input(raw_value)?,
+        value: normalize_session_token(raw_value)?,
     })
 }
 
@@ -303,7 +303,7 @@ pub fn save_credentials(
     }
 
     if let Some(session_input) = session_input {
-        let normalized = normalize_session_token_input(session_input)?;
+        let normalized = normalize_session_token(session_input)?;
         auth.session_token = Some(normalized);
     }
 
@@ -323,7 +323,14 @@ pub fn save_credentials(
     load_credential_inventory()
 }
 
-fn normalize_session_token_input(input: &str) -> Result<String, KagiError> {
+#[cfg(test)]
+fn normalize_optional_session_token(input: Option<String>) -> Result<Option<String>, KagiError> {
+    input
+        .map(|value| normalize_session_token(&value))
+        .transpose()
+}
+
+pub fn normalize_session_token(input: &str) -> Result<String, KagiError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(KagiError::Config(
@@ -615,15 +622,14 @@ mod tests {
 
     #[test]
     fn extracts_token_from_session_link_url() {
-        let token =
-            normalize_session_token_input("https://kagi.com/search?token=abc123.def456&foo=bar")
-                .expect("session link parses");
+        let token = normalize_session_token("https://kagi.com/search?token=abc123.def456&foo=bar")
+            .expect("session link parses");
         assert_eq!(token, "abc123.def456");
     }
 
     #[test]
     fn keeps_raw_session_token_input() {
-        let token = normalize_session_token_input("abc123.def456").expect("raw token accepted");
+        let token = normalize_session_token("abc123.def456").expect("raw token accepted");
         assert_eq!(token, "abc123.def456");
     }
 
@@ -655,8 +661,18 @@ mod tests {
 
     #[test]
     fn rejects_session_link_without_token_param() {
-        let error = normalize_session_token_input("https://kagi.com/search?q=test")
+        let error = normalize_session_token("https://kagi.com/search?q=test")
             .expect_err("missing token param should fail");
         assert!(error.to_string().contains("token="));
+    }
+
+    #[test]
+    fn normalizes_session_link_from_environment_style_input() {
+        let normalized = normalize_optional_session_token(Some(
+            "https://kagi.com/search?token=env-session-token".to_string(),
+        ))
+        .expect("session token should normalize");
+
+        assert_eq!(normalized.as_deref(), Some("env-session-token"));
     }
 }

@@ -22,6 +22,7 @@ This reference provides a complete mapping of which commands require which authe
 | `news` | None | None | Public endpoint |
 | `ask-page` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
 | `assistant` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
+| `translate` | `KAGI_SESSION_TOKEN` | None | Text mode only; bootstraps `translate_session` over HTTP |
 | `fastgpt` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich web` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich news` | `KAGI_API_TOKEN` | None | Paid public API |
@@ -128,6 +129,7 @@ flowchart TD
 |---------|-------|---------|
 | `ask-page` | `KAGI_SESSION_TOKEN` | Ask Assistant about one page URL |
 | `assistant` | `KAGI_SESSION_TOKEN` | Conversational AI with threads |
+| `translate` | `KAGI_SESSION_TOKEN` | Kagi Translate text mode |
 | `fastgpt` | `KAGI_API_TOKEN` | Quick factual answers |
 
 ### Data Commands
@@ -158,6 +160,7 @@ Requires `KAGI_SESSION_TOKEN`:
 - ✅ Filtered search (`--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, personalization flags)
 - ✅ Kagi Assistant prompt and thread commands (`assistant`)
 - ✅ Ask Page (`ask-page`)
+- ✅ Kagi Translate (`translate`)
 - ✅ Subscriber Summarizer (`summarize --subscriber`)
 - ✅ Base search (fallback)
 
@@ -237,6 +240,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 - ✅ `kagi ask-page https://example.com "question"`
 - ✅ `kagi ask-page https://example.com "question"`
 - ✅ `kagi assistant "prompt"`
+- ✅ `kagi translate "Bonjour tout le monde"`
 - ✅ `kagi summarize --subscriber --url ...`
 - ✅ `kagi news`
 - ✅ `kagi smallweb`
@@ -347,6 +351,7 @@ kagi assistant "prompt"
 | Use my lens | Session | `kagi search --lens` |
 | Quick answers | API | `kagi fastgpt` |
 | AI conversation | Session | `kagi assistant` |
+| Translate text | Session | `kagi translate` |
 | Summarize (free API) | API | `kagi summarize --url` |
 | Summarize (subscription) | Session | `kagi summarize --subscriber` |
 | Read news | None | `kagi news` |

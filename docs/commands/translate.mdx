@@ -1,0 +1,260 @@
+---
+title: "translate"
+description: "Complete reference for *kagi* translate command - translate text through Kagi Translate with session-token auth."
+---
+
+# `kagi translate`
+
+Translate text through Kagi Translate and return one JSON envelope with the core translation plus the auxiliary text-mode sections.
+
+![Translate demo](/images/demos/translate.gif)
+
+## Synopsis
+
+```bash
+kagi translate [OPTIONS] <TEXT>
+```
+
+## Description
+
+`kagi translate` uses your existing `KAGI_SESSION_TOKEN`, bootstraps a `translate_session` at runtime, then calls the live `translate.kagi.com` endpoints over HTTP.
+
+By default the command fetches:
+
+- language detection
+- translated text
+- alternative translations
+- text alignments
+- translation suggestions
+- word insights
+
+If an auxiliary section fails, the core translation still succeeds and the failure is recorded in `warnings`.
+
+Plain `kagi translate "..."` means `--from auto --to en`. The CLI detects the source language first, then translates to English unless you pass `--to`.
+
+## Authentication
+
+**Required:** `KAGI_SESSION_TOKEN`
+
+The command follows the same Session Link auth story as other subscriber features. Save the full Session Link URL with:
+
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+```
+
+## Bootstrap
+
+The CLI uses your existing `KAGI_SESSION_TOKEN` to fetch `https://translate.kagi.com/`, reads the returned `translate_session` cookie from `Set-Cookie`, then uses normal Rust HTTP requests for the rest of the flow.
+
+## Arguments
+
+### `<TEXT>` (Required)
+
+The text to translate.
+
+```bash
+kagi translate "Bonjour tout le monde"
+```
+
+## Core Options
+
+### `--from <LANG>`
+
+Source language code. Default: `auto`.
+
+### `--to <LANG>`
+
+Target language code. Default: `en`. `auto` is not accepted for the target language.
+
+### `--quality <QUALITY>`
+
+Quality preference passed through to Kagi Translate.
+
+### `--model <MODEL>`
+
+Model override passed through to Kagi Translate.
+
+## Context and Style Options
+
+### `--prediction <TEXT>`
+
+Bias translation toward a predicted completion.
+
+### `--predicted-language <LANG>`
+
+Predicted source language code.
+
+### `--formality <LEVEL>`
+
+Formality hint.
+
+### `--speaker-gender <GENDER>`
+
+Speaker gender hint.
+
+### `--addressee-gender <GENDER>`
+
+Addressee gender hint.
+
+### `--language-complexity <LEVEL>`
+
+Language complexity hint.
+
+### `--translation-style <STYLE>`
+
+Translation style hint.
+
+### `--context <TEXT>`
+
+Extra translation context.
+
+### `--dictionary-language <LANG>`
+
+Dictionary language override.
+
+### `--time-format <FORMAT>`
+
+Time formatting style.
+
+### `--use-definition-context <true|false>`
+
+Toggle definition-aware translation behavior.
+
+### `--enable-language-features <true|false>`
+
+Toggle language-feature enrichment.
+
+### `--preserve-formatting <true|false>`
+
+Preserve formatting when possible.
+
+### `--context-memory-json <JSON>`
+
+Raw JSON array passed through as `context_memory`.
+
+```bash
+kagi translate "Bonjour" \
+  --context-memory-json '[{"kind":"glossary","value":"Use Hello, never Hi"}]'
+```
+
+## Auxiliary Section Controls
+
+### `--no-alternatives`
+
+Skip the alternative translations call.
+
+### `--no-word-insights`
+
+Skip the word insights call.
+
+### `--no-suggestions`
+
+Skip the translation suggestions call.
+
+### `--no-alignments`
+
+Skip the text alignments call.
+
+## Output Format
+
+```json
+{
+  "bootstrap": {
+    "method": "reqwest(set-cookie bootstrap)",
+    "authenticated": true
+  },
+  "detected_language": {
+    "iso": "fr",
+    "label": "French"
+  },
+  "translation": {
+    "translation": "Hello everyone",
+    "source_language": "fr",
+    "target_language": "en"
+  },
+  "alternatives": {
+    "elements": []
+  },
+  "text_alignments": {
+    "alignments": []
+  },
+  "translation_suggestions": {
+    "suggestions": []
+  },
+  "word_insights": {
+    "insights": []
+  },
+  "warnings": []
+}
+```
+
+## Examples
+
+### Basic Translation to English
+
+```bash
+kagi translate "Bonjour tout le monde"
+```
+
+### Translate to Japanese
+
+```bash
+kagi translate "Hello everyone" --to ja
+```
+
+### Provide Style and Context
+
+```bash
+kagi translate "Can you review this?" \
+  --to fr \
+  --formality more \
+  --translation-style natural \
+  --context "Professional email to a client"
+```
+
+### Fastest Core Output Only
+
+```bash
+kagi translate "Bonjour tout le monde" \
+  --no-alternatives \
+  --no-word-insights \
+  --no-suggestions \
+  --no-alignments
+```
+
+### Extract Just the Translated Text
+
+```bash
+kagi translate "Bonjour tout le monde" | jq -r '.translation.translation'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error - see stderr |
+
+## Troubleshooting
+
+### Bootstrap failure
+
+If translate bootstrap fails before detection or translation starts, the session token is likely invalid for the current account state or Kagi changed the cookie bootstrap behavior.
+
+### Invalid session token
+
+Refresh your Session Link and save it again:
+
+```bash
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+```
+
+### Auxiliary section warnings
+
+If `warnings` is non-empty, the translation succeeded but one or more optional follow-on calls were rejected or unavailable.
+
+## See Also
+
+- [Authentication Guide](/guides/authentication)
+- [Auth Matrix](/reference/auth-matrix)
+- [Coverage](/reference/coverage)

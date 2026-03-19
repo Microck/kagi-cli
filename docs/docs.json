@@ -86,6 +86,7 @@
             "pages": [
               "commands/ask-page",
               "commands/assistant",
+              "commands/translate",
               "commands/fastgpt",
               "commands/enrich"
             ]

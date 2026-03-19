@@ -15,7 +15,7 @@
 
 ---
 
-`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, ask-page, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, ask-page, assistant, translate, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
 the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
@@ -29,7 +29,7 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 
 - use your existing session-link URL for subscriber features
 - get structured JSON for scripts, agents, and other tooling
-- use one CLI for search, assistant, summarization, and feeds
+- use one CLI for search, assistant, translate, summarization, and feeds
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
 ## quickstart
@@ -101,7 +101,7 @@ export KAGI_API_TOKEN='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `ask-page`, `assistant`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
@@ -140,6 +140,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi news` | read Kagi News from public JSON endpoints |
 | `kagi assistant` | prompt Kagi Assistant, continue threads, and manage thread list/export/delete with a subscriber session token |
 | `kagi ask-page` | ask Kagi Assistant about a specific web page |
+| `kagi translate` | translate text through Kagi Translate with a subscriber session token |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
@@ -220,6 +221,26 @@ kagi assistant thread list
 kagi assistant thread export <THREAD_ID>
 ```
 
+translate text and keep all text-mode extras:
+
+```bash
+kagi translate "Bonjour tout le monde"
+```
+
+plain `kagi translate "..."` means `--from auto --to en`.
+
+translate to a specific target language:
+
+```bash
+kagi translate "Bonjour tout le monde" --to ja
+```
+
+translate only the core text result:
+
+```bash
+kagi translate "Bonjour tout le monde" --no-alternatives --no-word-insights --no-suggestions --no-alignments
+```
+
 use the subscriber summarizer:
 
 ```bash
@@ -247,7 +268,9 @@ kagi enrich news "browser privacy"
 
 ## what it looks like
 
-if you want a quick feel for the cli before installing it, this is the kind of output you get from ask-page, the subscriber summarizer, assistant, and the public news feed:
+if you want a quick feel for the cli before installing it, this is the kind of output you get from translate, ask-page, the subscriber summarizer, assistant, and the public news feed:
+
+![translate demo](images/demos/translate.gif)
 
 ![summarize demo](images/demos/summarize.gif)
 
@@ -280,6 +303,3 @@ for the fuller install matrix and platform-specific setup, use the [installation
 ## license
 
 [mit license](LICENSE)
-
-### todo
-- add https://translate.kagi.com/

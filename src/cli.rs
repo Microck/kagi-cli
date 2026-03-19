@@ -106,6 +106,8 @@ pub enum Commands {
     Assistant(AssistantArgs),
     /// Ask Kagi Assistant about a specific web page
     AskPage(AskPageArgs),
+    /// Translate text through Kagi Translate using session-token auth
+    Translate(Box<TranslateArgs>),
     /// Answer a query with Kagi's FastGPT API
     Fastgpt(FastGptArgs),
     /// Query Kagi's enrichment indexes
@@ -443,6 +445,101 @@ pub struct AskPageArgs {
     /// Question to ask about the page
     #[arg(value_name = "QUESTION")]
     pub question: String,
+}
+
+#[derive(Debug, Args)]
+pub struct TranslateArgs {
+    /// Text to translate
+    #[arg(value_name = "TEXT")]
+    pub text: String,
+
+    /// Source language code (default: auto)
+    #[arg(long, value_name = "LANG", default_value = "auto")]
+    pub from: String,
+
+    /// Target language code (default: en)
+    #[arg(long, value_name = "LANG", default_value = "en")]
+    pub to: String,
+
+    /// Translation quality preference
+    #[arg(long, value_name = "QUALITY")]
+    pub quality: Option<String>,
+
+    /// Translation model override
+    #[arg(long, value_name = "MODEL")]
+    pub model: Option<String>,
+
+    /// Prediction text to bias the translation
+    #[arg(long, value_name = "TEXT")]
+    pub prediction: Option<String>,
+
+    /// Predicted source language code
+    #[arg(long, value_name = "LANG")]
+    pub predicted_language: Option<String>,
+
+    /// Formality setting
+    #[arg(long, value_name = "LEVEL")]
+    pub formality: Option<String>,
+
+    /// Speaker gender hint
+    #[arg(long, value_name = "GENDER")]
+    pub speaker_gender: Option<String>,
+
+    /// Addressee gender hint
+    #[arg(long, value_name = "GENDER")]
+    pub addressee_gender: Option<String>,
+
+    /// Language complexity setting
+    #[arg(long, value_name = "LEVEL")]
+    pub language_complexity: Option<String>,
+
+    /// Translation style setting
+    #[arg(long, value_name = "STYLE")]
+    pub translation_style: Option<String>,
+
+    /// Extra translation context
+    #[arg(long, value_name = "TEXT")]
+    pub context: Option<String>,
+
+    /// Dictionary language override
+    #[arg(long, value_name = "LANG")]
+    pub dictionary_language: Option<String>,
+
+    /// Time formatting style
+    #[arg(long, value_name = "FORMAT")]
+    pub time_format: Option<String>,
+
+    /// Toggle definition-aware translation behavior
+    #[arg(long)]
+    pub use_definition_context: Option<bool>,
+
+    /// Toggle language-feature enrichment
+    #[arg(long)]
+    pub enable_language_features: Option<bool>,
+
+    /// Preserve source formatting when possible
+    #[arg(long)]
+    pub preserve_formatting: Option<bool>,
+
+    /// Raw JSON array passed through as context_memory
+    #[arg(long, value_name = "JSON")]
+    pub context_memory_json: Option<String>,
+
+    /// Skip the alternative translations call
+    #[arg(long)]
+    pub no_alternatives: bool,
+
+    /// Skip the word insights call
+    #[arg(long)]
+    pub no_word_insights: bool,
+
+    /// Skip the translation suggestions call
+    #[arg(long)]
+    pub no_suggestions: bool,
+
+    /// Skip the text alignments call
+    #[arg(long)]
+    pub no_alignments: bool,
 }
 
 #[derive(Debug, Args)]

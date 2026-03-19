@@ -33,6 +33,7 @@ These features use the subscriber web product (Session Token):
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
 | Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
 | Ask Questions About a Page | `kagi ask-page` | ✅ Implemented |
+| Translate (text mode) | `kagi translate` | ✅ Implemented |
 
 ### Public Product Endpoints
 
@@ -60,6 +61,7 @@ These require no authentication:
 | `news` | News feed | None | ✅ |
 | `assistant` | AI assistant with thread management | Session | ✅ |
 | `ask-page` | Page-focused Assistant question | Session | ✅ |
+| `translate` | Kagi Translate text mode | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
@@ -93,6 +95,13 @@ These require no authentication:
 | `--target-language` | summarize | ✅ |
 | `<URL> <QUESTION>` | ask-page | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--from`, `--to` | translate | ✅ |
+| `--no-alternatives`, `--no-word-insights`, `--no-suggestions`, `--no-alignments` | translate | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
 | `--model` | assistant | ✅ |
 | `--lens` | assistant | ✅ |
 | `--web-access` / `--no-web-access` | assistant | ✅ |
@@ -105,15 +114,7 @@ These require no authentication:
 
 These features were evaluated and left out of the public CLI surface:
 
-#### Translate
-
-**Status:** ❌ Not implemented
-
-**Reason:** The current Session Link implementation is not sufficient for `translate.kagi.com` as deployed. The endpoint requires additional authentication mechanisms that are incompatible with the Session Link token model.
-
-**Decision:** Rather than ship a fragile compatibility layer that might break, the feature is excluded until there is a viable authentication path.
-
-**Alternative:** Use the web interface at [translate.kagi.com](https://translate.kagi.com)
+There is no public CLI support today for document, website, image, proofread, dictionary, or voice modes from Kagi Translate. The implemented scope is text mode only.
 
 ## API Surface Philosophy
 
@@ -137,7 +138,7 @@ These features were evaluated and left out of the public CLI surface:
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, filtered search, ask-page, summarize --subscriber, assistant |
+| Session Token | ✅ | search, filtered search, ask-page, summarize --subscriber, assistant, translate |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -164,6 +165,7 @@ All commands output JSON:
 | summarize | Stable |
 | ask-page | Stable |
 | assistant | Stable |
+| translate | Stable |
 | fastgpt | Stable |
 | enrich | Stable |
 
@@ -212,7 +214,7 @@ All commands output JSON:
 | Assistant | ✅ (prompt + threads) | ✅ (full) |
 | Ask Questions about Page | ✅ | ✅ |
 | Summarizer | ✅ | ✅ |
-| Translate | ❌ | ✅ |
+| Translate | ✅ (text mode) | ✅ |
 | Settings | ❌ | ✅ |
 | Billing | ❌ | ✅ |
 

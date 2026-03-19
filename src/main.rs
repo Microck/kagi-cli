@@ -14,7 +14,7 @@ use crate::api::{
     execute_assistant_thread_export, execute_assistant_thread_get, execute_assistant_thread_list,
     execute_enrich_news, execute_enrich_web, execute_fastgpt, execute_news,
     execute_news_categories, execute_news_chaos, execute_smallweb, execute_subscriber_summarize,
-    execute_summarize,
+    execute_summarize, execute_translate,
 };
 use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
@@ -23,12 +23,14 @@ use crate::auth::{
 use crate::cli::{
     AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
     AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand, SearchOrder, SearchTime,
+    TranslateArgs,
 };
 use crate::error::KagiError;
 use crate::types::{
     AskPageRequest, AssistantPromptRequest, FastGptRequest, SearchResponse,
-    SubscriberSummarizeRequest, SummarizeRequest,
+    SubscriberSummarizeRequest, SummarizeRequest, TranslateCommandRequest,
 };
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
@@ -222,6 +224,12 @@ async fn run() -> Result<(), KagiError> {
             let response = execute_ask_page(&request, &token).await?;
             print_json(&response)
         }
+        Commands::Translate(args) => {
+            let token = resolve_session_token()?;
+            let request = build_translate_request(*args)?;
+            let response = execute_translate(&request, &token).await?;
+            print_json(&response)
+        }
         Commands::Fastgpt(args) => {
             let request = FastGptRequest {
                 query: args.query,
@@ -375,6 +383,59 @@ fn resolve_session_token() -> Result<String, KagiError> {
                     .to_string(),
             )
         })
+}
+
+fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandRequest, KagiError> {
+    Ok(TranslateCommandRequest {
+        text: args.text.trim().to_string(),
+        from: args.from.trim().to_string(),
+        to: args.to.trim().to_string(),
+        quality: normalize_optional_string(args.quality),
+        model: normalize_optional_string(args.model),
+        prediction: normalize_optional_string(args.prediction),
+        predicted_language: normalize_optional_string(args.predicted_language),
+        formality: normalize_optional_string(args.formality),
+        speaker_gender: normalize_optional_string(args.speaker_gender),
+        addressee_gender: normalize_optional_string(args.addressee_gender),
+        language_complexity: normalize_optional_string(args.language_complexity),
+        translation_style: normalize_optional_string(args.translation_style),
+        context: normalize_optional_string(args.context),
+        dictionary_language: normalize_optional_string(args.dictionary_language),
+        time_format: normalize_optional_string(args.time_format),
+        use_definition_context: args.use_definition_context,
+        enable_language_features: args.enable_language_features,
+        preserve_formatting: args.preserve_formatting,
+        context_memory: parse_context_memory_json(args.context_memory_json.as_deref())?,
+        fetch_alternatives: !args.no_alternatives,
+        fetch_word_insights: !args.no_word_insights,
+        fetch_suggestions: !args.no_suggestions,
+        fetch_alignments: !args.no_alignments,
+    })
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_context_memory_json(raw: Option<&str>) -> Result<Option<Vec<Value>>, KagiError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let parsed: Value = serde_json::from_str(raw).map_err(|error| {
+        KagiError::Config(format!(
+            "--context-memory-json must be valid JSON; parse failed: {error}"
+        ))
+    })?;
+
+    match parsed {
+        Value::Array(values) => Ok(Some(values)),
+        _ => Err(KagiError::Config(
+            "--context-memory-json must be a JSON array".to_string(),
+        )),
+    }
 }
 
 fn build_search_request(query: String, options: &SearchRequestOptions) -> search::SearchRequest {
@@ -720,11 +781,13 @@ async fn run_batch_search(
 mod tests {
     use super::{
         RateLimiter, SearchRequestOptions, build_search_request, format_csv_response,
-        format_markdown_response, format_pretty_response, should_fallback_to_session,
+        format_markdown_response, format_pretty_response, parse_context_memory_json,
+        should_fallback_to_session,
     };
     use crate::cli::{SearchOrder, SearchTime};
     use crate::error::KagiError;
     use crate::types::{SearchResponse, SearchResult};
+    use serde_json::json;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
@@ -964,5 +1027,24 @@ mod tests {
         assert!(!should_fallback_to_session(&KagiError::Network(
             "request to Kagi timed out".to_string(),
         )));
+    }
+
+    #[test]
+    fn parses_context_memory_array_json() {
+        let parsed = parse_context_memory_json(Some(r#"[{"kind":"glossary","value":"hello"}]"#))
+            .expect("context memory should parse");
+
+        assert_eq!(
+            parsed,
+            Some(vec![json!({"kind": "glossary", "value": "hello"})])
+        );
+    }
+
+    #[test]
+    fn rejects_non_array_context_memory_json() {
+        let error = parse_context_memory_json(Some(r#"{"kind":"glossary"}"#))
+            .expect_err("object context memory should fail");
+
+        assert!(error.to_string().contains("JSON array"));
     }
 }
