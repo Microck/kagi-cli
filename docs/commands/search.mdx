@@ -1,11 +1,11 @@
 ---
 title: "search"
-description: "Complete reference for *kagi* search command - syntax, flags, authentication, output formats, and real-world examples."
+description: "Complete reference for *kagi* search command - syntax, filters, authentication, output formats, and examples."
 ---
 
 # `kagi search`
 
-Search Kagi and return structured results in JSON or human-readable format. This is the primary command for retrieving search results from your terminal.
+Search Kagi and return structured results in JSON or human-readable format.
 
 ![Search demo](/images/demos/search.gif)
 
@@ -17,32 +17,43 @@ kagi search [OPTIONS] <QUERY>
 
 ## Description
 
-The `kagi search` command performs a search query against Kagi's search index and returns results in a structured format. By default, output is JSON suitable for programmatic processing. With the `--format pretty` flag, results are formatted for human readability.
+`kagi search` is the main search command. By default it emits JSON for scripts and agents. Use `--format pretty` for terminal reading.
 
-This command has sophisticated authentication behavior: it prefers the API token path when available but can automatically fall back to the session token path if the API path is rejected. This ensures maximum utility regardless of which token type you have configured.
+There are now two search modes:
+
+- **Base search** uses your configured base-search auth preference. By default this repo prefers the subscriber session path. If you set `[auth.preferred_auth] = "api"`, base search uses the Search API first and can fall back to the subscriber web-product path on API auth rejection.
+- **Filtered search** uses Kagi's authenticated HTML/session search path and requires `KAGI_SESSION_TOKEN`.
+
+This matters because the Kagi Search API is still base-search only in this CLI. As soon as you add live search filters like `--region`, `--time`, `--order`, `--verbatim`, or `--personalized`, the request becomes session-only.
 
 ## Authentication
 
-### Base Search (No Lens)
+### Base Search
 
-**Preferred:** `KAGI_API_TOKEN`
-**Fallback:** `KAGI_SESSION_TOKEN` (if API path is rejected)
+**Default:** `KAGI_SESSION_TOKEN`
+**Optional API-first mode:** set `[auth.preferred_auth] = "api"`
 
-The base search command is unique in that it attempts both authentication paths:
+Plain base search keeps the existing repo behavior:
 
-1. **First attempt:** Uses `KAGI_API_TOKEN` if available, querying the Search API
-2. **On API rejection:** Falls back to `KAGI_SESSION_TOKEN`, querying via the web product
-3. **On success:** Returns results from whichever path succeeded
+- default session-first search when a session token is available
+- API-first only when you explicitly configure `[auth.preferred_auth] = "api"`
+- session fallback only when the API path was selected first and rejected
 
-**Why this matters:** You can use base search with either token type, and the CLI intelligently selects the best available option.
-
-### Lens Search (`--lens`)
+### Filtered Search
 
 **Required:** `KAGI_SESSION_TOKEN`
 
-Lens-aware search requires a subscriber session token. This feature is not available via the Search API and requires web-product authentication.
+Any of these flags make the request session-only:
 
-**What is a lens?** Kagi lenses are custom search scopes you create in your Kagi account. They allow you to search within specific domains, topics, or content types you've defined.
+- `--lens`
+- `--region`
+- `--time`
+- `--from-date`
+- `--to-date`
+- `--order`
+- `--verbatim`
+- `--personalized`
+- `--no-personalized`
 
 ## Options
 
@@ -50,311 +61,211 @@ Lens-aware search requires a subscriber session token. This feature is not avail
 
 The search query string.
 
-**Constraints:**
-- Minimum length: 1 character
-- Maximum length: 2000 characters
-- Supports all standard search operators
-
-**Examples:**
 ```bash
 kagi search "rust programming language"
 kagi search "site:github.com rust cli"
-kagi search '"exact phrase match"'
 ```
 
-### `--format pretty`
+### `--format <FORMAT>`
 
-Render output in human-readable format instead of JSON.
+Output format.
 
-**Default:** `false` (JSON output)
-**When to use:** Interactive terminal sessions, quick lookups, reading results
+Possible values:
 
-**JSON Output (default):**
+- `json` - pretty JSON
+- `compact` - minified JSON
+- `pretty` - terminal-friendly output
+- `markdown` - markdown list output
+- `csv` - CSV table output
+
+### `--no-color`
+
+Disable ANSI colors in `--format pretty`.
+
+### `--lens <INDEX>`
+
+Scope search to one of your enabled Kagi lenses.
+
+```bash
+kagi search --lens 2 "developer documentation"
+```
+
+### `--region <REGION>`
+
+Restrict results to a Kagi region code such as `us`, `gb`, `jp`, or `no_region`.
+
+```bash
+kagi search --region us "rust conferences"
+kagi search --region no_region "rust ownership"
+```
+
+### `--time <WINDOW>`
+
+Restrict results to a recent update window.
+
+Possible values:
+
+- `day`
+- `week`
+- `month`
+- `year`
+
+```bash
+kagi search --time week "rust release notes"
+```
+
+### `--from-date <YYYY-MM-DD>`
+
+Restrict results to pages updated on or after the given date.
+
+### `--to-date <YYYY-MM-DD>`
+
+Restrict results to pages updated on or before the given date.
+
+```bash
+kagi search --from-date 2026-01-01 --to-date 2026-03-01 "rust compiler"
+```
+
+**Important:** `--time` cannot be combined with `--from-date` or `--to-date`.
+
+### `--order <ORDER>`
+
+Reorder results using Kagi's live HTML search sort options.
+
+Possible values:
+
+- `default`
+- `recency`
+- `website`
+- `trackers`
+
+```bash
+kagi search --order recency "rust changelog"
+```
+
+### `--verbatim`
+
+Enable verbatim search for this request.
+
+```bash
+kagi search --verbatim "\"rust async runtime\""
+```
+
+### `--personalized`
+
+Force personalized search on for this request.
+
+### `--no-personalized`
+
+Force personalized search off for this request.
+
+```bash
+kagi search --no-personalized "rust web framework"
+```
+
+## Not Supported as Runtime Flags
+
+`safe_search` is currently an account setting, not a search-time flag in this CLI. Configure it in the Kagi web settings instead of expecting `kagi search` to override it per request.
+
+## Output Format
+
+The search response shape is unchanged:
+
 ```json
 {
   "data": [
     {
       "t": 0,
-      "url": "https://www.rust-lang.org",
+      "rank": 1,
       "title": "Rust Programming Language",
+      "url": "https://www.rust-lang.org",
       "snippet": "A language empowering everyone to build reliable and efficient software.",
-      "rank": 1
+      "published": null
     }
   ]
 }
-```
-
-**Pretty Output (`--format pretty`):**
-```
-1. Rust Programming Language
-   https://www.rust-lang.org
-
-   A language empowering everyone to build reliable and efficient software.
-
-2. The Rust Programming Language - Documentation
-   https://doc.rust-lang.org/book/
-
-   The Rust Programming Language book.
-```
-
-**Note:** `--format pretty` only changes output formatting. It does not affect:
-- Which authentication is used
-- Transport method (API vs web)
-- Command semantics
-- Error behavior
-
-### `--lens <INDEX>`
-
-Search using a specific Kagi lens.
-
-**Requires:** `KAGI_SESSION_TOKEN`
-**Type:** String value representing your numeric lens index
-**Example:** `--lens 2`
-
-**Finding your lens index:**
-1. Log into Kagi at [kagi.com](https://kagi.com)
-2. Navigate to your lenses in settings
-3. The lens index is the number shown for each lens
-
-**Example:**
-```bash
-# Use lens #2 (your "Developer Documentation" lens)
-kagi search --lens 2 "error handling"
-
-# Combine with pretty output
-kagi search --lens 2 --format pretty "rust async"
-```
-
-**Important:** Lens indices are user-specific. Your lens #2 is different from another user's lens #2.
-
-## Output Format
-
-### JSON Structure
-
-```json
-{
-  "data": [
-    {
-      "t": 0,           // Result type (0 = organic, see types below)
-      "rank": 1,        // Position in results
-      "title": "...",   // Page title
-      "url": "...",     // Full URL
-      "snippet": "...", // Description/excerpt
-      "published": "..." // Optional: publication date
-    }
-  ]
-}
-```
-
-### Result Types
-
-| Type | Description |
-|------|-------------|
-| 0 | Organic search result |
-| 1 | News result |
-| 2 | Image result |
-| 3 | Video result |
-| 4 | Map/local result |
-
-### Pretty Output Format
-
-Results are numbered and formatted with title, URL, and optional snippet:
-
-```
-{rank}. {title}
-   {url}
-
-   {snippet}
 ```
 
 ## Examples
 
-### Basic Search
+### Plain base search
 
 ```bash
-# Simple search with JSON output
 kagi search "rust programming language"
+```
 
-# Human-readable output
+### Human-readable output
+
+```bash
 kagi search --format pretty "rust programming language"
 ```
 
-### Lens Search
+### Region-aware search
 
 ```bash
-# Search within your developer documentation lens (lens #2)
-kagi search --lens 2 "error handling patterns"
-
-# Search within your tech news lens (lens #5)
-kagi search --lens 5 "artificial intelligence"
+kagi search --region us --format pretty "rust conferences"
 ```
 
-### Advanced Queries
+### Recent results
 
 ```bash
-# Site-specific search
-kagi search "site:github.com rust cli"
-
-# Exact phrase
-kagi search '"async await rust"'
-
-# Exclude terms
-kagi search "rust -game -gaming"
-
-# Date range
-kagi search "rust tutorial after:2023-01-01"
+kagi search --time month --order recency "rust release notes"
 ```
 
-### Processing Results
+### Custom date range
+
+```bash
+kagi search --from-date 2026-01-01 --to-date 2026-03-01 "rust async runtime"
+```
+
+### Verbatim plus personalization control
+
+```bash
+kagi search --verbatim --no-personalized "\"rust book ownership\""
+```
+
+### Lens plus filters
+
+```bash
+kagi search --lens 2 --region us --time year "developer documentation"
+```
+
+## Processing Results
 
 ```bash
 # Extract URLs
 kagi search "rust" | jq -r '.data[].url'
 
-# Extract titles
-kagi search "rust" | jq -r '.data[].title'
+# Get first result
+kagi search "rust" | jq -r '.data[0].title'
 
-# Get first result URL
-kagi search "rust" | jq -r '.data[0].url'
-
-# Filter organic results only
-kagi search "rust" | jq '.data | map(select(.t == 0))'
-
-# Count results
-kagi search "rust" | jq '.data | length'
-```
-
-### Combining with Other Tools
-
-```bash
-# Open first result in browser
-kagi search "rust" | jq -r '.data[0].url' | xargs open
-
-# Save results to file
-kagi search "rust" > rust-search-results.json
-
-# Create markdown links
-kagi search "rust" | jq -r '.data[0:5] | .[] | "- [\(.title)](\(.url))"' > results.md
-
-# Generate CSV
-kagi search "rust" | jq -r '.data[] | [.title, .url] | @csv' > results.csv
+# Human-readable markdown
+kagi search --format markdown "rust ownership"
 ```
 
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success - search completed, results returned |
-| 1 | Error - see stderr for details |
+| 0 | Success |
+| 1 | Error - see stderr |
 
-**Common errors:**
-- Missing credentials
-- Invalid authentication
-- Network failure
-- Rate limiting
+## Common Errors
 
-## Authentication Flow Details
-
-### Base Search Flow
-
-```mermaid
-flowchart TD
-    Start([User runs: kagi search "query"]) --> CheckCreds[CLI checks credentials]
-    
-    CheckCreds --> APIToken{API token configured?}
-    APIToken -->|Yes| TrySearchAPI[Try Search API]
-    TrySearchAPI -->|Success| ReturnResults1[Return results]
-    TrySearchAPI -->|403/401 error| SessionCheck{Session token configured?}
-    SessionCheck -->|Yes| TryWeb1[Try web product]
-    TryWeb1 -->|Success| ReturnResults1
-    SessionCheck -->|No| Error1[Error no fallback]
-    
-    APIToken -->|No| TrySession[Try session token]
-    TrySession -->|Success| ReturnResults2[Return results]
-    
-    CheckCreds --> Neither[Neither token configured]
-    Neither --> Error2[Error: missing credentials]
-```
-
-### Lens Search Flow
-
-```mermaid
-flowchart TD
-    Start([User runs: kagi search --lens 2 "query"]) --> CheckSession{CLI checks: Session token configured?}
-    
-    CheckSession -->|Yes| QueryWeb[Query web product with lens]
-    QueryWeb -->|Success| ReturnResults[Return results]
-    
-    CheckSession -->|No| Error[Error - lens requires session token]
-```
-
-## Performance Considerations
-
-### Response Times
-
-- **Base search:** 1-3 seconds typical
-- **Lens search:** 2-5 seconds typical
-- **With fallback:** May take 2x time if fallback occurs
-
-### Rate Limiting
-
-- Respect rate limits between requests
-- Add delays when processing multiple queries: `sleep 1`
-- Consider caching results for repeated queries
-
-### Best Practices
-
-1. **Use appropriate token:** If you have both, base search uses API first
-2. **Pretty for humans:** Use `--format pretty` for interactive use
-3. **JSON for automation:** Default JSON is perfect for piping
-4. **Lens for focus:** Use lenses to scope searches to relevant domains
-5. **Limit results:** Use `--limit` to reduce payload size
-
-## Troubleshooting
-
-### "No results found"
-
-- Try a broader query
-- Check your internet connection
-- Verify authentication is working: `kagi auth check`
-
-### "missing credentials"
-
-- Set your session token: `kagi auth set --session-token '...'`
-- Or set API token: `kagi auth set --api-token '...'`
-- Check status: `kagi auth status`
-
-### "auth check failed"
-
-- Token may be expired - regenerate in Kagi settings
-- Check token hasn't been revoked
-- Verify subscription/API credit status
-
-### Slow responses
-
-- May be experiencing fallback behavior
-- Check network connectivity
-- Consider rate limiting delays
-
-## Comparison with Other Commands
-
-| Feature | `kagi search` | `kagi news` | `kagi smallweb` |
-|---------|---------------|-------------|-----------------|
-| Authentication | Optional (API or Session) | None | None |
-| Output | JSON or pretty | JSON | JSON |
-| Source | Search index | News feed | Small Web |
-| Requires token | No (public) | No | No |
+- `search filters require KAGI_SESSION_TOKEN` - you used runtime filters without a session token
+- `search --time cannot be combined with --from-date or --to-date` - choose a preset window or a custom date range
+- `search --from-date must use YYYY-MM-DD format` - dates must be zero-padded ISO dates
+- `lens 'foo' must be a numeric index` - lens values are numeric Kagi lens indices
 
 ## Related Commands
 
-- `kagi news` - Search news articles specifically
-- `kagi enrich web` - Web enrichment with different API
-- `kagi auth` - Manage authentication
-- `kagi assistant` - Ask Kagi Assistant from the terminal
+- `kagi batch` - run multiple searches with the same search filters
+- `kagi assistant` - continue research with Kagi Assistant
+- `kagi summarize` - summarize a page after you find it
+- `kagi auth` - inspect which token path will be used
 
 ## See Also
 
-- [Authentication Guide](/guides/authentication) - Detailed token setup
-- [Workflows](/guides/workflows) - Real-world usage patterns
-- [Troubleshooting](/guides/troubleshooting) - Common issues
-- [Auth Matrix](/reference/auth-matrix) - Command auth requirements
+- [Authentication Guide](/guides/authentication)
+- [Auth Matrix](/reference/auth-matrix)
+- [API and Product Coverage](/reference/coverage)

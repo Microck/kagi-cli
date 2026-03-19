@@ -56,13 +56,13 @@ flowchart TD
     RequiresAuth --> LoadCreds[Load credentials from env/file]
     LoadCreds --> CheckReqs{Check command requirements}
     
-    SearchCmd --> PreferAPI[Prefer API fallback to session]
+    SearchCmd --> PreferConfigured[Use configured base-search preference]
     
     CheckReqs -->|Session Required| SessionReq[Use KAGI_SESSION_TOKEN]
     CheckReqs -->|API Required| APIReq[Use KAGI_API_TOKEN]
-    CheckReqs -->|Both Accepted| BothAccepted[Try API first fallback to session]
-    
-    PreferAPI --> BothAccepted
+    CheckReqs -->|Both Accepted| BothAccepted[Use configured search preference]
+
+    PreferConfigured --> BothAccepted
 ```
 
 ## Getting Your Tokens
@@ -406,28 +406,30 @@ flowchart TD
     Fallback --> SessionPath
 ```
 
-### Fallback Behavior
+### Base Search Behavior
 
-The base search command implements intelligent fallback:
+The base search command follows the configured base-search preference.
 
-**Scenario 1: API token works**
+**Scenario 1: API-first mode works**
 ```bash
 export KAGI_API_TOKEN='valid_token'
+# .kagi.toml contains: [auth] preferred_auth = "api"
 kagi search "test"
 # Uses Search API, returns results
 ```
 
-**Scenario 2: API token rejected, fallback to session**
+**Scenario 2: API-first mode rejected, fallback to session**
 ```bash
 export KAGI_API_TOKEN='valid_token'
 export KAGI_SESSION_TOKEN='also_valid'
+# .kagi.toml contains: [auth] preferred_auth = "api"
 kagi search "test"
 # Tries Search API → gets auth error
 # Falls back to session token path
 # Returns results
 ```
 
-**Scenario 3: Only session token**
+**Scenario 3: Default session-first behavior**
 ```bash
 export KAGI_SESSION_TOKEN='valid_token'
 kagi search "test"
@@ -690,7 +692,7 @@ alias kagi-personal='KAGI_SESSION_TOKEN=personal_token kagi'
 
 1. **Two token types:** Session (subscriber features) and API (paid API features)
 2. **Clear precedence:** Environment variables override config files
-3. **Smart fallback:** Base search tries API first, falls back to session
+3. **Configured search preference:** Base search defaults to session unless `[auth.preferred_auth] = "api"`
 4. **Security first:** Never commit tokens, rotate regularly, use secret managers
 5. **Easy verification:** Use `kagi auth status` and `kagi auth check`
 
@@ -698,7 +700,7 @@ alias kagi-personal='KAGI_SESSION_TOKEN=personal_token kagi'
 - Session Token = Personal subscription features
 - API Token = Paid API endpoints
 - Both can coexist, each serves different commands
-- Base search is smart about which to use
+- Base search follows the configured search preference
 
 ## Next Steps
 

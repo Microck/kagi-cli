@@ -9,6 +9,12 @@ pub enum CompletionShell {
     PowerShell,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum AssistantThreadExportFormat {
+    Markdown,
+    Json,
+}
+
 /// Output format options for search results
 #[derive(Debug, Clone, ValueEnum)]
 pub enum OutputFormat {
@@ -34,6 +40,22 @@ impl std::fmt::Display for OutputFormat {
             OutputFormat::Csv => write!(f, "csv"),
         }
     }
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchOrder {
+    Default,
+    Recency,
+    Website,
+    Trackers,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchTime {
+    Day,
+    Week,
+    Month,
+    Year,
 }
 
 #[derive(Debug, Parser)]
@@ -72,6 +94,7 @@ pub enum Commands {
     /// • Multiple output formats: json (default), pretty, compact, markdown, csv
     /// • Colorized pretty output (disable with --no-color)
     /// • Lens support for scoped searches
+    /// • Region, time, date, order, verbatim, and personalization filters
     Search(SearchArgs),
     /// Inspect and validate configured credentials
     Auth(AuthCommand),
@@ -79,8 +102,10 @@ pub enum Commands {
     Summarize(SummarizeArgs),
     /// Read Kagi News from the live public JSON endpoints
     News(NewsArgs),
-    /// Prompt Kagi Assistant with subscriber session-token auth
+    /// Prompt Kagi Assistant and manage Assistant threads
     Assistant(AssistantArgs),
+    /// Ask Kagi Assistant about a specific web page
+    AskPage(AskPageArgs),
     /// Translate text through Kagi Translate using session-token auth
     Translate(Box<TranslateArgs>),
     /// Answer a query with Kagi's FastGPT API
@@ -98,6 +123,7 @@ pub enum Commands {
     /// • Token bucket rate limiting to respect API limits
     /// • All output formats supported (json, pretty, compact, markdown, csv)
     /// • Lens support for scoped searches
+    /// • Shared region, time, date, order, verbatim, and personalization filters
     /// • Color output control with --no-color
     Batch(BatchSearchArgs),
 }
@@ -124,6 +150,38 @@ pub struct SearchArgs {
     /// 3. Check the URL for the "l=" parameter value
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+
+    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    #[arg(long, value_name = "REGION")]
+    pub region: Option<String>,
+
+    /// Restrict results to a recent time window
+    #[arg(long, value_name = "WINDOW", value_enum)]
+    pub time: Option<SearchTime>,
+
+    /// Restrict results to pages updated on or after this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub from_date: Option<String>,
+
+    /// Restrict results to pages updated on or before this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub to_date: Option<String>,
+
+    /// Reorder search results
+    #[arg(long, value_name = "ORDER", value_enum)]
+    pub order: Option<SearchOrder>,
+
+    /// Enable verbatim search mode for this request
+    #[arg(long)]
+    pub verbatim: bool,
+
+    /// Force personalized search on for this request
+    #[arg(long, conflicts_with = "no_personalized")]
+    pub personalized: bool,
+
+    /// Force personalized search off for this request
+    #[arg(long, conflicts_with = "personalized")]
+    pub no_personalized: bool,
 }
 
 #[derive(Debug, Args)]
@@ -151,6 +209,38 @@ pub struct BatchSearchArgs {
     /// Scope all searches to a Kagi lens by numeric index
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+
+    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    #[arg(long, value_name = "REGION")]
+    pub region: Option<String>,
+
+    /// Restrict results to a recent time window
+    #[arg(long, value_name = "WINDOW", value_enum)]
+    pub time: Option<SearchTime>,
+
+    /// Restrict results to pages updated on or after this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub from_date: Option<String>,
+
+    /// Restrict results to pages updated on or before this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub to_date: Option<String>,
+
+    /// Reorder search results
+    #[arg(long, value_name = "ORDER", value_enum)]
+    pub order: Option<SearchOrder>,
+
+    /// Enable verbatim search mode for all batch requests
+    #[arg(long)]
+    pub verbatim: bool,
+
+    /// Force personalized search on for all batch requests
+    #[arg(long, conflicts_with = "no_personalized")]
+    pub personalized: bool,
+
+    /// Force personalized search off for all batch requests
+    #[arg(long, conflicts_with = "personalized")]
+    pub no_personalized: bool,
 }
 
 impl BatchSearchArgs {
@@ -266,14 +356,95 @@ pub struct NewsArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(arg_required_else_help = true, args_conflicts_with_subcommands = true)]
 pub struct AssistantArgs {
+    #[command(subcommand)]
+    pub command: Option<AssistantSubcommand>,
+
     /// Prompt to send to Kagi Assistant
     #[arg(value_name = "QUERY")]
-    pub query: String,
+    pub query: Option<String>,
 
     /// Continue an existing assistant thread by id
     #[arg(long, value_name = "THREAD_ID")]
     pub thread_id: Option<String>,
+
+    /// Override the Assistant model slug for this prompt
+    #[arg(long, value_name = "MODEL")]
+    pub model: Option<String>,
+
+    /// Override the Assistant lens id for this prompt
+    #[arg(long, value_name = "LENS_ID")]
+    pub lens: Option<u64>,
+
+    /// Force web access on for this prompt
+    #[arg(long, conflicts_with = "no_web_access")]
+    pub web_access: bool,
+
+    /// Force web access off for this prompt
+    #[arg(long, conflicts_with = "web_access")]
+    pub no_web_access: bool,
+
+    /// Force personalizations on for this prompt
+    #[arg(long, conflicts_with = "no_personalized")]
+    pub personalized: bool,
+
+    /// Force personalizations off for this prompt
+    #[arg(long, conflicts_with = "personalized")]
+    pub no_personalized: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AssistantSubcommand {
+    /// Manage Assistant threads
+    Thread(AssistantThreadArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct AssistantThreadArgs {
+    #[command(subcommand)]
+    pub command: AssistantThreadSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AssistantThreadSubcommand {
+    /// List Assistant threads for the current account
+    List,
+    /// Fetch one Assistant thread with its messages
+    Get(AssistantThreadIdArgs),
+    /// Delete one Assistant thread
+    Delete(AssistantThreadIdArgs),
+    /// Export one Assistant thread
+    Export(AssistantThreadExportArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct AssistantThreadIdArgs {
+    /// Assistant thread id
+    #[arg(value_name = "THREAD_ID")]
+    pub thread_id: String,
+}
+
+#[derive(Debug, Args)]
+pub struct AssistantThreadExportArgs {
+    /// Assistant thread id
+    #[arg(value_name = "THREAD_ID")]
+    pub thread_id: String,
+
+    /// Export format
+    #[arg(long, value_name = "FORMAT", value_enum, default_value = "markdown")]
+    pub format: AssistantThreadExportFormat,
+}
+
+#[derive(Debug, Args)]
+pub struct AskPageArgs {
+    /// Absolute page URL to discuss with Assistant
+    #[arg(value_name = "URL")]
+    pub url: String,
+
+    /// Question to ask about the page
+    #[arg(value_name = "QUESTION")]
+    pub question: String,
 }
 
 #[derive(Debug, Args)]

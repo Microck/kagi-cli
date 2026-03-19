@@ -1,6 +1,6 @@
 {
   "name": "kagi-cli",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Node wrapper that installs the native kagi CLI binary",
   "license": "MIT",
   "repository": {

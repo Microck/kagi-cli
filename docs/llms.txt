@@ -19,6 +19,7 @@
 - [summarize](https://kagi.micr.dev/commands/summarize): Complete reference for *kagi* summarize command - summarize URLs and text using subscriber or public API modes.
 - [news](https://kagi.micr.dev/commands/news): Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category filtering.
 - [smallweb](https://kagi.micr.dev/commands/smallweb): Complete reference for *kagi* smallweb command - fetch the Kagi Small Web feed of independent websites.
+- [ask-page](https://kagi.micr.dev/commands/ask-page): Complete reference for *kagi* ask-page command - ask Kagi Assistant about a specific web page.
 - [assistant](https://kagi.micr.dev/commands/assistant): Complete reference for *kagi* assistant command - interact with Kagi AI Assistant programmatically.
 - [fastgpt](https://kagi.micr.dev/commands/fastgpt): Complete reference for *kagi* fastgpt command - get quick answers using Kagi's FastGPT API.
 - [enrich](https://kagi.micr.dev/commands/enrich): Complete reference for *kagi* enrich command - query Kagi's enrichment indexes for web and news.

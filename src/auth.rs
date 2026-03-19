@@ -80,6 +80,13 @@ pub struct SearchCredentials {
     pub fallback_session: Option<Credential>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchAuthRequirement {
+    Base,
+    Lens,
+    Filtered,
+}
+
 #[derive(Debug, Clone)]
 pub struct CredentialInventory {
     pub api_token: Option<Credential>,
@@ -91,20 +98,30 @@ pub struct CredentialInventory {
 impl CredentialInventory {
     pub fn resolve_for_search(
         &self,
-        requires_session: bool,
+        requirement: SearchAuthRequirement,
     ) -> Result<SearchCredentials, KagiError> {
-        if requires_session {
-            let session = self.session_token.clone().ok_or_else(|| {
-                KagiError::Config(
-                    "lens search requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
-                        .to_string(),
-                )
-            })?;
+        match requirement {
+            SearchAuthRequirement::Lens | SearchAuthRequirement::Filtered => {
+                let session = self.session_token.clone().ok_or_else(|| {
+                    KagiError::Config(match requirement {
+                        SearchAuthRequirement::Lens => {
+                            "lens search requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                                .to_string()
+                        }
+                        SearchAuthRequirement::Filtered => {
+                            "search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                                .to_string()
+                        }
+                        SearchAuthRequirement::Base => unreachable!(),
+                    })
+                })?;
 
-            return Ok(SearchCredentials {
-                primary: session,
-                fallback_session: None,
-            });
+                return Ok(SearchCredentials {
+                    primary: session,
+                    fallback_session: None,
+                });
+            }
+            SearchAuthRequirement::Base => {}
         }
 
         match self.search_preference {
@@ -183,12 +200,9 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
         source: CredentialSource::Env,
         value,
     });
-    let env_session = normalize_optional_session_token(read_env_credential(SESSION_TOKEN_ENV))?
-        .map(|value| Credential {
-            kind: CredentialKind::SessionToken,
-            source: CredentialSource::Env,
-            value,
-        });
+    let env_session = read_env_credential(SESSION_TOKEN_ENV)
+        .map(|value| build_session_credential(&value, CredentialSource::Env))
+        .transpose()?;
 
     let config_api = config
         .auth
@@ -202,19 +216,14 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
             value,
         });
 
-    let config_session = normalize_optional_session_token(
-        config
-            .auth
-            .as_ref()
-            .and_then(|auth| auth.session_token.as_ref())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
-    )?
-    .map(|value| Credential {
-        kind: CredentialKind::SessionToken,
-        source: CredentialSource::Config,
-        value,
-    });
+    let config_session = config
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.session_token.as_ref())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(|value| build_session_credential(&value, CredentialSource::Config))
+        .transpose()?;
 
     Ok(CredentialInventory {
         api_token: env_api.or(config_api),
@@ -260,6 +269,17 @@ fn read_env_credential(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn build_session_credential(
+    raw_value: &str,
+    source: CredentialSource,
+) -> Result<Credential, KagiError> {
+    Ok(Credential {
+        kind: CredentialKind::SessionToken,
+        source,
+        value: normalize_session_token(raw_value)?,
+    })
+}
+
 pub fn save_credentials(
     api_token: Option<&str>,
     session_input: Option<&str>,
@@ -303,6 +323,7 @@ pub fn save_credentials(
     load_credential_inventory()
 }
 
+#[cfg(test)]
 fn normalize_optional_session_token(input: Option<String>) -> Result<Option<String>, KagiError> {
     input
         .map(|value| normalize_session_token(&value))
@@ -459,10 +480,30 @@ mod tests {
         };
 
         let error = inventory
-            .resolve_for_search(true)
+            .resolve_for_search(SearchAuthRequirement::Lens)
             .expect_err("lens should require session token");
         assert!(matches!(error, KagiError::Config(_)));
         assert!(error.to_string().contains("requires KAGI_SESSION_TOKEN"));
+    }
+
+    #[test]
+    fn requires_session_for_filtered_search() {
+        let inventory = CredentialInventory {
+            api_token: Some(Credential {
+                kind: CredentialKind::ApiToken,
+                source: CredentialSource::Env,
+                value: "api".to_string(),
+            }),
+            session_token: None,
+            search_preference: SearchAuthPreference::Session,
+            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+        };
+
+        let error = inventory
+            .resolve_for_search(SearchAuthRequirement::Filtered)
+            .expect_err("filtered search should require session token");
+        assert!(matches!(error, KagiError::Config(_)));
+        assert!(error.to_string().contains("search filters require"));
     }
 
     #[test]
@@ -483,7 +524,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::SessionToken);
         assert_eq!(
@@ -513,7 +554,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::SessionToken);
     }
@@ -536,7 +577,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::ApiToken);
     }
@@ -590,6 +631,32 @@ mod tests {
     fn keeps_raw_session_token_input() {
         let token = normalize_session_token("abc123.def456").expect("raw token accepted");
         assert_eq!(token, "abc123.def456");
+    }
+
+    #[test]
+    fn builds_env_session_credential_from_session_link() {
+        let credential = build_session_credential(
+            "https://kagi.com/search?token=abc123.def456",
+            CredentialSource::Env,
+        )
+        .expect("session link should normalize");
+
+        assert_eq!(credential.kind, CredentialKind::SessionToken);
+        assert_eq!(credential.source, CredentialSource::Env);
+        assert_eq!(credential.value, "abc123.def456");
+    }
+
+    #[test]
+    fn builds_config_session_credential_from_session_link() {
+        let credential = build_session_credential(
+            "https://kagi.com/search?token=abc123.def456",
+            CredentialSource::Config,
+        )
+        .expect("session link should normalize");
+
+        assert_eq!(credential.kind, CredentialKind::SessionToken);
+        assert_eq!(credential.source, CredentialSource::Config);
+        assert_eq!(credential.value, "abc123.def456");
     }
 
     #[test]

@@ -49,7 +49,8 @@ Unlock the full potential of your Kagi subscription:
 
 - **Lens-Aware Search**: Use your custom Kagi lenses directly from the command line.
 
-- **Assistant Integration**: Prompt Kagi Assistant programmatically and continue conversations across sessions.
+- **Assistant Integration**: Prompt Kagi Assistant programmatically, continue conversations, and manage threads across sessions.
+- **Ask Page**: Start a page-focused Assistant thread directly from one URL and one question.
 
 - **Translate Integration**: Run Kagi Translate text mode from the terminal with one JSON response envelope.
 
@@ -81,7 +82,8 @@ Two credential types serve different purposes:
 - **Translation**: Text-mode Kagi Translate with detection, alternatives, alignments, suggestions, and word insights
 - **FastGPT**: Quick answers powered by Kagi's FastGPT API
 - **Enrichment**: Query specialized web and news indexes
-- **Assistant**: Full conversation support with thread continuation
+- **Assistant**: Full conversation support with thread continuation and thread management
+- **Ask Page**: Page-focused Assistant questions with structured output
 
 ### Public Feeds
 
@@ -111,6 +113,7 @@ flowchart TB
         web3["summarize --subscriber"]
         web4["translate"]
         web5["search (session)"]
+        web6["ask-page"]
     end
     
     subgraph PublicFeeds["Public Feeds (No Auth)"]
@@ -230,4 +233,4 @@ The *kagi* CLI is open source and welcomes contributions. See the [Development G
 
 ---
 
-*Last updated: March 2026 | kagi CLI v0.1.7*
+*Last updated: March 2026 | kagi CLI v0.2.0*

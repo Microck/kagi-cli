@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::future::Future;
 
-use reqwest::{Client, StatusCode, header};
+use reqwest::{Client, StatusCode, Url, header};
+use scraper::Html;
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
@@ -10,18 +11,22 @@ use serde_json::json;
 use serde_json::{Map, Value};
 
 use crate::error::KagiError;
+use crate::parser::parse_assistant_thread_list;
 #[cfg(test)]
 use crate::types::ApiMeta;
 use crate::types::{
-    AlternativeTranslationsResponse, AssistantMessage, AssistantMeta, AssistantPromptRequest,
-    AssistantPromptResponse, AssistantThread, EnrichResponse, FastGptRequest, FastGptResponse,
-    NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata,
-    NewsCategoryMetadataList, NewsChaos, NewsChaosResponse, NewsLatestBatch, NewsResolvedCategory,
-    NewsStoriesPayload, NewsStoriesResponse, SmallWebFeed, SubscriberSummarization,
-    SubscriberSummarizeMeta, SubscriberSummarizeRequest, SubscriberSummarizeResponse,
-    SummarizeRequest, SummarizeResponse, TextAlignmentsResponse, TranslateBootstrapMetadata,
-    TranslateCommandRequest, TranslateDetectedLanguage, TranslateOptionState, TranslateResponse,
-    TranslateTextResponse, TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
+    AlternativeTranslationsResponse, AskPageRequest, AskPageResponse, AskPageSource,
+    AssistantMessage, AssistantMeta, AssistantPromptRequest, AssistantPromptResponse,
+    AssistantThread, AssistantThreadDeleteResponse, AssistantThreadExportResponse,
+    AssistantThreadListResponse, AssistantThreadOpenResponse, AssistantThreadPagination,
+    EnrichResponse, FastGptRequest, FastGptResponse, NewsBatchCategories, NewsBatchCategory,
+    NewsCategoriesResponse, NewsCategoryMetadata, NewsCategoryMetadataList, NewsChaos,
+    NewsChaosResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
+    NewsStoriesResponse, SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta,
+    SubscriberSummarizeRequest, SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse,
+    TextAlignmentsResponse, TranslateBootstrapMetadata, TranslateCommandRequest,
+    TranslateDetectedLanguage, TranslateOptionState, TranslateResponse, TranslateTextResponse,
+    TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
 const USER_AGENT: &str = "kagi-cli/0.1.0 (+https://github.com/)";
@@ -31,6 +36,9 @@ const KAGI_NEWS_LATEST_URL: &str = "https://news.kagi.com/api/batches/latest";
 const KAGI_NEWS_CATEGORIES_METADATA_URL: &str = "https://news.kagi.com/api/categories/metadata";
 const KAGI_NEWS_BATCH_CATEGORIES_URL: &str = "https://news.kagi.com/api/batches";
 const KAGI_ASSISTANT_PROMPT_URL: &str = "https://kagi.com/assistant/prompt";
+const KAGI_ASSISTANT_THREAD_OPEN_URL: &str = "https://kagi.com/assistant/thread_open";
+const KAGI_ASSISTANT_THREAD_LIST_URL: &str = "https://kagi.com/assistant/thread_list";
+const KAGI_ASSISTANT_THREAD_DELETE_URL: &str = "https://kagi.com/assistant/thread_delete";
 const KAGI_FASTGPT_URL: &str = "https://kagi.com/api/v0/fastgpt";
 const KAGI_ENRICH_WEB_URL: &str = "https://kagi.com/api/v0/enrich/web";
 const KAGI_ENRICH_NEWS_URL: &str = "https://kagi.com/api/v0/enrich/news";
@@ -304,59 +312,122 @@ pub async fn execute_assistant_prompt(
     request: &AssistantPromptRequest,
     token: &str,
 ) -> Result<AssistantPromptResponse, KagiError> {
-    if token.trim().is_empty() {
-        return Err(KagiError::Auth(
-            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
-        ));
-    }
-
-    let query = request.query.trim();
-    if query.is_empty() {
-        return Err(KagiError::Config(
-            "assistant query cannot be empty".to_string(),
-        ));
-    }
-
-    let thread_id = request
-        .thread_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if request.thread_id.is_some() && thread_id.is_none() {
-        return Err(KagiError::Config(
-            "assistant --thread-id cannot be empty".to_string(),
-        ));
-    }
-
-    let client = build_client()?;
-    let response = client
-        .post(KAGI_ASSISTANT_PROMPT_URL)
-        .header(header::COOKIE, format!("kagi_session={token}"))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(header::ACCEPT, "application/vnd.kagi.stream")
-        .json(&json!({
+    let query = normalize_assistant_query(&request.query)?;
+    let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
+    let profile = assistant_profile_payload(request);
+    let body = execute_assistant_stream(
+        KAGI_ASSISTANT_PROMPT_URL,
+        &json!({
             "focus": {
                 "thread_id": thread_id,
                 "branch_id": ASSISTANT_ZERO_BRANCH_UUID,
                 "prompt": query,
                 "message_id": Value::Null,
+            },
+            "profile": profile,
+        }),
+        token,
+        "Assistant prompt",
+    )
+    .await?;
+
+    parse_assistant_prompt_stream(&body)
+}
+
+pub async fn execute_assistant_thread_list(
+    token: &str,
+) -> Result<AssistantThreadListResponse, KagiError> {
+    let body = execute_assistant_stream(
+        KAGI_ASSISTANT_THREAD_LIST_URL,
+        &json!({ "limit": 100 }),
+        token,
+        "Assistant thread list",
+    )
+    .await?;
+
+    parse_assistant_thread_list_stream(&body)
+}
+
+pub async fn execute_assistant_thread_get(
+    thread_id: &str,
+    token: &str,
+) -> Result<AssistantThreadOpenResponse, KagiError> {
+    let thread_id = normalize_assistant_thread_id(Some(thread_id))?
+        .ok_or_else(|| KagiError::Config("assistant thread id cannot be empty".to_string()))?;
+    let body = execute_assistant_stream(
+        KAGI_ASSISTANT_THREAD_OPEN_URL,
+        &json!({
+            "focus": {
+                "thread_id": thread_id,
+                "branch_id": ASSISTANT_ZERO_BRANCH_UUID,
             }
-        }))
+        }),
+        token,
+        "Assistant thread open",
+    )
+    .await?;
+
+    parse_assistant_thread_open_stream(&body)
+}
+
+pub async fn execute_assistant_thread_delete(
+    thread_id: &str,
+    token: &str,
+) -> Result<AssistantThreadDeleteResponse, KagiError> {
+    let thread = execute_assistant_thread_get(thread_id, token).await?.thread;
+    let body = execute_assistant_stream(
+        KAGI_ASSISTANT_THREAD_DELETE_URL,
+        &json!({
+            "threads": [{
+                "id": thread.id,
+                "title": thread.title,
+                "saved": thread.saved,
+                "shared": thread.shared,
+                "tag_ids": thread.tag_ids,
+            }]
+        }),
+        token,
+        "Assistant thread delete",
+    )
+    .await?;
+
+    parse_assistant_thread_delete_stream(&body, thread_id)
+}
+
+pub async fn execute_assistant_thread_export(
+    thread_id: &str,
+    token: &str,
+) -> Result<AssistantThreadExportResponse, KagiError> {
+    let thread_id = normalize_assistant_thread_id(Some(thread_id))?
+        .ok_or_else(|| KagiError::Config("assistant thread id cannot be empty".to_string()))?;
+    let client = build_client()?;
+    let response = client
+        .get(format!("https://kagi.com/assistant/{thread_id}/download"))
+        .header(header::COOKIE, format!("kagi_session={token}"))
         .send()
         .await
         .map_err(map_transport_error)?;
 
     match response.status() {
         StatusCode::OK => {
-            let body = response.text().await.map_err(|error| {
-                KagiError::Network(format!("failed to read assistant response body: {error}"))
+            let filename = response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|value| value.to_str().ok())
+                .and_then(parse_content_disposition_filename);
+            let markdown = response.text().await.map_err(|error| {
+                KagiError::Network(format!("failed to read Assistant export body: {error}"))
             })?;
-            if looks_like_html_document(&body) {
+            if looks_like_html_document(&markdown) {
                 return Err(KagiError::Auth(
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            parse_assistant_prompt_stream(&body)
+            Ok(AssistantThreadExportResponse {
+                thread_id,
+                filename,
+                markdown,
+            })
         }
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
             "invalid or expired Kagi session token".to_string(),
@@ -364,17 +435,47 @@ pub async fn execute_assistant_prompt(
         status if status.is_client_error() => {
             let body = response.text().await.unwrap_or_else(|_| String::new());
             Err(KagiError::Config(format!(
-                "Kagi Assistant request rejected: HTTP {status}{}",
+                "Kagi Assistant export request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
             )))
         }
         status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi Assistant server error: HTTP {status}"
+            "Kagi Assistant export server error: HTTP {status}"
         ))),
         status => Err(KagiError::Network(format!(
-            "unexpected Kagi Assistant response status: HTTP {status}"
+            "unexpected Kagi Assistant export response status: HTTP {status}"
         ))),
     }
+}
+
+pub async fn execute_ask_page(
+    request: &AskPageRequest,
+    token: &str,
+) -> Result<AskPageResponse, KagiError> {
+    let source_url = normalize_ask_page_url(&request.url)?;
+    let question = normalize_ask_page_question(&request.question)?;
+    let assistant = execute_assistant_prompt(
+        &AssistantPromptRequest {
+            query: build_ask_page_prompt(&source_url, &question),
+            thread_id: None,
+            model: None,
+            lens_id: None,
+            internet_access: None,
+            personalizations: None,
+        },
+        token,
+    )
+    .await?;
+
+    Ok(AskPageResponse {
+        meta: assistant.meta,
+        source: AskPageSource {
+            url: source_url,
+            question,
+        },
+        thread: assistant.thread,
+        message: assistant.message,
+    })
 }
 
 pub async fn execute_translate(
@@ -982,6 +1083,136 @@ fn resolve_news_category(
     )))
 }
 
+fn normalize_assistant_query(raw: &str) -> Result<String, KagiError> {
+    let normalized = raw.trim();
+    if normalized.is_empty() {
+        return Err(KagiError::Config(
+            "assistant query cannot be empty".to_string(),
+        ));
+    }
+
+    Ok(normalized.to_string())
+}
+
+fn normalize_assistant_thread_id(raw: Option<&str>) -> Result<Option<String>, KagiError> {
+    match raw {
+        None => Ok(None),
+        Some(value) => {
+            let normalized = value.trim();
+            if normalized.is_empty() {
+                return Err(KagiError::Config(
+                    "assistant thread id cannot be empty".to_string(),
+                ));
+            }
+            Ok(Some(normalized.to_string()))
+        }
+    }
+}
+
+fn assistant_profile_payload(request: &AssistantPromptRequest) -> Value {
+    let mut payload = serde_json::Map::new();
+
+    if let Some(model) = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        payload.insert("model".to_string(), Value::String(model.to_string()));
+    }
+
+    if let Some(lens_id) = request.lens_id {
+        payload.insert("lens_id".to_string(), json!(lens_id));
+    }
+
+    if let Some(internet_access) = request.internet_access {
+        payload.insert("internet_access".to_string(), Value::Bool(internet_access));
+    }
+
+    if let Some(personalizations) = request.personalizations {
+        payload.insert(
+            "personalizations".to_string(),
+            Value::Bool(personalizations),
+        );
+    }
+
+    Value::Object(payload)
+}
+
+async fn execute_assistant_stream(
+    url: &str,
+    payload: &Value,
+    token: &str,
+    surface: &str,
+) -> Result<String, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    let client = build_client()?;
+    let response = client
+        .post(url)
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT, "application/vnd.kagi.stream")
+        .json(payload)
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    match response.status() {
+        StatusCode::OK => {
+            let body = response.text().await.map_err(|error| {
+                KagiError::Network(format!("failed to read {surface} response body: {error}"))
+            })?;
+
+            if looks_like_html_document(&body) {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token".to_string(),
+                ));
+            }
+
+            Ok(body)
+        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
+            "invalid or expired Kagi session token".to_string(),
+        )),
+        status if status.is_client_error() => {
+            let body = response.text().await.unwrap_or_else(|_| String::new());
+            Err(KagiError::Config(format!(
+                "Kagi {surface} request rejected: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status if status.is_server_error() => Err(KagiError::Network(format!(
+            "Kagi {surface} server error: HTTP {status}{}",
+            {
+                let body = response.text().await.unwrap_or_else(|_| String::new());
+                if body.trim().is_empty() {
+                    String::new()
+                } else if looks_like_html_document(&body) {
+                    let stripped = strip_html_to_text(&body);
+                    let normalized_surface = surface.to_ascii_lowercase();
+                    if normalized_surface.contains("thread") {
+                        "; the thread id may be invalid or no longer available".to_string()
+                    } else if stripped.is_empty() {
+                        String::new()
+                    } else {
+                        format!("; {stripped}")
+                    }
+                } else {
+                    format_client_error_suffix(&body)
+                }
+            }
+        ))),
+        status => Err(KagiError::Network(format!(
+            "unexpected Kagi {surface} response status: HTTP {status}"
+        ))),
+    }
+}
+
 fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, KagiError> {
     let mut meta = AssistantMeta::default();
     let mut thread = None;
@@ -1005,17 +1236,7 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
                     serde_json::from_str(payload).map_err(|error| {
                         KagiError::Parse(format!("failed to parse assistant thread frame: {error}"))
                     })?;
-                thread = Some(AssistantThread {
-                    id: payload.id,
-                    title: payload.title,
-                    ack: payload.ack,
-                    created_at: payload.created_at,
-                    expires_at: payload.expires_at,
-                    saved: payload.saved,
-                    shared: payload.shared,
-                    branch_id: payload.branch_id,
-                    tag_ids: payload.tag_ids,
-                });
+                thread = Some(AssistantThread::from(payload));
             }
             "new_message.json" => {
                 let payload: AssistantMessagePayload =
@@ -1024,18 +1245,15 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
                             "failed to parse assistant message frame: {error}"
                         ))
                     })?;
-                message = Some(AssistantMessage {
-                    id: payload.id,
-                    thread_id: payload.thread_id,
-                    created_at: payload.created_at,
-                    state: payload.state,
-                    prompt: payload.prompt,
-                    reply_html: payload.reply,
-                    markdown: payload.md,
-                    metadata_html: payload.metadata,
-                    documents: payload.documents,
-                    profile: payload.profile,
-                });
+                message = Some(assistant_message_from_payload(payload));
+            }
+            "limit_notice.html" => {
+                let detail = strip_html_to_text(payload);
+                return Err(KagiError::Config(if detail.is_empty() {
+                    "Kagi Assistant rate limited this request".to_string()
+                } else {
+                    detail
+                }));
             }
             "unauthorized" => {
                 return Err(KagiError::Auth(
@@ -1069,6 +1287,246 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
         thread,
         message,
     })
+}
+
+fn parse_assistant_thread_open_stream(
+    body: &str,
+) -> Result<AssistantThreadOpenResponse, KagiError> {
+    let mut meta = AssistantMeta::default();
+    let mut tags = Vec::new();
+    let mut thread = None;
+    let mut messages = None;
+
+    for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
+        let Some((tag, payload)) = frame.split_once(':') else {
+            continue;
+        };
+
+        match tag {
+            "hi" => {
+                let hello: AssistantHello = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant hello frame: {error}"))
+                })?;
+                meta.version = hello.v;
+                meta.trace = hello.trace;
+            }
+            "tags.json" => {
+                tags = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant tags frame: {error}"))
+                })?;
+            }
+            "thread.json" => {
+                let payload: AssistantThreadPayload =
+                    serde_json::from_str(payload).map_err(|error| {
+                        KagiError::Parse(format!("failed to parse assistant thread frame: {error}"))
+                    })?;
+                thread = Some(AssistantThread::from(payload));
+            }
+            "messages.json" => {
+                let payloads: Vec<AssistantMessagePayload> = serde_json::from_str(payload)
+                    .map_err(|error| {
+                        KagiError::Parse(format!(
+                            "failed to parse assistant messages frame: {error}"
+                        ))
+                    })?;
+                messages = Some(
+                    payloads
+                        .into_iter()
+                        .map(assistant_message_from_payload)
+                        .collect(),
+                );
+            }
+            "limit_notice.html" => {
+                let detail = strip_html_to_text(payload);
+                return Err(KagiError::Config(if detail.is_empty() {
+                    "Kagi Assistant rate limited this request".to_string()
+                } else {
+                    detail
+                }));
+            }
+            "unauthorized" => {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(AssistantThreadOpenResponse {
+        meta,
+        tags,
+        thread: thread.ok_or_else(|| {
+            KagiError::Parse(
+                "assistant thread open response did not include a thread.json frame".to_string(),
+            )
+        })?,
+        messages: messages.ok_or_else(|| {
+            KagiError::Parse(
+                "assistant thread open response did not include a messages.json frame".to_string(),
+            )
+        })?,
+    })
+}
+
+fn parse_assistant_thread_list_stream(
+    body: &str,
+) -> Result<AssistantThreadListResponse, KagiError> {
+    let mut meta = AssistantMeta::default();
+    let mut tags = Vec::new();
+    let mut threads = Vec::new();
+    let mut pagination = None;
+
+    for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
+        let Some((tag, payload)) = frame.split_once(':') else {
+            continue;
+        };
+
+        match tag {
+            "hi" => {
+                let hello: AssistantHello = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant hello frame: {error}"))
+                })?;
+                meta.version = hello.v;
+                meta.trace = hello.trace;
+            }
+            "tags.json" => {
+                tags = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant tags frame: {error}"))
+                })?;
+            }
+            "thread_list.html" => {
+                let payload: AssistantThreadListPayload =
+                    serde_json::from_str(payload).map_err(|error| {
+                        KagiError::Parse(format!(
+                            "failed to parse assistant thread list frame: {error}"
+                        ))
+                    })?;
+                threads = parse_assistant_thread_list(&payload.html)?;
+                pagination = Some(AssistantThreadPagination {
+                    next_cursor: payload.next_cursor,
+                    has_more: payload.has_more,
+                    count: payload.count,
+                    total_counts: payload.total_counts,
+                });
+            }
+            "limit_notice.html" => {
+                let detail = strip_html_to_text(payload);
+                return Err(KagiError::Config(if detail.is_empty() {
+                    "Kagi Assistant rate limited this request".to_string()
+                } else {
+                    detail
+                }));
+            }
+            "unauthorized" => {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(AssistantThreadListResponse {
+        meta,
+        tags,
+        threads,
+        pagination: pagination.ok_or_else(|| {
+            KagiError::Parse(
+                "assistant thread list response did not include a thread_list.html frame"
+                    .to_string(),
+            )
+        })?,
+    })
+}
+
+fn parse_assistant_thread_delete_stream(
+    body: &str,
+    thread_id: &str,
+) -> Result<AssistantThreadDeleteResponse, KagiError> {
+    for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
+        let Some((tag, payload)) = frame.split_once(':') else {
+            continue;
+        };
+
+        match tag {
+            "ok" => {
+                let value: Option<Value> = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant delete frame: {error}"))
+                })?;
+                if value.is_none() {
+                    return Ok(AssistantThreadDeleteResponse {
+                        deleted_thread_ids: vec![thread_id.to_string()],
+                    });
+                }
+            }
+            "limit_notice.html" => {
+                let detail = strip_html_to_text(payload);
+                return Err(KagiError::Config(if detail.is_empty() {
+                    "Kagi Assistant rate limited this request".to_string()
+                } else {
+                    detail
+                }));
+            }
+            "unauthorized" => {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token".to_string(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Err(KagiError::Parse(
+        "assistant thread delete response did not include an ok frame".to_string(),
+    ))
+}
+
+fn assistant_message_from_payload(payload: AssistantMessagePayload) -> AssistantMessage {
+    AssistantMessage {
+        id: payload.id,
+        thread_id: payload.thread_id,
+        created_at: payload.created_at,
+        branch_list: payload.branch_list,
+        state: payload.state,
+        prompt: payload.prompt,
+        reply_html: payload.reply,
+        markdown: payload.md,
+        references_html: payload.references_html,
+        references_markdown: payload.references_md,
+        metadata_html: payload.metadata,
+        documents: payload.documents,
+        profile: payload.profile,
+        trace_id: payload.trace_id,
+    }
+}
+
+fn strip_html_to_text(html: &str) -> String {
+    Html::parse_fragment(html)
+        .root_element()
+        .text()
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn parse_content_disposition_filename(header_value: &str) -> Option<String> {
+    for segment in header_value.split(';').map(str::trim) {
+        if let Some(encoded) = segment.strip_prefix("filename*=utf-8''") {
+            let decoded = Url::parse(&format!("https://example.com/?filename={encoded}"))
+                .ok()?
+                .query_pairs()
+                .find_map(|(key, value)| (key == "filename").then(|| value.into_owned()))?;
+            return Some(decoded);
+        }
+
+        if let Some(raw) = segment.strip_prefix("filename=") {
+            return Some(raw.trim_matches('"').to_string());
+        }
+    }
+
+    None
 }
 
 fn format_client_error_suffix(body: &str) -> String {
@@ -1418,6 +1876,39 @@ fn resolve_translate_bootstrap(
     }
 }
 
+fn normalize_ask_page_url(raw: &str) -> Result<String, KagiError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(KagiError::Config(
+            "ask-page URL cannot be empty".to_string(),
+        ));
+    }
+
+    let url = Url::parse(trimmed)
+        .map_err(|error| KagiError::Config(format!("invalid ask-page URL: {error}")))?;
+    match url.scheme() {
+        "http" | "https" => Ok(url.to_string()),
+        scheme => Err(KagiError::Config(format!(
+            "ask-page URL must use http or https, got `{scheme}`"
+        ))),
+    }
+}
+
+fn normalize_ask_page_question(raw: &str) -> Result<String, KagiError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(KagiError::Config(
+            "ask-page question cannot be empty".to_string(),
+        ));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn build_ask_page_prompt(url: &str, question: &str) -> String {
+    format!("{url}\n{question}")
+}
+
 #[cfg(test)]
 fn fake_header_map(set_cookies: &[&str]) -> header::HeaderMap {
     let mut headers = header::HeaderMap::new();
@@ -1482,11 +1973,29 @@ struct AssistantThreadPayload {
     tag_ids: Vec<String>,
 }
 
+impl From<AssistantThreadPayload> for AssistantThread {
+    fn from(payload: AssistantThreadPayload) -> Self {
+        Self {
+            id: payload.id,
+            title: payload.title,
+            ack: payload.ack,
+            created_at: payload.created_at,
+            expires_at: payload.expires_at,
+            saved: payload.saved,
+            shared: payload.shared,
+            branch_id: payload.branch_id,
+            tag_ids: payload.tag_ids,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct AssistantMessagePayload {
     id: String,
     thread_id: String,
     created_at: String,
+    #[serde(default)]
+    branch_list: Vec<String>,
     state: String,
     prompt: String,
     #[serde(default)]
@@ -1494,11 +2003,30 @@ struct AssistantMessagePayload {
     #[serde(default)]
     md: Option<String>,
     #[serde(default)]
+    references_html: Option<String>,
+    #[serde(default)]
+    references_md: Option<String>,
+    #[serde(default)]
     metadata: Option<String>,
     #[serde(default)]
     documents: Vec<Value>,
     #[serde(default)]
     profile: Option<Value>,
+    #[serde(default)]
+    trace_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AssistantThreadListPayload {
+    html: String,
+    #[serde(default)]
+    next_cursor: Option<String>,
+    #[serde(default)]
+    has_more: bool,
+    #[serde(default)]
+    count: u64,
+    #[serde(default)]
+    total_counts: HashMap<String, u64>,
 }
 
 #[derive(Debug)]
@@ -1647,21 +2175,28 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, KagiEnvelope, TranslateSuggestionContext, build_translate_option_state,
-        build_translate_payload, build_translate_suggestions_payload,
+        ApiErrorBody, KagiEnvelope, TranslateSuggestionContext, build_ask_page_prompt,
+        build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, extract_set_cookie_value, fake_header_map,
-        finalize_translate_text_response, normalize_aux_quality,
+        finalize_translate_text_response, normalize_ask_page_question, normalize_ask_page_url,
+        normalize_assistant_query, normalize_assistant_thread_id, normalize_aux_quality,
         normalize_subscriber_summary_input, normalize_subscriber_summary_length,
         normalize_subscriber_summary_type, parse_assistant_prompt_stream,
+        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
+        parse_assistant_thread_open_stream, parse_content_disposition_filename,
         parse_subscriber_summarize_stream, parse_translate_detect_value, resolve_news_category,
         resolve_translate_bootstrap, validate_translate_request,
     };
-    use crate::auth::normalize_session_token;
-    use crate::types::SubscriberSummarizeRequest;
+    use crate::api::{
+        execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
+        execute_assistant_thread_get, execute_assistant_thread_list,
+    };
+    use crate::auth::{SESSION_TOKEN_ENV, load_credential_inventory, normalize_session_token};
+    use crate::types::{AskPageRequest, SubscriberSummarizeRequest};
     use crate::types::{
-        FastGptAnswer, NewsBatchCategory, NewsCategoryMetadata, Reference, Summarization,
-        TranslateCommandRequest, TranslateDetectedLanguage, TranslateTextResponse,
+        AssistantPromptRequest, FastGptAnswer, NewsBatchCategory, NewsCategoryMetadata, Reference,
+        Summarization, TranslateCommandRequest, TranslateDetectedLanguage, TranslateTextResponse,
     };
     use reqwest::StatusCode;
     use serde_json::{Value, json};
@@ -1669,6 +2204,7 @@ mod tests {
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn sample_translate_request() -> TranslateCommandRequest {
         TranslateCommandRequest {
@@ -1917,13 +2453,237 @@ mod tests {
         let raw = concat!(
             "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
             "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
-            "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"metadata\":\"<li>meta</li>\",\"documents\":[]}\0\n"
+            "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
         );
 
         let parsed = parse_assistant_prompt_stream(raw).expect("assistant stream parses");
         assert_eq!(parsed.meta.trace.as_deref(), Some("trace-123"));
         assert_eq!(parsed.thread.id, "thread-1");
         assert_eq!(parsed.message.markdown.as_deref(), Some("Hi"));
+        assert_eq!(
+            parsed.message.references_markdown.as_deref(),
+            Some("1. [Doc](https://example.com)")
+        );
+        assert_eq!(
+            parsed.message.branch_list,
+            vec!["00000000-0000-4000-0000-000000000000".to_string()]
+        );
+        assert_eq!(parsed.message.trace_id.as_deref(), Some("trace-message-1"));
+    }
+
+    #[test]
+    fn normalizes_assistant_query_and_thread_id() {
+        assert_eq!(
+            normalize_assistant_query("  hello  ").expect("query trims"),
+            "hello"
+        );
+        assert_eq!(
+            normalize_assistant_thread_id(Some("  thread-1  ")).expect("thread id trims"),
+            Some("thread-1".to_string())
+        );
+        assert_eq!(
+            normalize_assistant_thread_id(None).expect("missing thread id stays none"),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_empty_assistant_query_and_thread_id() {
+        let query_error = normalize_assistant_query("   ").expect_err("blank query should fail");
+        assert!(
+            query_error
+                .to_string()
+                .contains("assistant query cannot be empty")
+        );
+
+        let thread_error =
+            normalize_assistant_thread_id(Some("   ")).expect_err("blank thread id should fail");
+        assert!(
+            thread_error
+                .to_string()
+                .contains("assistant thread id cannot be empty")
+        );
+    }
+
+    #[test]
+    fn parses_assistant_thread_open_stream() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-open\"}\0\n",
+            "tags.json:[]\0\n",
+            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+            "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
+        );
+
+        let parsed = parse_assistant_thread_open_stream(raw).expect("thread open parses");
+        assert_eq!(parsed.meta.trace.as_deref(), Some("trace-open"));
+        assert_eq!(parsed.thread.id, "thread-1");
+        assert_eq!(parsed.messages.len(), 1);
+        assert_eq!(parsed.messages[0].trace_id.as_deref(), Some("trace-msg"));
+    }
+
+    #[test]
+    fn parses_assistant_thread_list_stream() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-list\"}\0\n",
+            "tags.json:[]\0\n",
+            "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"true\\\" data-public=\\\"false\\\" data-tags='[&quot;tag-1&quot;]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":{\"all\":1}}\0\n"
+        );
+
+        let parsed = parse_assistant_thread_list_stream(raw).expect("thread list parses");
+        assert_eq!(parsed.meta.trace.as_deref(), Some("trace-list"));
+        assert_eq!(parsed.threads.len(), 1);
+        assert_eq!(parsed.threads[0].id, "thread-1");
+        assert_eq!(parsed.pagination.count, 1);
+        assert_eq!(parsed.pagination.total_counts.get("all"), Some(&1));
+    }
+
+    #[test]
+    fn parses_assistant_thread_delete_stream() {
+        let parsed =
+            parse_assistant_thread_delete_stream("hi:{\"v\":\"x\"}\0\nok:null\0\n", "thread-1")
+                .expect("delete stream parses");
+        assert_eq!(parsed.deleted_thread_ids, vec!["thread-1".to_string()]);
+    }
+
+    #[test]
+    fn parses_content_disposition_filename() {
+        assert_eq!(
+            parse_content_disposition_filename(
+                "attachment; filename*=utf-8''Say%20Hi%20In%20Five%20Words.md"
+            ),
+            Some("Say Hi In Five Words.md".to_string())
+        );
+        assert_eq!(
+            parse_content_disposition_filename("attachment; filename=\"thread.md\""),
+            Some("thread.md".to_string())
+        );
+    }
+
+    fn live_session_token() -> Option<String> {
+        load_credential_inventory()
+            .ok()
+            .and_then(|inventory| inventory.session_token.map(|credential| credential.value))
+    }
+
+    fn live_nonce() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos()
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_assistant_thread_roundtrip() {
+        let Some(token) = live_session_token() else {
+            eprintln!("skipping live assistant test because {SESSION_TOKEN_ENV} is not set");
+            return;
+        };
+
+        let request = AssistantPromptRequest {
+            query: format!("Reply with exactly: assistant-v2-smoke-{}", live_nonce()),
+            thread_id: None,
+            model: Some("gpt-5-mini".to_string()),
+            lens_id: None,
+            internet_access: Some(true),
+            personalizations: Some(false),
+        };
+
+        let prompt = execute_assistant_prompt(&request, &token)
+            .await
+            .expect("assistant prompt should succeed");
+        assert_eq!(prompt.message.state, "done");
+        assert_eq!(
+            prompt
+                .message
+                .profile
+                .as_ref()
+                .and_then(|v| v.get("model"))
+                .and_then(|v| v.as_str()),
+            Some("gpt-5-mini")
+        );
+
+        let thread_id = prompt.thread.id.clone();
+
+        let fetched = execute_assistant_thread_get(&thread_id, &token)
+            .await
+            .expect("assistant thread get should succeed");
+        assert_eq!(fetched.thread.id, thread_id);
+        assert!(!fetched.messages.is_empty());
+
+        let listed = execute_assistant_thread_list(&token)
+            .await
+            .expect("assistant thread list should succeed");
+        assert!(listed.threads.iter().any(|thread| thread.id == thread_id));
+
+        let exported = execute_assistant_thread_export(&thread_id, &token)
+            .await
+            .expect("assistant thread export should succeed");
+        assert!(exported.markdown.contains("assistant-v2-smoke-"));
+
+        let deleted = execute_assistant_thread_delete(&thread_id, &token)
+            .await
+            .expect("assistant thread delete should succeed");
+        assert_eq!(deleted.deleted_thread_ids, vec![thread_id]);
+    }
+
+    #[test]
+    fn normalizes_ask_page_url() {
+        let normalized = normalize_ask_page_url("https://rust-lang.org").expect("url parses");
+        assert_eq!(normalized, "https://rust-lang.org/");
+    }
+
+    #[test]
+    fn rejects_invalid_ask_page_url() {
+        let error = normalize_ask_page_url("rust-lang.org").expect_err("url should fail");
+        assert!(error.to_string().contains("invalid ask-page URL"));
+    }
+
+    #[test]
+    fn rejects_non_http_ask_page_url() {
+        let error =
+            normalize_ask_page_url("file:///tmp/page.html").expect_err("scheme should fail");
+        assert!(error.to_string().contains("http or https"));
+    }
+
+    #[test]
+    fn rejects_empty_ask_page_question() {
+        let error = normalize_ask_page_question("   ").expect_err("question should fail");
+        assert!(error.to_string().contains("question cannot be empty"));
+    }
+
+    #[test]
+    fn builds_ask_page_prompt() {
+        let prompt = build_ask_page_prompt("https://rust-lang.org/", "What is this page about?");
+        assert_eq!(prompt, "https://rust-lang.org/\nWhat is this page about?");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live KAGI_SESSION_TOKEN"]
+    async fn live_ask_page_rust_homepage() {
+        let Some(token) = live_session_token() else {
+            eprintln!("skipping live ask-page test because {SESSION_TOKEN_ENV} is not set");
+            return;
+        };
+
+        let response = super::execute_ask_page(
+            &AskPageRequest {
+                url: "https://rust-lang.org/".to_string(),
+                question: "What is this page about?".to_string(),
+            },
+            &token,
+        )
+        .await
+        .expect("live ask-page should succeed");
+
+        assert_eq!(response.source.url, "https://rust-lang.org/");
+        assert!(!response.thread.id.is_empty());
+        let answer = response
+            .message
+            .markdown
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(answer.contains("rust"));
     }
 
     #[test]

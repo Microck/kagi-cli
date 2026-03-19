@@ -7,6 +7,19 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+
+- Search V2 session-backed filters for runtime search refinement and batch parity
+- Assistant thread management with list, get, export, and delete flows
+- `ask-page` for page-focused Assistant questions with structured JSON output
+
+### Changed
+
+- Updated auth handling to accept full Session Link URLs consistently for session-backed commands
+- Expanded docs, contracts, and demo coverage for filtered search, Assistant threads, and ask-page
+
 ## [0.1.7]
 
 ### Added

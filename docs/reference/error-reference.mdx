@@ -178,6 +178,46 @@ kagi translate "Bonjour tout le monde"
 
 ## Command Errors
 
+### "search filters require KAGI_SESSION_TOKEN"
+
+**Message:**
+```
+Config error: search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+```
+
+**Meaning:** You used session-only search filters like `--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, or personalization flags without a configured session token.
+
+**Solution:**
+```bash
+# Add a session token
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# Or remove the session-only search filters
+kagi search "rust release notes"
+```
+
+### "search --time cannot be combined with --from-date or --to-date"
+
+**Meaning:** Kagi's live search UI treats preset time windows and custom date ranges as separate filter modes.
+
+**Solution:**
+```bash
+# Use a preset time window
+kagi search --time month "rust release notes"
+
+# Or use a custom date range
+kagi search --from-date 2026-01-01 --to-date 2026-03-01 "rust release notes"
+```
+
+### "search --from-date must use YYYY-MM-DD format"
+
+**Meaning:** Search date filters require zero-padded ISO dates.
+
+**Solution:**
+```bash
+kagi search --from-date 2026-03-01 --to-date 2026-03-19 "rust compiler"
+```
+
 ### "--length requires --subscriber"
 
 **Message:**
@@ -249,6 +289,46 @@ kagi summarize --url https://example.com
 
 # Or text
 kagi summarize --text "Content to summarize..."
+```
+
+### "invalid ask-page URL"
+
+**Message:**
+```text
+Config error: invalid ask-page URL: relative URL without a base
+```
+
+**Meaning:** `kagi ask-page` requires an absolute `http` or `https` URL.
+
+**Solution:**
+```bash
+kagi ask-page https://example.com "What is this page about?"
+```
+
+### "ask-page URL must use http or https"
+
+**Message:**
+```text
+Config error: ask-page URL must use http or https, got `file`
+```
+
+**Meaning:** Local file URLs are not supported by `ask-page`.
+
+**Solution:**
+Use a normal web URL, or ask the question through a different command surface.
+
+### "ask-page question cannot be empty"
+
+**Message:**
+```text
+Config error: ask-page question cannot be empty
+```
+
+**Meaning:** The URL alone is not enough. The command requires a page question too.
+
+**Solution:**
+```bash
+kagi ask-page https://example.com "Give me the main argument in one sentence"
 ```
 
 ## Network Errors

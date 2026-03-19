@@ -29,8 +29,10 @@ These features use the subscriber web product (Session Token):
 |---------|---------|--------|
 | Base Search | `kagi search` | ✅ Implemented (session path) |
 | Lens Search | `kagi search --lens` | ✅ Implemented |
+| Filtered Search | `kagi search --region/--time/...` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
-| Assistant | `kagi assistant` | ✅ Implemented |
+| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
+| Ask Questions About a Page | `kagi ask-page` | ✅ Implemented |
 | Translate (text mode) | `kagi translate` | ✅ Implemented |
 
 ### Public Product Endpoints
@@ -52,11 +54,13 @@ These require no authentication:
 |---------|-------------|------|--------|
 | `search` | Kagi search | API/Session | ✅ |
 | `search --lens` | Lens search | Session | ✅ |
+| `search` with filters | Search with region, time, date, order, verbatim, or personalization filters | Session | ✅ |
 | `auth` | Credential management | None | ✅ |
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
-| `assistant` | AI assistant | Session | ✅ |
+| `assistant` | AI assistant with thread management | Session | ✅ |
+| `ask-page` | Page-focused Assistant question | Session | ✅ |
 | `translate` | Kagi Translate text mode | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
@@ -69,6 +73,13 @@ These require no authentication:
 |--------|----------|--------|
 | `--format pretty` | search | ✅ |
 | `--lens` | search | ✅ |
+| `--region` | search, batch | ✅ |
+| `--time` | search, batch | ✅ |
+| `--from-date` | search, batch | ✅ |
+| `--to-date` | search, batch | ✅ |
+| `--order` | search, batch | ✅ |
+| `--verbatim` | search, batch | ✅ |
+| `--personalized` / `--no-personalized` | search, batch | ✅ |
 | `--limit` | news, smallweb | ✅ |
 | `--category` | news | ✅ |
 | `--list-categories` | news | ✅ |
@@ -82,9 +93,20 @@ These require no authentication:
 | `--cache` | summarize (API), fastgpt | ✅ |
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
+| `<URL> <QUESTION>` | ask-page | ✅ |
 | `--thread-id` | assistant | ✅ |
 | `--from`, `--to` | translate | ✅ |
 | `--no-alternatives`, `--no-word-insights`, `--no-suggestions`, `--no-alignments` | translate | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
 
 ## Not Available
 
@@ -116,7 +138,7 @@ There is no public CLI support today for document, website, image, proofread, di
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, summarize --subscriber, assistant, translate |
+| Session Token | ✅ | search, filtered search, ask-page, summarize --subscriber, assistant, translate |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -141,6 +163,7 @@ All commands output JSON:
 | news | Stable |
 | smallweb | Stable |
 | summarize | Stable |
+| ask-page | Stable |
 | assistant | Stable |
 | translate | Stable |
 | fastgpt | Stable |
@@ -188,7 +211,8 @@ All commands output JSON:
 |---------|-----|-----|
 | Search | ✅ | ✅ |
 | Lens Search | ✅ | ✅ |
-| Assistant | ✅ (basic) | ✅ (full) |
+| Assistant | ✅ (prompt + threads) | ✅ (full) |
+| Ask Questions about Page | ✅ | ✅ |
 | Summarizer | ✅ | ✅ |
 | Translate | ✅ (text mode) | ✅ |
 | Settings | ❌ | ✅ |

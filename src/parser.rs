@@ -1,7 +1,7 @@
 use scraper::{Html, Selector};
 
 use crate::error::KagiError;
-use crate::types::SearchResult;
+use crate::types::{AssistantThreadSummary, SearchResult};
 
 /// Parse Kagi search results from HTML.
 ///
@@ -42,6 +42,85 @@ pub fn parse_search_results(html: &str) -> Result<Vec<SearchResult>, KagiError> 
     Ok(results)
 }
 
+pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSummary>, KagiError> {
+    let document = Html::parse_fragment(html);
+    let thread_selector = selector(".thread-list .thread")?;
+    let anchor_selector = selector("a")?;
+    let title_selector = selector(".title")?;
+    let snippet_selector = selector(".excerpt")?;
+
+    let mut threads = Vec::new();
+
+    for element in document.select(&thread_selector) {
+        let id = element
+            .value()
+            .attr("data-code")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                KagiError::Parse("assistant thread list item missing data-code".to_string())
+            })?;
+        let saved = element
+            .value()
+            .attr("data-saved")
+            .map(|value| value == "true")
+            .unwrap_or(false);
+        let shared = element
+            .value()
+            .attr("data-public")
+            .map(|value| value == "true")
+            .unwrap_or(false);
+        let tag_ids =
+            serde_json::from_str::<Vec<String>>(element.value().attr("data-tags").unwrap_or("[]"))
+                .map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant thread tag ids: {error}"))
+                })?;
+        let snippet = element
+            .value()
+            .attr("data-snippet")
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string();
+
+        let anchor = element.select(&anchor_selector).next().ok_or_else(|| {
+            KagiError::Parse("assistant thread list item missing anchor".to_string())
+        })?;
+        let url = anchor
+            .value()
+            .attr("href")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| KagiError::Parse("assistant thread list item missing href".to_string()))?
+            .to_string();
+        let title = element
+            .select(&title_selector)
+            .next()
+            .map(|node| node.text().collect::<String>().trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                KagiError::Parse("assistant thread list item missing title".to_string())
+            })?;
+        let parsed_snippet = element
+            .select(&snippet_selector)
+            .next()
+            .map(|node| node.text().collect::<String>().trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(snippet);
+
+        threads.push(AssistantThreadSummary {
+            id: id.to_string(),
+            title,
+            url,
+            snippet: parsed_snippet,
+            saved,
+            shared,
+            tag_ids,
+        });
+    }
+
+    Ok(threads)
+}
+
 fn extract_result(
     element: &scraper::element_ref::ElementRef<'_>,
     title_selector: &Selector,
@@ -77,7 +156,7 @@ fn selector(value: &str) -> Result<Selector, KagiError> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_search_results;
+    use super::{parse_assistant_thread_list, parse_search_results};
 
     #[test]
     fn parses_primary_and_grouped_results() {
@@ -116,5 +195,37 @@ mod tests {
         let html = "<html><body><div>No search results here</div></body></html>";
         let results = parse_search_results(html).expect("parser should succeed");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn parses_assistant_thread_list_items() {
+        let html = r#"
+        <div class="hide-if-no-threads">
+          <ul class="thread-list">
+            <li class="thread"
+                data-code="thread-1"
+                data-saved="true"
+                data-public="false"
+                data-tags='["tag-1"]'
+                data-snippet="First snippet">
+              <a href="/assistant/thread-1">
+                <div class="title">First Thread</div>
+                <div class="excerpt">First snippet</div>
+              </a>
+            </li>
+          </ul>
+        </div>
+        "#;
+
+        let threads = parse_assistant_thread_list(html).expect("thread list should parse");
+
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].id, "thread-1");
+        assert_eq!(threads[0].title, "First Thread");
+        assert_eq!(threads[0].url, "/assistant/thread-1");
+        assert_eq!(threads[0].snippet, "First snippet");
+        assert!(threads[0].saved);
+        assert!(!threads[0].shared);
+        assert_eq!(threads[0].tag_ids, vec!["tag-1".to_string()]);
     }
 }
