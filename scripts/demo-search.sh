@@ -13,7 +13,7 @@ export PATH="/tmp/kagi-demo-bin:$PATH"
 
 printf '\033c'
 sleep 1.2
-printf '$ kagi search --format pretty "obsidian cli daily notes workflow"\n'
+printf '$ kagi search --format pretty --region us --time year --order recency "rust release notes"\n'
 sleep 0.4
-kagi search --format pretty "obsidian cli daily notes workflow" | sed -n '1,12p'
+kagi search --format pretty --region us --time year --order recency "rust release notes" | sed -n '1,12p'
 sleep 2

@@ -101,7 +101,7 @@ export KAGI_API_TOKEN='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `assistant`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
@@ -124,7 +124,7 @@ notes:
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
-- `search --lens` always requires `KAGI_SESSION_TOKEN`
+- `search --lens` and all runtime search filters require `KAGI_SESSION_TOKEN`
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.
@@ -133,8 +133,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 
 | command | purpose |
 | --- | --- |
-| `kagi search` | search Kagi with JSON by default or `--format pretty` for terminal output |
-| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output |
+| `kagi search` | search Kagi with JSON by default, optional live filters, or `--format pretty` for terminal output |
+| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
@@ -180,6 +180,12 @@ scope search to one of your lenses:
 
 ```bash
 kagi search --lens 2 "developer documentation"
+```
+
+run a filtered search against the subscriber web-product path:
+
+```bash
+kagi search --region us --time month --order recency "rust release notes"
 ```
 
 run a few searches in parallel:

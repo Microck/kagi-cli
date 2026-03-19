@@ -394,9 +394,9 @@ echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf
 ```
 
 **2. Fallback behavior:**
-- Base search tries API first, then falls back
-- If API is slow/down, fallback adds delay
-- Set explicit token to skip fallback
+- Base search only falls back when you have opted into API-first mode with `[auth.preferred_auth] = "api"`
+- If the API path is slow or rejected, the session fallback adds delay
+- Leave base search on the default session-first behavior if you want to avoid that extra hop
 
 **3. Rate limiting backoff:**
 - After many requests, service may slow responses

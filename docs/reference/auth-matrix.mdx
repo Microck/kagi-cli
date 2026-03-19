@@ -11,8 +11,9 @@ This reference provides a complete mapping of which commands require which authe
 
 | Command | Preferred Auth | Fallback | Notes |
 |---------|---------------|----------|-------|
-| `search` (base) | `KAGI_API_TOKEN` | `KAGI_SESSION_TOKEN` on auth rejection | Smart fallback behavior |
+| `search` (base) | Configured base-search preference | Session fallback only when API-first mode is enabled | Defaults to session unless `[auth.preferred_auth] = "api"` |
 | `search --lens` | `KAGI_SESSION_TOKEN` | None | Lens requires session token |
+| `search` with filters | `KAGI_SESSION_TOKEN` | None | Region, time, date, order, verbatim, and personalization filters require session token |
 | `auth status` | None | None | Reads config only |
 | `auth check` | Primary credential | None | Tests selected token |
 | `auth set` | None | None | Saves credentials |
@@ -33,22 +34,30 @@ This reference provides a complete mapping of which commands require which authe
 
 ```mermaid
 flowchart TD
-    Start([User Query]) --> CheckAPI{KAGI_API_TOKEN configured?}
-    
-    CheckAPI -->|Yes| TrySearchAPI[Try Search API]
-    TrySearchAPI -->|Success| ReturnResults1[Return results ✓]
-    TrySearchAPI -->|Auth error| CheckSession1{KAGI_SESSION_TOKEN configured?}
-    CheckSession1 -->|Yes| TryWeb1[Try web product]
-    TryWeb1 -->|Success| ReturnResults2[Success ✓]
-    CheckSession1 -->|No| Error1[Error: auth failed]
-    
-    CheckAPI -->|No| CheckSession2{KAGI_SESSION_TOKEN configured?}
-    CheckSession2 -->|Yes| TryWeb2[Try web product]
-    TryWeb2 -->|Success| ReturnResults3[Success ✓]
-    CheckSession2 -->|No| Error2[Error: missing credentials]
+    Start([User Query]) --> Pref{[auth.preferred_auth] = api?}
+
+    Pref -->|No or unset| CheckSession{KAGI_SESSION_TOKEN configured?}
+    CheckSession -->|Yes| TryWeb[Try web product]
+    TryWeb -->|Success| ReturnResults1[Return results ✓]
+    CheckSession -->|No| CheckAPI1{KAGI_API_TOKEN configured?}
+    CheckAPI1 -->|Yes| TryAPI1[Try Search API]
+    TryAPI1 -->|Success| ReturnResults2[Return results ✓]
+    CheckAPI1 -->|No| Error1[Error: missing credentials]
+
+    Pref -->|Yes| CheckAPI2{KAGI_API_TOKEN configured?}
+    CheckAPI2 -->|Yes| TryAPI2[Try Search API]
+    TryAPI2 -->|Success| ReturnResults3[Return results ✓]
+    TryAPI2 -->|Auth error| CheckSession2{KAGI_SESSION_TOKEN configured?}
+    CheckSession2 -->|Yes| TryWebFallback[Try web product]
+    TryWebFallback -->|Success| ReturnResults4[Success ✓]
+    CheckSession2 -->|No| Error2[Error: auth failed]
+    CheckAPI2 -->|No| CheckSession3{KAGI_SESSION_TOKEN configured?}
+    CheckSession3 -->|Yes| TryWeb2[Try web product]
+    TryWeb2 -->|Success| ReturnResults5[Return results ✓]
+    CheckSession3 -->|No| Error3[Error: missing credentials]
 ```
 
-**Key insight:** Base search is the only command with fallback behavior. This maximizes utility while maintaining predictable auth for other commands.
+**Key insight:** Base search is the only command with fallback behavior, and that fallback only matters when you explicitly opt into API-first mode.
 
 #### Lens Search (`kagi search --lens <INDEX>`)
 
@@ -63,6 +72,20 @@ flowchart TD
 ```
 
 **No fallback:** Lens search requires session token exclusively.
+
+#### Filtered Search (`kagi search --region ...`, `--time ...`, etc.)
+
+```mermaid
+flowchart TD
+    Start([User Query with Search Filters]) --> CheckSession{KAGI_SESSION_TOKEN configured?}
+
+    CheckSession -->|Yes| QueryWeb[Query web product with filters]
+    QueryWeb -->|Success| ReturnResults[Success ✓]
+
+    CheckSession -->|No| Error[Error: missing session token]
+```
+
+**No fallback:** filtered search requires session token exclusively.
 
 ### Authentication Commands
 
@@ -130,6 +153,7 @@ Both `enrich web` and `enrich news` require `KAGI_API_TOKEN`:
 Requires `KAGI_SESSION_TOKEN`:
 
 - ✅ Lens-aware search (`--lens`)
+- ✅ Filtered search (`--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, personalization flags)
 - ✅ Kagi Assistant (`assistant`)
 - ✅ Subscriber Summarizer (`summarize --subscriber`)
 - ✅ Base search (fallback)
@@ -142,7 +166,7 @@ Requires `KAGI_API_TOKEN`:
 - ✅ Public Summarizer (`summarize`)
 - ✅ Web Enrichment (`enrich web`)
 - ✅ News Enrichment (`enrich news`)
-- ✅ Base search (preferred path)
+- ✅ Base search when `[auth.preferred_auth] = "api"`
 
 ### No Token Required
 
@@ -173,7 +197,7 @@ Works without authentication:
 api_token = "api123"
 session_token = "session456"
 ```
-- `search`: Uses API token (preferred)
+- `search`: Uses the configured base-search preference (session by default)
 - `assistant`: Uses session token
 - `news`: No token needed
 
@@ -206,6 +230,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 **Working commands:**
 - ✅ `kagi search "query"` (uses session path)
 - ✅ `kagi search --lens 2 "query"`
+- ✅ `kagi search --region us --time month "query"`
 - ✅ `kagi assistant "prompt"`
 - ✅ `kagi summarize --subscriber --url ...`
 - ✅ `kagi news`
@@ -233,6 +258,7 @@ kagi auth set --api-token 'your_api_token'
 
 **Non-working:**
 - ❌ `kagi search --lens 2` - requires session token
+- ❌ `kagi search --region us "query"` - requires session token
 - ❌ `kagi assistant` - requires session token
 - ❌ `kagi summarize --subscriber` - requires session token
 

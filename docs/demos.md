@@ -17,7 +17,7 @@ Subscriber demos require `KAGI_SESSION_TOKEN` in the environment. API-token demo
 
 The current demo commands are:
 
-- `kagi search --format pretty "obsidian cli daily notes workflow"`
+- `kagi search --format pretty --region us --time year --order recency "rust release notes"`
 - `kagi summarize --subscriber --url https://mullvad.net/en/browser | jq -M ...`
 - `kagi news --category tech --limit 1 | jq -M ...`
 - `kagi assistant "plan a private obsidian workflow for cafe work. give me 3 setup tips and a short checklist." | jq -M ...`

@@ -157,6 +157,46 @@ kagi auth set --session-token 'YOUR_TOKEN'
 
 ## Command Errors
 
+### "search filters require KAGI_SESSION_TOKEN"
+
+**Message:**
+```
+Config error: search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+```
+
+**Meaning:** You used session-only search filters like `--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, or personalization flags without a configured session token.
+
+**Solution:**
+```bash
+# Add a session token
+kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
+
+# Or remove the session-only search filters
+kagi search "rust release notes"
+```
+
+### "search --time cannot be combined with --from-date or --to-date"
+
+**Meaning:** Kagi's live search UI treats preset time windows and custom date ranges as separate filter modes.
+
+**Solution:**
+```bash
+# Use a preset time window
+kagi search --time month "rust release notes"
+
+# Or use a custom date range
+kagi search --from-date 2026-01-01 --to-date 2026-03-01 "rust release notes"
+```
+
+### "search --from-date must use YYYY-MM-DD format"
+
+**Meaning:** Search date filters require zero-padded ISO dates.
+
+**Solution:**
+```bash
+kagi search --from-date 2026-03-01 --to-date 2026-03-19 "rust compiler"
+```
+
 ### "--length requires --subscriber"
 
 **Message:**

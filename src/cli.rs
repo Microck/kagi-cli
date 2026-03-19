@@ -36,6 +36,22 @@ impl std::fmt::Display for OutputFormat {
     }
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchOrder {
+    Default,
+    Recency,
+    Website,
+    Trackers,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum SearchTime {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "kagi",
@@ -72,6 +88,7 @@ pub enum Commands {
     /// • Multiple output formats: json (default), pretty, compact, markdown, csv
     /// • Colorized pretty output (disable with --no-color)
     /// • Lens support for scoped searches
+    /// • Region, time, date, order, verbatim, and personalization filters
     Search(SearchArgs),
     /// Inspect and validate configured credentials
     Auth(AuthCommand),
@@ -96,6 +113,7 @@ pub enum Commands {
     /// • Token bucket rate limiting to respect API limits
     /// • All output formats supported (json, pretty, compact, markdown, csv)
     /// • Lens support for scoped searches
+    /// • Shared region, time, date, order, verbatim, and personalization filters
     /// • Color output control with --no-color
     Batch(BatchSearchArgs),
 }
@@ -122,6 +140,38 @@ pub struct SearchArgs {
     /// 3. Check the URL for the "l=" parameter value
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+
+    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    #[arg(long, value_name = "REGION")]
+    pub region: Option<String>,
+
+    /// Restrict results to a recent time window
+    #[arg(long, value_name = "WINDOW", value_enum)]
+    pub time: Option<SearchTime>,
+
+    /// Restrict results to pages updated on or after this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub from_date: Option<String>,
+
+    /// Restrict results to pages updated on or before this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub to_date: Option<String>,
+
+    /// Reorder search results
+    #[arg(long, value_name = "ORDER", value_enum)]
+    pub order: Option<SearchOrder>,
+
+    /// Enable verbatim search mode for this request
+    #[arg(long)]
+    pub verbatim: bool,
+
+    /// Force personalized search on for this request
+    #[arg(long, conflicts_with = "no_personalized")]
+    pub personalized: bool,
+
+    /// Force personalized search off for this request
+    #[arg(long, conflicts_with = "personalized")]
+    pub no_personalized: bool,
 }
 
 #[derive(Debug, Args)]
@@ -149,6 +199,38 @@ pub struct BatchSearchArgs {
     /// Scope all searches to a Kagi lens by numeric index
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+
+    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    #[arg(long, value_name = "REGION")]
+    pub region: Option<String>,
+
+    /// Restrict results to a recent time window
+    #[arg(long, value_name = "WINDOW", value_enum)]
+    pub time: Option<SearchTime>,
+
+    /// Restrict results to pages updated on or after this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub from_date: Option<String>,
+
+    /// Restrict results to pages updated on or before this date
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub to_date: Option<String>,
+
+    /// Reorder search results
+    #[arg(long, value_name = "ORDER", value_enum)]
+    pub order: Option<SearchOrder>,
+
+    /// Enable verbatim search mode for all batch requests
+    #[arg(long)]
+    pub verbatim: bool,
+
+    /// Force personalized search on for all batch requests
+    #[arg(long, conflicts_with = "no_personalized")]
+    pub personalized: bool,
+
+    /// Force personalized search off for all batch requests
+    #[arg(long, conflicts_with = "personalized")]
+    pub no_personalized: bool,
 }
 
 impl BatchSearchArgs {

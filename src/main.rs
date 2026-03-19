@@ -15,10 +15,13 @@ use crate::api::{
     execute_subscriber_summarize, execute_summarize,
 };
 use crate::auth::{
-    Credential, CredentialKind, SearchCredentials, format_status, load_credential_inventory,
-    save_credentials,
+    Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
+    load_credential_inventory, save_credentials,
 };
-use crate::cli::{AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand};
+use crate::cli::{
+    AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand, SearchOrder,
+    SearchTime,
+};
 use crate::error::KagiError;
 use crate::types::{
     AssistantPromptRequest, FastGptRequest, SearchResponse, SubscriberSummarizeRequest,
@@ -27,6 +30,19 @@ use crate::types::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
+
+#[derive(Debug, Clone)]
+struct SearchRequestOptions {
+    lens: Option<String>,
+    region: Option<String>,
+    time: Option<SearchTime>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    order: Option<SearchOrder>,
+    verbatim: bool,
+    personalized: bool,
+    no_personalized: bool,
+}
 
 #[tokio::main]
 async fn main() {
@@ -55,12 +71,18 @@ async fn run() -> Result<(), KagiError> {
         .ok_or_else(|| KagiError::Config("missing command".to_string()))?
     {
         Commands::Search(args) => {
-            let request = search::SearchRequest::new(args.query);
-            let request = if let Some(lens) = args.lens {
-                request.with_lens(lens)
-            } else {
-                request
+            let options = SearchRequestOptions {
+                lens: args.lens,
+                region: args.region,
+                time: args.time,
+                from_date: args.from_date,
+                to_date: args.to_date,
+                order: args.order,
+                verbatim: args.verbatim,
+                personalized: args.personalized,
+                no_personalized: args.no_personalized,
             };
+            let request = build_search_request(args.query, &options);
             let format_str = match args.format {
                 cli::OutputFormat::Json => "json",
                 cli::OutputFormat::Pretty => "pretty",
@@ -162,7 +184,6 @@ async fn run() -> Result<(), KagiError> {
             print_json(&response)
         }
         Commands::Batch(args) => {
-            // Validate batch arguments
             args.validate().map_err(KagiError::Config)?;
 
             let format_str = match args.format {
@@ -178,7 +199,17 @@ async fn run() -> Result<(), KagiError> {
                 args.rate_limit,
                 format_str.to_string(),
                 !args.no_color,
-                args.lens,
+                SearchRequestOptions {
+                    lens: args.lens,
+                    region: args.region,
+                    time: args.time,
+                    from_date: args.from_date,
+                    to_date: args.to_date,
+                    order: args.order,
+                    verbatim: args.verbatim,
+                    personalized: args.personalized,
+                    no_personalized: args.no_personalized,
+                },
             )
             .await
         }
@@ -213,7 +244,7 @@ fn run_auth_set(args: AuthSetArgs) -> Result<(), KagiError> {
 
 async fn run_auth_check() -> Result<(), KagiError> {
     let inventory = load_credential_inventory()?;
-    let credentials = inventory.resolve_for_search(false)?;
+    let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
 
     let request = search::SearchRequest::new("rust lang");
     let selected_kind = credentials.primary.kind;
@@ -285,6 +316,59 @@ fn resolve_session_token() -> Result<String, KagiError> {
         })
 }
 
+fn build_search_request(query: String, options: &SearchRequestOptions) -> search::SearchRequest {
+    let mut request = search::SearchRequest::new(query);
+
+    if let Some(lens) = options.lens.clone() {
+        request = request.with_lens(lens);
+    }
+    if let Some(region) = options.region.clone() {
+        request = request.with_region(region);
+    }
+    if let Some(time) = options.time.clone() {
+        request = request.with_time_filter(match time {
+            SearchTime::Day => "1",
+            SearchTime::Week => "2",
+            SearchTime::Month => "3",
+            SearchTime::Year => "4",
+        });
+    }
+    if let Some(from_date) = options.from_date.clone() {
+        request = request.with_from_date(from_date);
+    }
+    if let Some(to_date) = options.to_date.clone() {
+        request = request.with_to_date(to_date);
+    }
+    if let Some(order) = options.order.clone() {
+        request = match order {
+            SearchOrder::Default => request,
+            SearchOrder::Recency => request.with_order("2"),
+            SearchOrder::Website => request.with_order("3"),
+            SearchOrder::Trackers => request.with_order("4"),
+        };
+    }
+    if options.verbatim {
+        request = request.with_verbatim(true);
+    }
+    if options.personalized {
+        request = request.with_personalized(true);
+    } else if options.no_personalized {
+        request = request.with_personalized(false);
+    }
+
+    request
+}
+
+fn search_auth_requirement(request: &search::SearchRequest) -> SearchAuthRequirement {
+    if request.lens.is_some() {
+        SearchAuthRequirement::Lens
+    } else if request.has_runtime_filters() {
+        SearchAuthRequirement::Filtered
+    } else {
+        SearchAuthRequirement::Base
+    }
+}
+
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
     let output = serde_json::to_string_pretty(value)
         .map_err(|error| KagiError::Parse(format!("failed to serialize JSON output: {error}")))?;
@@ -298,7 +382,7 @@ async fn run_search(
     use_color: bool,
 ) -> Result<(), KagiError> {
     let inventory = load_credential_inventory()?;
-    let credentials = inventory.resolve_for_search(request.lens.is_some())?;
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
 
     let response = execute_search_request(&request, credentials).await?;
     let output = match format.as_str() {
@@ -456,10 +540,11 @@ async fn run_batch_search(
     rate_limit: u32,
     format: String,
     use_color: bool,
-    lens: Option<String>,
+    options: SearchRequestOptions,
 ) -> Result<(), KagiError> {
     let inventory = load_credential_inventory()?;
-    let credentials = inventory.resolve_for_search(lens.is_some())?;
+    let auth_probe_request = build_search_request("auth probe".to_string(), &options);
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&auth_probe_request))?;
 
     let rate_limiter = Arc::new(RateLimiter::new(rate_limit, rate_limit));
     let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -470,7 +555,7 @@ async fn run_batch_search(
         let rate_limiter_clone = Arc::clone(&rate_limiter);
         let semaphore_clone = Arc::clone(&semaphore);
         let credentials_clone = credentials.clone();
-        let lens_clone = lens.clone();
+        let options_clone = options.clone();
         let format_clone = format.clone();
         let query_clone = query.clone();
 
@@ -479,12 +564,7 @@ async fn run_batch_search(
                 let _permit = semaphore_clone.acquire().await;
                 rate_limiter_clone.acquire().await?;
 
-                let request = search::SearchRequest::new(query_clone);
-                let request = if let Some(lens) = lens_clone {
-                    request.with_lens(lens)
-                } else {
-                    request
-                };
+                let request = build_search_request(query_clone, &options_clone);
 
                 let response = execute_search_request(&request, credentials_clone).await?;
 
@@ -578,9 +658,10 @@ async fn run_batch_search(
 #[cfg(test)]
 mod tests {
     use super::{
-        RateLimiter, format_csv_response, format_markdown_response, format_pretty_response,
-        should_fallback_to_session,
+        RateLimiter, SearchRequestOptions, build_search_request, format_csv_response,
+        format_markdown_response, format_pretty_response, should_fallback_to_session,
     };
+    use crate::cli::{SearchOrder, SearchTime};
     use crate::error::KagiError;
     use crate::types::{SearchResponse, SearchResult};
     use std::sync::Arc;
@@ -663,6 +744,28 @@ mod tests {
         assert!(output.contains("\x1b[1;34m"));
         assert!(output.contains("\x1b[36m"));
         assert!(output.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn build_search_request_treats_default_order_as_no_order_filter() {
+        let request = build_search_request(
+            "rust".to_string(),
+            &SearchRequestOptions {
+                lens: None,
+                region: None,
+                time: Some(SearchTime::Month),
+                from_date: None,
+                to_date: None,
+                order: Some(SearchOrder::Default),
+                verbatim: false,
+                personalized: false,
+                no_personalized: false,
+            },
+        );
+
+        assert_eq!(request.time_filter.as_deref(), Some("3"));
+        assert_eq!(request.order, None);
+        assert!(request.has_runtime_filters());
     }
 
     #[tokio::test]

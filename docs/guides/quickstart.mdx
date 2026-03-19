@@ -164,6 +164,9 @@ kagi search --format pretty "rust programming language"
 
 # Search with a lens (replace 2 with your lens index)
 kagi search --lens 2 "developer documentation"
+
+# Search with live session-only filters
+kagi search --region us --time month --order recency "rust release notes"
 ```
 
 **Search Demo:**
@@ -411,6 +414,7 @@ kagi news --list-categories # Show available news categories
 kagi search "query"                      # JSON output
 kagi search --format pretty "query"             # Human-readable
 kagi search --lens 2 "query"             # With lens
+kagi search --region us --time month "query"    # With live filters
 kagi search --lens 2 --format pretty "query"    # Combined
 ```
 

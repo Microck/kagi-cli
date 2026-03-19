@@ -3,7 +3,7 @@
 ## Current support in this CLI
 
 ### Implemented
-- **Search / session-token HTML search** - fully implemented and live-verified for base search and lens-aware search
+- **Search / session-token HTML search** - fully implemented and live-verified for base search, lens-aware search, and runtime search filters (`r`, `dr`, `from_date`, `to_date`, `order`, `verbatim`, `personalized`)
 - **Search / official API-token path** - implemented for base search only; if Kagi rejects the API-token search path, base search falls back to session-token search when available
 - **Universal Summarizer API** - implemented on the documented paid public API path
 - **FastGPT API** - implemented on the documented paid public API path
@@ -33,7 +33,7 @@ This CLI also implements non-public or product-only seams:
 
 ## Notes
 
-- Lens support is not documented on the official Search API. In this CLI it works through Kagi's live HTML/session flow using the `l=<index>` query parameter.
+- Lens support and runtime search filters are not documented on the official Search API. In this CLI they work through Kagi's live HTML/session flow using the `l`, `r`, `dr`, `from_date`, `to_date`, `order`, `verbatim`, and `personalized` query parameters.
 - The official Search API uses `Authorization: Bot <token>` on `https://kagi.com/api/v0/search`.
 - Search API access is still account-gated in practice, and API-token search can also fail for billing reasons.
 - Base-search fallback to session-token search happens on the user-facing `search` command only. `auth check` validates the selected primary credential without fallback.
