@@ -171,12 +171,19 @@ kagi search --lens 2 "developer documentation"
 ![Search command demo](/images/demos/search.gif)
 
 ```bash
+# Test Quick Answer
+kagi quick --format pretty "what is rust"
+
 # Test Assistant
 kagi assistant "What are the key features of Rust?"
 
 # Test subscriber Summarizer
 kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
 ```
+
+**Quick Answer Demo:**
+
+![Quick command demo](/images/demos/quick.gif)
 
 **Assistant Demo:**
 
@@ -419,6 +426,7 @@ kagi search --lens 2 --format pretty "query"    # Combined
 ```bash
 kagi summarize --url https://example.com                    # Public API
 kagi summarize --subscriber --url https://example.com       # Subscriber
+kagi quick "what is rust"                                   # Quick Answer
 kagi fastgpt "question"                                     # Quick answer
 kagi assistant "prompt"                                     # AI assistant
 kagi enrich web "query"                                     # Web enrichment

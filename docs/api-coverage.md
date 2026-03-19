@@ -11,6 +11,7 @@
 - **Small Web RSS feed** - implemented and live-verified
 - **Subscriber web Summarizer** - implemented on the session-token web-product path via `kagi summarize --subscriber ...`
 - **Kagi News public product endpoints** - implemented via `kagi news ...`
+- **Subscriber web Quick Answer flow** - implemented on Kagi's authenticated Quick Answer stream via `kagi quick ...`
 - **Subscriber web Assistant prompt flow** - implemented on Kagi Assistant's authenticated tagged stream via `kagi assistant ...`
 
 ## Source of truth
@@ -24,6 +25,7 @@ According to Kagi's public API docs, the documented API families are:
 
 This CLI also implements non-public or product-only seams:
 - subscriber web Summarizer via Kagi session-token auth
+- subscriber web Quick Answer via Kagi session-token auth
 - subscriber web Assistant prompt flow via Kagi session-token auth
 - Kagi News product endpoints
 
@@ -42,4 +44,5 @@ This CLI also implements non-public or product-only seams:
 - Live verification on March 16, 2026 showed that `https://translate.kagi.com/api/auth` returns `null` even when the same `KAGI_SESSION_TOKEN` works on `kagi.com`.
 - Because the repo is marketed around Session Link auth, `translate` was removed from the CLI surface until that mismatch is solved.
 - Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt` with the same tagged stream protocol used by the web app.
+- Quick Answer requires `KAGI_SESSION_TOKEN` and currently targets `POST /mother/context?q=...` with `Accept: application/vnd.kagi.stream`.
 - News uses `https://news.kagi.com/api/...` JSON endpoints and does not require auth.

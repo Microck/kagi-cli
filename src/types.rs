@@ -320,3 +320,53 @@ pub struct EnrichResponse {
 pub struct SmallWebFeed {
     pub xml: String,
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuickMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuickMessage {
+    pub id: String,
+    pub thread_id: String,
+    pub created_at: String,
+    pub state: String,
+    pub prompt: String,
+    pub html: String,
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuickReferenceItem {
+    pub index: usize,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contribution_pct: Option<u8>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuickReferenceCollection {
+    #[serde(default)]
+    pub markdown: String,
+    #[serde(default)]
+    pub items: Vec<QuickReferenceItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuickResponse {
+    pub meta: QuickMeta,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens: Option<String>,
+    pub message: QuickMessage,
+    pub references: QuickReferenceCollection,
+    #[serde(default)]
+    pub followup_questions: Vec<String>,
+}

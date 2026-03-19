@@ -36,6 +36,29 @@ impl std::fmt::Display for OutputFormat {
     }
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum QuickOutputFormat {
+    /// JSON output (default) - structured data for scripts and APIs
+    Json,
+    /// Pretty formatted output with colors - human-readable terminal display
+    Pretty,
+    /// Compact JSON output - minified JSON for reduced size
+    Compact,
+    /// Markdown formatted output - optimized for documentation and notes
+    Markdown,
+}
+
+impl std::fmt::Display for QuickOutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QuickOutputFormat::Json => write!(f, "json"),
+            QuickOutputFormat::Pretty => write!(f, "pretty"),
+            QuickOutputFormat::Compact => write!(f, "compact"),
+            QuickOutputFormat::Markdown => write!(f, "markdown"),
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "kagi",
@@ -81,6 +104,8 @@ pub enum Commands {
     News(NewsArgs),
     /// Prompt Kagi Assistant with subscriber session-token auth
     Assistant(AssistantArgs),
+    /// Generate a Kagi Quick Answer from live search results
+    Quick(QuickArgs),
     /// Answer a query with Kagi's FastGPT API
     Fastgpt(FastGptArgs),
     /// Query Kagi's enrichment indexes
@@ -272,6 +297,25 @@ pub struct AssistantArgs {
     /// Continue an existing assistant thread by id
     #[arg(long, value_name = "THREAD_ID")]
     pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct QuickArgs {
+    /// Query to answer with Kagi Quick Answer
+    #[arg(value_name = "QUERY")]
+    pub query: String,
+
+    /// Output format
+    #[arg(long, value_name = "FORMAT", default_value_t = QuickOutputFormat::Json)]
+    pub format: QuickOutputFormat,
+
+    /// Disable colored terminal output (only affects pretty format)
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Scope quick answer to a Kagi lens by numeric index
+    #[arg(long, value_name = "INDEX")]
+    pub lens: Option<String>,
 }
 
 #[derive(Debug, Args)]

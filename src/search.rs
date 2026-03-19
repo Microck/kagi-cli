@@ -45,6 +45,19 @@ impl SearchRequest {
     }
 }
 
+pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
+    if lens.parse::<u32>().is_err() {
+        return Err(KagiError::Config(format!(
+            "lens '{}' must be a numeric index (e.g., '0', '1', '2'). \
+             Visit https://kagi.com/settings/lenses to see your enabled lenses, \
+             then use the index from the 'l=' parameter in your browser URL.",
+            lens
+        )));
+    }
+
+    Ok(())
+}
+
 /// Perform a search request against Kagi's HTML endpoint.
 ///
 /// If a lens is specified in the request, it will be passed as the `l` query parameter.
@@ -61,14 +74,7 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
 
     let lens_value: String;
     if let Some(ref lens) = request.lens {
-        if lens.parse::<u32>().is_err() {
-            return Err(KagiError::Config(format!(
-                "lens '{}' must be a numeric index (e.g., '0', '1', '2'). \
-                 Visit https://kagi.com/settings/lenses to see your enabled lenses, \
-                 then use the index from the 'l=' parameter in your browser URL.",
-                lens
-            )));
-        }
+        validate_lens_value(lens)?;
         lens_value = lens.clone();
         query_params.push(("l", lens_value.as_str()));
     }
@@ -159,14 +165,6 @@ pub async fn execute_api_search(
             "unexpected Kagi API response status: HTTP {status}"
         ))),
     }
-}
-
-/// Legacy search function for backward compatibility.
-/// Consider using `search_with_lens` for lens support.
-#[allow(dead_code)]
-pub async fn search(query: &str, token: &str) -> Result<String, KagiError> {
-    let request = SearchRequest::new(query);
-    search_with_lens(&request, token).await
 }
 
 pub async fn execute_search(
@@ -261,6 +259,12 @@ mod tests {
             .with_lens("1")
             .with_lens("2");
         assert_eq!(request.lens, Some("2".to_string()));
+    }
+
+    #[test]
+    fn validate_lens_value_rejects_non_numeric_indices() {
+        let error = validate_lens_value("forums").expect_err("non-numeric lens should fail");
+        assert!(matches!(error, KagiError::Config(_)));
     }
 
     #[tokio::test]

@@ -19,6 +19,7 @@ This reference provides a complete mapping of which commands require which authe
 | `summarize` | `KAGI_API_TOKEN` | None | Paid public API |
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
 | `news` | None | None | Public endpoint |
+| `quick` | `KAGI_SESSION_TOKEN` | None | Quick Answer web product |
 | `assistant` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
 | `fastgpt` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich web` | `KAGI_API_TOKEN` | None | Paid public API |
@@ -102,6 +103,7 @@ flowchart TD
 
 | Command | Token | Purpose |
 |---------|-------|---------|
+| `quick` | `KAGI_SESSION_TOKEN` | Quick answers with references |
 | `assistant` | `KAGI_SESSION_TOKEN` | Conversational AI with threads |
 | `fastgpt` | `KAGI_API_TOKEN` | Quick factual answers |
 
@@ -130,6 +132,7 @@ Both `enrich web` and `enrich news` require `KAGI_API_TOKEN`:
 Requires `KAGI_SESSION_TOKEN`:
 
 - ✅ Lens-aware search (`--lens`)
+- ✅ Quick Answer (`quick`)
 - ✅ Kagi Assistant (`assistant`)
 - ✅ Subscriber Summarizer (`summarize --subscriber`)
 - ✅ Base search (fallback)
@@ -206,6 +209,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 **Working commands:**
 - ✅ `kagi search "query"` (uses session path)
 - ✅ `kagi search --lens 2 "query"`
+- ✅ `kagi quick "what is rust"`
 - ✅ `kagi assistant "prompt"`
 - ✅ `kagi summarize --subscriber --url ...`
 - ✅ `kagi news`
@@ -233,6 +237,7 @@ kagi auth set --api-token 'your_api_token'
 
 **Non-working:**
 - ❌ `kagi search --lens 2` - requires session token
+- ❌ `kagi quick` - requires session token
 - ❌ `kagi assistant` - requires session token
 - ❌ `kagi summarize --subscriber` - requires session token
 
@@ -250,6 +255,7 @@ kagi auth set --session-token '...' --api-token '...'
 - `search`: Uses API (preferred), falls back to session if needed
 - `summarize` without `--subscriber`: Uses API
 - `summarize --subscriber`: Uses session
+- `quick`: Uses session
 - `assistant`: Uses session
 - `fastgpt`: Uses API
 

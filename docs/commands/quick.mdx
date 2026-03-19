@@ -1,0 +1,201 @@
+---
+title: "quick"
+description: "Complete reference for *kagi* quick command - get Kagi Quick Answer responses from the terminal."
+---
+
+# `kagi quick`
+
+Generate a Kagi Quick Answer from the authenticated web product and return the full answer envelope, references, and follow-up questions.
+
+![Quick Answer demo](/images/demos/quick.gif)
+
+## Synopsis
+
+```bash
+kagi quick [OPTIONS] <QUERY>
+```
+
+## Description
+
+`kagi quick` targets Kagi's Quick Answer web-product flow, not FastGPT and not the public Search API. It is useful when you want a fast answer plus references without opening a browser tab.
+
+This command is ideal for:
+- factual questions with references
+- shell workflows that want a single answer envelope
+- quick terminal lookups with `pretty` or `markdown` output
+- automations that want the Quick Answer thread id for later inspection
+
+## Authentication
+
+**Required:** `KAGI_SESSION_TOKEN`
+
+Quick Answer uses subscriber session-token auth. The CLI accepts either:
+- the raw session token
+- the full Session Link URL such as `https://kagi.com/search?token=...`
+
+## Arguments
+
+### `<QUERY>` (Required)
+
+The text to send to Quick Answer.
+
+The CLI sends the query verbatim. It does not auto-append a trailing question mark, so both of these are valid:
+
+```bash
+kagi quick "what is rust"
+kagi quick "what is rust?"
+```
+
+## Options
+
+### `--format <FORMAT>`
+
+Output format for the response.
+
+**Supported values:** `json`, `compact`, `pretty`, `markdown`
+
+**Default:** `json`
+
+```bash
+kagi quick --format pretty "what is rust"
+kagi quick --format markdown "what is rust"
+```
+
+### `--no-color`
+
+Disable ANSI colors in `--format pretty`.
+
+```bash
+kagi quick --format pretty --no-color "what is rust"
+```
+
+### `--lens <INDEX>`
+
+Scope the query to one of your Kagi lenses by numeric index.
+
+```bash
+kagi quick --lens 0 "best rust tutorials"
+```
+
+Lens indices are user-specific. Use the same `l=` numeric value you would use with `kagi search --lens`.
+
+## Output Format
+
+Default JSON output:
+
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "query": "what is rust",
+  "lens": null,
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "created_at": "2026-03-19T00:00:00Z",
+    "state": "done",
+    "prompt": "what is rust",
+    "html": "<p>Rust is a systems programming language.</p>",
+    "markdown": "Rust is a systems programming language."
+  },
+  "references": {
+    "markdown": "[^1]: [Rust](https://www.rust-lang.org/) (26%)",
+    "items": [
+      {
+        "index": 1,
+        "title": "Rust",
+        "domain": "www.rust-lang.org",
+        "url": "https://www.rust-lang.org/",
+        "contribution_pct": 26
+      }
+    ]
+  },
+  "followup_questions": [
+    "Why is Rust memory-safe?"
+  ]
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `meta` | object | Stream metadata such as version and trace id |
+| `query` | string | The original query text sent to Quick Answer |
+| `lens` | string or null | The requested lens index, if one was supplied |
+| `message` | object | Final Quick Answer message payload |
+| `references` | object | Reference markdown plus parsed reference items |
+| `followup_questions` | array | Follow-up suggestions returned by Kagi |
+
+## Examples
+
+### Basic Queries
+
+```bash
+kagi quick "what is rust"
+kagi quick "best way to clean cast iron"
+```
+
+### Pretty Terminal Output
+
+```bash
+kagi quick --format pretty "what is rust"
+```
+
+### Markdown for Notes
+
+```bash
+kagi quick --format markdown "what is rust?" > quick-answer.md
+```
+
+### Lens-Scoped Quick Answers
+
+```bash
+kagi quick --lens 0 "best rust tutorials"
+```
+
+### JSON Processing
+
+```bash
+# Extract the answer body
+kagi quick "what is rust" | jq -r '.message.markdown'
+
+# Extract reference URLs
+kagi quick "what is rust" | jq -r '.references.items[].url'
+
+# Save the Quick Answer thread id
+kagi quick "what is rust" | jq -r '.message.thread_id'
+```
+
+## Output Modes
+
+### `json`
+
+Pretty-printed JSON envelope for scripts and inspection.
+
+### `compact`
+
+Minified JSON envelope for pipelines or storage-sensitive paths.
+
+### `pretty`
+
+Terminal-friendly answer text followed by a references section and any follow-up questions.
+
+### `markdown`
+
+The answer markdown, then the references markdown, then a follow-up section if present.
+
+## Limitations
+
+- Requires an active Kagi subscription and session token
+- This command is single-turn only
+- The returned `message.thread_id` is informational today; there is no `--thread-id` follow-up mode yet
+- Output quality and references depend on the live Quick Answer product
+
+## See Also
+
+- [assistant](/commands/assistant) - Conversational multi-turn AI via Kagi Assistant
+- [search](/commands/search) - Full search results instead of a single synthesized answer
+- [Authentication](/guides/authentication) - Session-token setup

@@ -29,6 +29,7 @@ These features use the subscriber web product (Session Token):
 |---------|---------|--------|
 | Base Search | `kagi search` | ✅ Implemented (session path) |
 | Lens Search | `kagi search --lens` | ✅ Implemented |
+| Quick Answer | `kagi quick` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
 | Assistant | `kagi assistant` | ✅ Implemented |
 
@@ -55,6 +56,7 @@ These require no authentication:
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
+| `quick` | Quick Answer | Session | ✅ |
 | `assistant` | AI assistant | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
@@ -65,8 +67,8 @@ These require no authentication:
 
 | Option | Commands | Status |
 |--------|----------|--------|
-| `--format pretty` | search | ✅ |
-| `--lens` | search | ✅ |
+| `--format pretty` | search, batch, quick | ✅ |
+| `--lens` | search, batch, quick | ✅ |
 | `--limit` | news, smallweb | ✅ |
 | `--category` | news | ✅ |
 | `--list-categories` | news | ✅ |
@@ -81,6 +83,7 @@ These require no authentication:
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--no-color` | search, batch, quick | ✅ |
 
 ## Not Available
 
@@ -120,7 +123,7 @@ These features were evaluated and left out of the public CLI surface:
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, summarize --subscriber, assistant |
+| Session Token | ✅ | search, quick, summarize --subscriber, assistant |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -142,6 +145,8 @@ All commands output JSON:
 | Command | Schema Stability |
 |---------|-----------------|
 | search | Stable |
+| batch | Stable |
+| quick | Stable |
 | news | Stable |
 | smallweb | Stable |
 | summarize | Stable |
@@ -154,6 +159,8 @@ All commands output JSON:
 | Command | Pretty Mode |
 |---------|------------|
 | search | ✅ Yes |
+| batch | ✅ Yes |
+| quick | ✅ Yes |
 | news | ❌ No (use jq) |
 | smallweb | ❌ No (use jq) |
 | Others | ❌ JSON only |
@@ -191,6 +198,7 @@ All commands output JSON:
 |---------|-----|-----|
 | Search | ✅ | ✅ |
 | Lens Search | ✅ | ✅ |
+| Quick Answer | ✅ | ✅ |
 | Assistant | ✅ (basic) | ✅ (full) |
 | Summarizer | ✅ | ✅ |
 | Translate | ❌ | ✅ |

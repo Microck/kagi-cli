@@ -10,7 +10,7 @@ This page documents the current CLI output behavior as implemented in the repo.
 ## Core Rules
 
 1. Most commands print pretty-formatted JSON to stdout on success.
-2. `kagi search` and `kagi batch` support human-readable output via `--format pretty`.
+2. `kagi search`, `kagi batch`, and `kagi quick` support human-readable output via format flags.
 3. Errors are plain text on stderr and exit with status code `1`.
 4. Output shapes differ by command. There is no single universal response envelope.
 
@@ -137,6 +137,43 @@ Subscriber mode:
 }
 ```
 
+### `kagi quick`
+
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "query": "what is rust",
+  "lens": null,
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "created_at": "2026-03-19T00:00:00Z",
+    "state": "done",
+    "prompt": "what is rust",
+    "html": "<p>Rust is a systems programming language.</p>",
+    "markdown": "Rust is a systems programming language."
+  },
+  "references": {
+    "markdown": "[^1]: [Rust](https://www.rust-lang.org/) (26%)",
+    "items": [
+      {
+        "index": 1,
+        "title": "Rust",
+        "domain": "www.rust-lang.org",
+        "url": "https://www.rust-lang.org/",
+        "contribution_pct": 26
+      }
+    ]
+  },
+  "followup_questions": [
+    "Why is Rust memory-safe?"
+  ]
+}
+```
+
 ### `kagi fastgpt`
 
 ```json
@@ -199,6 +236,21 @@ If the result set is empty, the CLI prints:
 No results found.
 ```
 
+## Pretty Quick Output
+
+`kagi quick --format pretty` renders:
+
+```text
+Quick Answer
+
+Rust is a systems programming language...
+
+References
+
+1. Learn (35%)
+   https://www.rust-lang.org/learn
+```
+
 ## Error Behavior
 
 Errors are plain text on stderr. Typical examples:
@@ -220,6 +272,12 @@ kagi fastgpt "What is Rust?" | jq -r '.data.output'
 
 # Assistant markdown reply
 kagi assistant "Hello" | jq -r '.message.markdown'
+
+# Quick Answer markdown reply
+kagi quick "what is rust" | jq -r '.message.markdown'
+
+# Quick Answer references
+kagi quick "what is rust" | jq -r '.references.items[].url'
 
 # Subscriber summary text
 kagi summarize --subscriber --url https://example.com | jq -r '.data.output'

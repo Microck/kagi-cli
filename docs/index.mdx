@@ -49,6 +49,7 @@ Unlock the full potential of your Kagi subscription:
 
 - **Lens-Aware Search**: Use your custom Kagi lenses directly from the command line.
 
+- **Quick Answers**: Get Kagi Quick Answer responses with references and follow-up questions.
 - **Assistant Integration**: Prompt Kagi Assistant programmatically and continue conversations across sessions.
 
 - **Subscriber Features**: Access subscriber-only capabilities like the web-based Summarizer with full control over output length and style.
@@ -104,9 +105,10 @@ flowchart TB
     
     subgraph SubscriberWeb["Subscriber Web Product"]
         web1["search --lens"]
-        web2["assistant"]
-        web3["summarize --subscriber"]
-        web4["search (session)"]
+        web2["quick"]
+        web3["assistant"]
+        web4["summarize --subscriber"]
+        web5["search (session)"]
     end
     
     subgraph PublicFeeds["Public Feeds (No Auth)"]
@@ -186,6 +188,21 @@ kagi search --lens 2 "developer documentation"
 ```
 
 Each variant uses the same underlying command but adapts output and capabilities based on flags and authentication. The command intelligently selects the appropriate transport (API vs session) and handles fallback automatically.
+
+### Example: Quick Answers With References
+
+The `kagi quick` command is a good fit when you want one synthesized answer instead of a full result list:
+
+```bash
+# Structured JSON envelope
+kagi quick "what is rust"
+
+# Terminal-friendly output
+kagi quick --format pretty "what is rust"
+
+# Capture reference URLs
+kagi quick "what is rust" | jq -r '.references.items[].url'
+```
 
 ### Example: Authentication Precedence
 

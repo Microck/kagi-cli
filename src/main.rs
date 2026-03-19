@@ -3,6 +3,7 @@ mod auth;
 mod cli;
 mod error;
 mod parser;
+mod quick;
 mod search;
 mod types;
 
@@ -20,9 +21,10 @@ use crate::auth::{
 };
 use crate::cli::{AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand};
 use crate::error::KagiError;
+use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
 use crate::types::{
-    AssistantPromptRequest, FastGptRequest, SearchResponse, SubscriberSummarizeRequest,
-    SummarizeRequest,
+    AssistantPromptRequest, FastGptRequest, QuickResponse, SearchResponse,
+    SubscriberSummarizeRequest, SummarizeRequest,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -138,6 +140,23 @@ async fn run() -> Result<(), KagiError> {
             };
             let response = execute_assistant_prompt(&request, &token).await?;
             print_json(&response)
+        }
+        Commands::Quick(args) => {
+            let token = resolve_session_token()?;
+            let request = search::SearchRequest::new(args.query.trim().to_string());
+            let request = if let Some(lens) = args.lens {
+                request.with_lens(lens)
+            } else {
+                request
+            };
+            let format_str = match args.format {
+                cli::QuickOutputFormat::Json => "json",
+                cli::QuickOutputFormat::Pretty => "pretty",
+                cli::QuickOutputFormat::Compact => "compact",
+                cli::QuickOutputFormat::Markdown => "markdown",
+            };
+            let response = execute_quick(&request, &token).await?;
+            print_quick_response(&response, format_str, !args.no_color)
         }
         Commands::Fastgpt(args) => {
             let request = FastGptRequest {
@@ -290,6 +309,32 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
         .map_err(|error| KagiError::Parse(format!("failed to serialize JSON output: {error}")))?;
     println!("{output}");
     Ok(())
+}
+
+fn print_compact_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
+    let output = serde_json::to_string(value)
+        .map_err(|error| KagiError::Parse(format!("failed to serialize JSON output: {error}")))?;
+    println!("{output}");
+    Ok(())
+}
+
+fn print_quick_response(
+    response: &QuickResponse,
+    format: &str,
+    use_color: bool,
+) -> Result<(), KagiError> {
+    match format {
+        "pretty" => {
+            println!("{}", format_quick_pretty(response, use_color));
+            Ok(())
+        }
+        "compact" => print_compact_json(response),
+        "markdown" => {
+            println!("{}", format_quick_markdown(response));
+            Ok(())
+        }
+        _ => print_json(response),
+    }
 }
 
 async fn run_search(

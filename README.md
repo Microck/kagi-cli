@@ -15,7 +15,7 @@
 
 ---
 
-`kagi` is a terminal CLI for Kagi that gives you command-line access to search, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
 the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
@@ -29,7 +29,7 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 
 - use your existing session-link URL for subscriber features
 - get structured JSON for scripts, agents, and other tooling
-- use one CLI for search, assistant, summarization, and feeds
+- use one CLI for search, quick answers, assistant, summarization, and feeds
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
 ## quickstart
@@ -101,7 +101,7 @@ export KAGI_API_TOKEN='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `assistant`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `quick`, `assistant`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
@@ -138,6 +138,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi auth` | inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
+| `kagi quick` | get a Quick Answer with references from the subscriber web product |
 | `kagi assistant` | prompt Kagi Assistant with a subscriber session token |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
@@ -200,6 +201,12 @@ continue research with assistant:
 kagi assistant "plan a focused research session in the terminal"
 ```
 
+get a quick answer with references:
+
+```bash
+kagi quick --format pretty "what is rust"
+```
+
 use the subscriber summarizer:
 
 ```bash
@@ -227,7 +234,9 @@ kagi enrich news "browser privacy"
 
 ## what it looks like
 
-if you want a quick feel for the cli before installing it, this is the kind of output you get from the subscriber summarizer, assistant, and public news feed:
+if you want a quick feel for the cli before installing it, this is the kind of output you get from quick answer, the subscriber summarizer, assistant, and public news feed:
+
+![quick demo](images/demos/quick.gif)
 
 ![summarize demo](images/demos/summarize.gif)
 

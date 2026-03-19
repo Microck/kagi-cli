@@ -60,6 +60,13 @@ kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 kagi summarize --subscriber --url https://example.com  # Use --subscriber for session
 ```
 
+This same requirement applies to session-token web-product commands such as:
+
+```bash
+kagi quick "what is rust"
+kagi assistant "Explain Rust ownership"
+```
+
 ### "this command requires KAGI_API_TOKEN"
 
 **Message:**
@@ -133,6 +140,20 @@ config path: .kagi.toml
 **Solution:**
 This is informational. Run `kagi auth set` to create it, or use environment variables.
 
+### "quick query cannot be empty"
+
+**Message:**
+```
+configuration error: quick query cannot be empty
+```
+
+**Meaning:** `kagi quick` received an empty string after trimming whitespace.
+
+**Solution:**
+```bash
+kagi quick "what is rust"
+```
+
 ### "Permission denied"
 
 **Message:**
@@ -170,6 +191,24 @@ Error: Config: --length requires --subscriber
 ```bash
 # Add --subscriber flag
 kagi summarize --subscriber --url https://example.com --length digest
+```
+
+### "lens 'abc' must be a numeric index"
+
+**Message:**
+```
+configuration error: lens 'abc' must be a numeric index (e.g., '0', '1', '2').
+```
+
+**Meaning:** Lens-aware commands only accept the numeric `l=` value from Kagi's web UI.
+
+**Solution:**
+```bash
+# Search
+kagi search --lens 2 "developer documentation"
+
+# Quick Answer
+kagi quick --lens 2 "best rust tutorials"
 ```
 
 ### "--engine is only supported for the paid public summarizer API"
