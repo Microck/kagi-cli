@@ -221,6 +221,12 @@ kagi fastgpt "What is Rust?" | jq -r '.data.output'
 # Assistant markdown reply
 kagi assistant "Hello" | jq -r '.message.markdown'
 
+# Assistant thread ids
+kagi assistant thread list | jq -r '.threads[].id'
+
+# Assistant thread export markdown
+kagi assistant thread export "$THREAD_ID"
+
 # Subscriber summary text
 kagi summarize --subscriber --url https://example.com | jq -r '.data.output'
 

@@ -30,7 +30,7 @@ These features use the subscriber web product (Session Token):
 | Base Search | `kagi search` | ✅ Implemented (session path) |
 | Lens Search | `kagi search --lens` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
-| Assistant | `kagi assistant` | ✅ Implemented |
+| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
 
 ### Public Product Endpoints
 
@@ -55,7 +55,7 @@ These require no authentication:
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
-| `assistant` | AI assistant | Session | ✅ |
+| `assistant` | AI assistant with thread management | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
@@ -81,6 +81,11 @@ These require no authentication:
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
 
 ## Not Available
 
@@ -191,7 +196,7 @@ All commands output JSON:
 |---------|-----|-----|
 | Search | ✅ | ✅ |
 | Lens Search | ✅ | ✅ |
-| Assistant | ✅ (basic) | ✅ (full) |
+| Assistant | ✅ (prompt + threads) | ✅ (full) |
 | Summarizer | ✅ | ✅ |
 | Translate | ❌ | ✅ |
 | Settings | ❌ | ✅ |

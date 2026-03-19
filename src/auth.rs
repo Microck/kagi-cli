@@ -183,11 +183,9 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
         source: CredentialSource::Env,
         value,
     });
-    let env_session = read_env_credential(SESSION_TOKEN_ENV).map(|value| Credential {
-        kind: CredentialKind::SessionToken,
-        source: CredentialSource::Env,
-        value,
-    });
+    let env_session = read_env_credential(SESSION_TOKEN_ENV)
+        .map(|value| build_session_credential(&value, CredentialSource::Env))
+        .transpose()?;
 
     let config_api = config
         .auth
@@ -207,11 +205,8 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
         .and_then(|auth| auth.session_token.as_ref())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .map(|value| Credential {
-            kind: CredentialKind::SessionToken,
-            source: CredentialSource::Config,
-            value,
-        });
+        .map(|value| build_session_credential(&value, CredentialSource::Config))
+        .transpose()?;
 
     Ok(CredentialInventory {
         api_token: env_api.or(config_api),
@@ -255,6 +250,17 @@ fn read_env_credential(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn build_session_credential(
+    raw_value: &str,
+    source: CredentialSource,
+) -> Result<Credential, KagiError> {
+    Ok(Credential {
+        kind: CredentialKind::SessionToken,
+        source,
+        value: normalize_session_token_input(raw_value)?,
+    })
 }
 
 pub fn save_credentials(
@@ -589,5 +595,31 @@ mod tests {
         let error = normalize_session_token_input("https://kagi.com/search?q=test")
             .expect_err("missing token param should fail");
         assert!(error.to_string().contains("token="));
+    }
+
+    #[test]
+    fn builds_env_session_credential_from_session_link() {
+        let credential = build_session_credential(
+            "https://kagi.com/search?token=abc123.def456",
+            CredentialSource::Env,
+        )
+        .expect("session link should normalize");
+
+        assert_eq!(credential.kind, CredentialKind::SessionToken);
+        assert_eq!(credential.source, CredentialSource::Env);
+        assert_eq!(credential.value, "abc123.def456");
+    }
+
+    #[test]
+    fn builds_config_session_credential_from_session_link() {
+        let credential = build_session_credential(
+            "https://kagi.com/search?token=abc123.def456",
+            CredentialSource::Config,
+        )
+        .expect("session link should normalize");
+
+        assert_eq!(credential.kind, CredentialKind::SessionToken);
+        assert_eq!(credential.source, CredentialSource::Config);
+        assert_eq!(credential.value, "abc123.def456");
     }
 }

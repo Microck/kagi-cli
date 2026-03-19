@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -238,6 +240,14 @@ pub struct AssistantPromptRequest {
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internet_access: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub personalizations: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -259,6 +269,8 @@ pub struct AssistantMessage {
     pub id: String,
     pub thread_id: String,
     pub created_at: String,
+    #[serde(default)]
+    pub branch_list: Vec<String>,
     pub state: String,
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -266,11 +278,17 @@ pub struct AssistantMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub markdown: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references_html: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub references_markdown: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata_html: Option<String>,
     #[serde(default)]
     pub documents: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -278,6 +296,60 @@ pub struct AssistantPromptResponse {
     pub meta: AssistantMeta,
     pub thread: AssistantThread,
     pub message: AssistantMessage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantThreadSummary {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+    pub saved: bool,
+    pub shared: bool,
+    #[serde(default)]
+    pub tag_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantThreadPagination {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
+    pub count: u64,
+    #[serde(default)]
+    pub total_counts: HashMap<String, u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AssistantThreadListResponse {
+    pub meta: AssistantMeta,
+    #[serde(default)]
+    pub tags: Vec<Value>,
+    pub threads: Vec<AssistantThreadSummary>,
+    pub pagination: AssistantThreadPagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AssistantThreadOpenResponse {
+    pub meta: AssistantMeta,
+    #[serde(default)]
+    pub tags: Vec<Value>,
+    pub thread: AssistantThread,
+    #[serde(default)]
+    pub messages: Vec<AssistantMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantThreadDeleteResponse {
+    pub deleted_thread_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantThreadExportResponse {
+    pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    pub markdown: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

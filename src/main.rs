@@ -10,15 +10,19 @@ use clap::{CommandFactory, Parser};
 use clap_complete::{generate, shells};
 
 use crate::api::{
-    execute_assistant_prompt, execute_enrich_news, execute_enrich_web, execute_fastgpt,
-    execute_news, execute_news_categories, execute_news_chaos, execute_smallweb,
-    execute_subscriber_summarize, execute_summarize,
+    execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
+    execute_assistant_thread_get, execute_assistant_thread_list, execute_enrich_news,
+    execute_enrich_web, execute_fastgpt, execute_news, execute_news_categories, execute_news_chaos,
+    execute_smallweb, execute_subscriber_summarize, execute_summarize,
 };
 use crate::auth::{
     Credential, CredentialKind, SearchCredentials, format_status, load_credential_inventory,
     save_credentials,
 };
-use crate::cli::{AuthSetArgs, AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand};
+use crate::cli::{
+    AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
+    AuthSubcommand, Cli, Commands, CompletionShell, EnrichSubcommand,
+};
 use crate::error::KagiError;
 use crate::types::{
     AssistantPromptRequest, FastGptRequest, SearchResponse, SubscriberSummarizeRequest,
@@ -132,12 +136,62 @@ async fn run() -> Result<(), KagiError> {
         }
         Commands::Assistant(args) => {
             let token = resolve_session_token()?;
-            let request = AssistantPromptRequest {
-                query: args.query,
-                thread_id: args.thread_id,
-            };
-            let response = execute_assistant_prompt(&request, &token).await?;
-            print_json(&response)
+            if let Some(AssistantSubcommand::Thread(thread_args)) = args.command {
+                match thread_args.command {
+                    AssistantThreadSubcommand::List => {
+                        let response = execute_assistant_thread_list(&token).await?;
+                        print_json(&response)
+                    }
+                    AssistantThreadSubcommand::Get(thread) => {
+                        let response =
+                            execute_assistant_thread_get(&thread.thread_id, &token).await?;
+                        print_json(&response)
+                    }
+                    AssistantThreadSubcommand::Delete(thread) => {
+                        let response =
+                            execute_assistant_thread_delete(&thread.thread_id, &token).await?;
+                        print_json(&response)
+                    }
+                    AssistantThreadSubcommand::Export(export) => match export.format {
+                        AssistantThreadExportFormat::Markdown => {
+                            let response =
+                                execute_assistant_thread_export(&export.thread_id, &token).await?;
+                            println!("{}", response.markdown);
+                            Ok(())
+                        }
+                        AssistantThreadExportFormat::Json => {
+                            let response =
+                                execute_assistant_thread_get(&export.thread_id, &token).await?;
+                            print_json(&response)
+                        }
+                    },
+                }
+            } else {
+                let query = args.query.ok_or_else(|| {
+                    KagiError::Config(
+                        "assistant prompt mode requires a QUERY unless a thread subcommand is used"
+                            .to_string(),
+                    )
+                })?;
+                let request = AssistantPromptRequest {
+                    query,
+                    thread_id: args.thread_id,
+                    model: args.model,
+                    lens_id: args.lens,
+                    internet_access: match (args.web_access, args.no_web_access) {
+                        (true, false) => Some(true),
+                        (false, true) => Some(false),
+                        _ => None,
+                    },
+                    personalizations: match (args.personalized, args.no_personalized) {
+                        (true, false) => Some(true),
+                        (false, true) => Some(false),
+                        _ => None,
+                    },
+                };
+                let response = execute_assistant_prompt(&request, &token).await?;
+                print_json(&response)
+            }
         }
         Commands::Fastgpt(args) => {
             let request = FastGptRequest {

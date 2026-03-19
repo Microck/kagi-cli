@@ -12,6 +12,7 @@
 - **Subscriber web Summarizer** - implemented on the session-token web-product path via `kagi summarize --subscriber ...`
 - **Kagi News public product endpoints** - implemented via `kagi news ...`
 - **Subscriber web Assistant prompt flow** - implemented on Kagi Assistant's authenticated tagged stream via `kagi assistant ...`
+- **Subscriber web Assistant thread list/open/delete/export flows** - implemented on the authenticated Assistant thread endpoints via `kagi assistant thread ...`
 
 ## Source of truth
 
@@ -25,6 +26,7 @@ According to Kagi's public API docs, the documented API families are:
 This CLI also implements non-public or product-only seams:
 - subscriber web Summarizer via Kagi session-token auth
 - subscriber web Assistant prompt flow via Kagi session-token auth
+- subscriber web Assistant thread management via Kagi session-token auth
 - Kagi News product endpoints
 
 ## TODO / deferred
@@ -41,5 +43,5 @@ This CLI also implements non-public or product-only seams:
 - The subscriber web Summarizer requires `KAGI_SESSION_TOKEN` and uses the authenticated `GET /mother/summary_labs?...` stream path instead of the public `/api/v0/summarize` endpoint.
 - Live verification on March 16, 2026 showed that `https://translate.kagi.com/api/auth` returns `null` even when the same `KAGI_SESSION_TOKEN` works on `kagi.com`.
 - Because the repo is marketed around Session Link auth, `translate` was removed from the CLI surface until that mismatch is solved.
-- Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt` with the same tagged stream protocol used by the web app.
+- Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt`, `/assistant/thread_list`, `/assistant/thread_open`, `/assistant/thread_delete`, and `/assistant/<thread_id>/download`.
 - News uses `https://news.kagi.com/api/...` JSON endpoints and does not require auth.
