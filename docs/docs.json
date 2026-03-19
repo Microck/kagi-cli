@@ -84,8 +84,9 @@
           {
             "group": "AI & Enrichment",
             "pages": [
-              "commands/quick",
               "commands/assistant",
+              "commands/quick",
+              "commands/ask-page",
               "commands/fastgpt",
               "commands/enrich"
             ]

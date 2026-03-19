@@ -10,6 +10,7 @@ The demo scripts build the local debug binary, expose it as `kagi` through `/tmp
 - `docs/demo-assets/quick.gif`
 - `docs/demo-assets/summarize.gif`
 - `docs/demo-assets/news.gif`
+- `docs/demo-assets/ask-page.gif`
 - `docs/demo-assets/assistant.gif`
 
 ## Regenerate
@@ -18,14 +19,16 @@ Subscriber demos require `KAGI_SESSION_TOKEN` in the environment. API-token demo
 
 The current demo commands are:
 
-- `kagi search --format pretty "obsidian cli daily notes workflow"`
+- `kagi search --format pretty --region us --time year --order recency "rust release notes"`
 - `kagi quick --format pretty "what is rust"`
 - `kagi summarize --subscriber --url https://mullvad.net/en/browser | jq -M ...`
 - `kagi news --category tech --limit 1 | jq -M ...`
+- `kagi ask-page https://rust-lang.org/ "What is this page about in one sentence?" | jq -M ...`
 - `kagi assistant "plan a private obsidian workflow for cafe work. give me 3 setup tips and a short checklist." | jq -M ...`
+- `RESPONSE=$(kagi assistant --model gpt-5-mini "..."); THREAD_ID=...; kagi assistant --thread-id "$THREAD_ID" "..."; kagi assistant thread export "$THREAD_ID"`
 
 ```bash
-chmod +x scripts/demo-search.sh scripts/demo-quick.sh scripts/demo-summarize.sh scripts/demo-news.sh scripts/demo-assistant.sh
+chmod +x scripts/demo-search.sh scripts/demo-quick.sh scripts/demo-summarize.sh scripts/demo-news.sh scripts/demo-ask-page.sh scripts/demo-assistant.sh
 
 mkdir -p docs/demo-assets /tmp/kagi-demos
 
@@ -36,12 +39,14 @@ KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-search.sh -q -i 0.2 --c
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-quick.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/quick.cast
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-summarize.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/summarize.cast
 asciinema rec -c ./scripts/demo-news.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/news.cast
+KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-ask-page.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/ask-page.cast
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-assistant.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/assistant.cast
 
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/search.cast docs/demo-assets/search.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/quick.cast docs/demo-assets/quick.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/summarize.cast docs/demo-assets/summarize.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/news.cast docs/demo-assets/news.gif
+agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/ask-page.cast docs/demo-assets/ask-page.gif
 agg --theme asciinema --font-size 14 --idle-time-limit 2 --last-frame-duration 4 /tmp/kagi-demos/assistant.cast docs/demo-assets/assistant.gif
 ```
 

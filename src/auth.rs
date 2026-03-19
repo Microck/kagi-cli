@@ -80,6 +80,13 @@ pub struct SearchCredentials {
     pub fallback_session: Option<Credential>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchAuthRequirement {
+    Base,
+    Lens,
+    Filtered,
+}
+
 #[derive(Debug, Clone)]
 pub struct CredentialInventory {
     pub api_token: Option<Credential>,
@@ -91,20 +98,30 @@ pub struct CredentialInventory {
 impl CredentialInventory {
     pub fn resolve_for_search(
         &self,
-        requires_session: bool,
+        requirement: SearchAuthRequirement,
     ) -> Result<SearchCredentials, KagiError> {
-        if requires_session {
-            let session = self.session_token.clone().ok_or_else(|| {
-                KagiError::Config(
-                    "lens search requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
-                        .to_string(),
-                )
-            })?;
+        match requirement {
+            SearchAuthRequirement::Lens | SearchAuthRequirement::Filtered => {
+                let session = self.session_token.clone().ok_or_else(|| {
+                    KagiError::Config(match requirement {
+                        SearchAuthRequirement::Lens => {
+                            "lens search requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                                .to_string()
+                        }
+                        SearchAuthRequirement::Filtered => {
+                            "search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                                .to_string()
+                        }
+                        SearchAuthRequirement::Base => unreachable!(),
+                    })
+                })?;
 
-            return Ok(SearchCredentials {
-                primary: session,
-                fallback_session: None,
-            });
+                return Ok(SearchCredentials {
+                    primary: session,
+                    fallback_session: None,
+                });
+            }
+            SearchAuthRequirement::Base => {}
         }
 
         match self.search_preference {
@@ -456,10 +473,30 @@ mod tests {
         };
 
         let error = inventory
-            .resolve_for_search(true)
+            .resolve_for_search(SearchAuthRequirement::Lens)
             .expect_err("lens should require session token");
         assert!(matches!(error, KagiError::Config(_)));
         assert!(error.to_string().contains("requires KAGI_SESSION_TOKEN"));
+    }
+
+    #[test]
+    fn requires_session_for_filtered_search() {
+        let inventory = CredentialInventory {
+            api_token: Some(Credential {
+                kind: CredentialKind::ApiToken,
+                source: CredentialSource::Env,
+                value: "api".to_string(),
+            }),
+            session_token: None,
+            search_preference: SearchAuthPreference::Session,
+            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+        };
+
+        let error = inventory
+            .resolve_for_search(SearchAuthRequirement::Filtered)
+            .expect_err("filtered search should require session token");
+        assert!(matches!(error, KagiError::Config(_)));
+        assert!(error.to_string().contains("search filters require"));
     }
 
     #[test]
@@ -480,7 +517,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::SessionToken);
         assert_eq!(
@@ -510,7 +547,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::SessionToken);
     }
@@ -533,7 +570,7 @@ mod tests {
         };
 
         let credentials = inventory
-            .resolve_for_search(false)
+            .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::ApiToken);
     }

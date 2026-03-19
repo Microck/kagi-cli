@@ -3,7 +3,7 @@
 ## Current support in this CLI
 
 ### Implemented
-- **Search / session-token HTML search** - fully implemented and live-verified for base search and lens-aware search
+- **Search / session-token HTML search** - fully implemented and live-verified for base search, lens-aware search, and runtime search filters (`r`, `dr`, `from_date`, `to_date`, `order`, `verbatim`, `personalized`)
 - **Search / official API-token path** - implemented for base search only; if Kagi rejects the API-token search path, base search falls back to session-token search when available
 - **Universal Summarizer API** - implemented on the documented paid public API path
 - **FastGPT API** - implemented on the documented paid public API path
@@ -13,6 +13,7 @@
 - **Kagi News public product endpoints** - implemented via `kagi news ...`
 - **Subscriber web Quick Answer flow** - implemented on Kagi's authenticated Quick Answer stream via `kagi quick ...`
 - **Subscriber web Assistant prompt flow** - implemented on Kagi Assistant's authenticated tagged stream via `kagi assistant ...`
+- **Subscriber web Assistant thread list/open/delete/export flows** - implemented on the authenticated Assistant thread endpoints via `kagi assistant thread ...`
 
 ## Source of truth
 
@@ -27,6 +28,7 @@ This CLI also implements non-public or product-only seams:
 - subscriber web Summarizer via Kagi session-token auth
 - subscriber web Quick Answer via Kagi session-token auth
 - subscriber web Assistant prompt flow via Kagi session-token auth
+- subscriber web Assistant thread management via Kagi session-token auth
 - Kagi News product endpoints
 
 ## TODO / deferred
@@ -35,7 +37,7 @@ This CLI also implements non-public or product-only seams:
 
 ## Notes
 
-- Lens support is not documented on the official Search API. In this CLI it works through Kagi's live HTML/session flow using the `l=<index>` query parameter.
+- Lens support and runtime search filters are not documented on the official Search API. In this CLI they work through Kagi's live HTML/session flow using the `l`, `r`, `dr`, `from_date`, `to_date`, `order`, `verbatim`, and `personalized` query parameters.
 - The official Search API uses `Authorization: Bot <token>` on `https://kagi.com/api/v0/search`.
 - Search API access is still account-gated in practice, and API-token search can also fail for billing reasons.
 - Base-search fallback to session-token search happens on the user-facing `search` command only. `auth check` validates the selected primary credential without fallback.
@@ -43,6 +45,6 @@ This CLI also implements non-public or product-only seams:
 - The subscriber web Summarizer requires `KAGI_SESSION_TOKEN` and uses the authenticated `GET /mother/summary_labs?...` stream path instead of the public `/api/v0/summarize` endpoint.
 - Live verification on March 16, 2026 showed that `https://translate.kagi.com/api/auth` returns `null` even when the same `KAGI_SESSION_TOKEN` works on `kagi.com`.
 - Because the repo is marketed around Session Link auth, `translate` was removed from the CLI surface until that mismatch is solved.
-- Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt` with the same tagged stream protocol used by the web app.
+- Assistant requires `KAGI_SESSION_TOKEN` and currently targets `/assistant/prompt`, `/assistant/thread_list`, `/assistant/thread_open`, `/assistant/thread_delete`, and `/assistant/<thread_id>/download`.
 - Quick Answer requires `KAGI_SESSION_TOKEN` and currently targets `POST /mother/context?q=...` with `Accept: application/vnd.kagi.stream`.
 - News uses `https://news.kagi.com/api/...` JSON endpoints and does not require auth.

@@ -164,6 +164,9 @@ kagi search --format pretty "rust programming language"
 
 # Search with a lens (replace 2 with your lens index)
 kagi search --lens 2 "developer documentation"
+
+# Search with live session-only filters
+kagi search --region us --time month --order recency "rust release notes"
 ```
 
 **Search Demo:**
@@ -177,6 +180,12 @@ kagi quick --format pretty "what is rust"
 # Test Assistant
 kagi assistant "What are the key features of Rust?"
 
+# Ask Assistant about a page
+kagi ask-page https://rust-lang.org/ "What is this page about?"
+
+# List Assistant threads
+kagi assistant thread list
+
 # Test subscriber Summarizer
 kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
 ```
@@ -188,6 +197,10 @@ kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypo
 **Assistant Demo:**
 
 ![Assistant command demo](/images/demos/assistant.gif)
+
+**Ask Page Demo:**
+
+![Ask Page command demo](/images/demos/ask-page.gif)
 
 **Subscriber Summarize Demo:**
 
@@ -418,6 +431,7 @@ kagi news --list-categories # Show available news categories
 kagi search "query"                      # JSON output
 kagi search --format pretty "query"             # Human-readable
 kagi search --lens 2 "query"             # With lens
+kagi search --region us --time month "query"    # With live filters
 kagi search --lens 2 --format pretty "query"    # Combined
 ```
 

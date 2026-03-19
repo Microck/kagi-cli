@@ -15,7 +15,7 @@
 
 ---
 
-`kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, lenses, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, lenses, ask-page, assistant, summarization, feeds, and paid API commands. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
 the main setup path is your existing Kagi session-link URL. paste it into `kagi auth set --session-token` and the CLI extracts the token for you. if you also use Kagi's paid API, add `KAGI_API_TOKEN` and the public API commands are available too.
 
@@ -101,7 +101,7 @@ export KAGI_API_TOKEN='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search, `search --lens`, `quick`, `assistant`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
@@ -124,7 +124,7 @@ notes:
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
-- `search --lens` always requires `KAGI_SESSION_TOKEN`
+- `search --lens` and all runtime search filters require `KAGI_SESSION_TOKEN`
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.
@@ -133,13 +133,14 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 
 | command | purpose |
 | --- | --- |
-| `kagi search` | search Kagi with JSON by default or `--format pretty` for terminal output |
-| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output |
+| `kagi search` | search Kagi with JSON by default, optional live filters, or `--format pretty` for terminal output |
+| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
 | `kagi quick` | get a Quick Answer with references from the subscriber web product |
-| `kagi assistant` | prompt Kagi Assistant with a subscriber session token |
+| `kagi assistant` | prompt Kagi Assistant, continue threads, and manage thread list/export/delete with a subscriber session token |
+| `kagi ask-page` | ask Kagi Assistant about a specific web page |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
@@ -183,6 +184,12 @@ scope search to one of your lenses:
 kagi search --lens 2 "developer documentation"
 ```
 
+run a filtered search against the subscriber web-product path:
+
+```bash
+kagi search --region us --time month --order recency "rust release notes"
+```
+
 run a few searches in parallel:
 
 ```bash
@@ -199,6 +206,19 @@ continue research with assistant:
 
 ```bash
 kagi assistant "plan a focused research session in the terminal"
+```
+
+ask assistant about a page directly:
+
+```bash
+kagi ask-page https://rust-lang.org/ "What is this page about?"
+```
+
+list or export Assistant threads:
+
+```bash
+kagi assistant thread list
+kagi assistant thread export <THREAD_ID>
 ```
 
 get a quick answer with references:
@@ -234,11 +254,13 @@ kagi enrich news "browser privacy"
 
 ## what it looks like
 
-if you want a quick feel for the cli before installing it, this is the kind of output you get from quick answer, the subscriber summarizer, assistant, and public news feed:
+if you want a quick feel for the cli before installing it, this is the kind of output you get from quick answer, ask-page, the subscriber summarizer, assistant, and the public news feed:
 
 ![quick demo](images/demos/quick.gif)
 
 ![summarize demo](images/demos/summarize.gif)
+
+![ask-page demo](images/demos/ask-page.gif)
 
 ![assistant demo](images/demos/assistant.gif)
 

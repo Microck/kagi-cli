@@ -30,8 +30,10 @@ These features use the subscriber web product (Session Token):
 | Base Search | `kagi search` | ✅ Implemented (session path) |
 | Lens Search | `kagi search --lens` | ✅ Implemented |
 | Quick Answer | `kagi quick` | ✅ Implemented |
+| Filtered Search | `kagi search --region/--time/...` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
-| Assistant | `kagi assistant` | ✅ Implemented |
+| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
+| Ask Questions About a Page | `kagi ask-page` | ✅ Implemented |
 
 ### Public Product Endpoints
 
@@ -52,12 +54,14 @@ These require no authentication:
 |---------|-------------|------|--------|
 | `search` | Kagi search | API/Session | ✅ |
 | `search --lens` | Lens search | Session | ✅ |
+| `search` with filters | Search with region, time, date, order, verbatim, or personalization filters | Session | ✅ |
 | `auth` | Credential management | None | ✅ |
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
 | `quick` | Quick Answer | Session | ✅ |
-| `assistant` | AI assistant | Session | ✅ |
+| `assistant` | AI assistant with thread management | Session | ✅ |
+| `ask-page` | Page-focused Assistant question | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
@@ -69,6 +73,13 @@ These require no authentication:
 |--------|----------|--------|
 | `--format pretty` | search, batch, quick | ✅ |
 | `--lens` | search, batch, quick | ✅ |
+| `--region` | search, batch | ✅ |
+| `--time` | search, batch | ✅ |
+| `--from-date` | search, batch | ✅ |
+| `--to-date` | search, batch | ✅ |
+| `--order` | search, batch | ✅ |
+| `--verbatim` | search, batch | ✅ |
+| `--personalized` / `--no-personalized` | search, batch | ✅ |
 | `--limit` | news, smallweb | ✅ |
 | `--category` | news | ✅ |
 | `--list-categories` | news | ✅ |
@@ -82,7 +93,13 @@ These require no authentication:
 | `--cache` | summarize (API), fastgpt | ✅ |
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
+| `<URL> <QUESTION>` | ask-page | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
 | `--no-color` | search, batch, quick | ✅ |
 
 ## Not Available
@@ -123,7 +140,7 @@ These features were evaluated and left out of the public CLI surface:
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, quick, summarize --subscriber, assistant |
+| Session Token | ✅ | search, filtered search, quick, ask-page, summarize --subscriber, assistant |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -150,6 +167,7 @@ All commands output JSON:
 | news | Stable |
 | smallweb | Stable |
 | summarize | Stable |
+| ask-page | Stable |
 | assistant | Stable |
 | fastgpt | Stable |
 | enrich | Stable |
@@ -199,7 +217,9 @@ All commands output JSON:
 | Search | ✅ | ✅ |
 | Lens Search | ✅ | ✅ |
 | Quick Answer | ✅ | ✅ |
-| Assistant | ✅ (basic) | ✅ (full) |
+| Quick Answer | ✅ | ✅ |
+| Assistant | ✅ (prompt + threads) | ✅ (full) |
+| Ask Questions about Page | ✅ | ✅ |
 | Summarizer | ✅ | ✅ |
 | Translate | ❌ | ✅ |
 | Settings | ❌ | ✅ |
