@@ -251,6 +251,12 @@ kagi assistant "Hello" | jq -r '.message.markdown'
 # Ask-page markdown reply
 kagi ask-page https://rust-lang.org/ "What is this page about?" | jq -r '.message.markdown'
 
+# Assistant thread ids
+kagi assistant thread list | jq -r '.threads[].id'
+
+# Assistant thread export markdown
+kagi assistant thread export "$THREAD_ID"
+
 # Subscriber summary text
 kagi summarize --subscriber --url https://example.com | jq -r '.data.output'
 

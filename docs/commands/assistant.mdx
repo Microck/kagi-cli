@@ -1,11 +1,11 @@
 ---
 title: "assistant"
-description: "Complete reference for *kagi* assistant command - interact with Kagi AI Assistant programmatically."
+description: "Complete reference for *kagi* assistant command - prompt Kagi Assistant and manage Assistant threads."
 ---
 
 # `kagi assistant`
 
-Prompt Kagi Assistant and continue existing conversation threads from the terminal.
+Prompt Kagi Assistant, continue an existing thread, and manage thread list, export, and deletion from the terminal.
 
 ![Assistant demo](/images/demos/assistant.gif)
 
@@ -13,233 +13,216 @@ Prompt Kagi Assistant and continue existing conversation threads from the termin
 
 ```bash
 kagi assistant [OPTIONS] <QUERY>
+kagi assistant thread list
+kagi assistant thread get <THREAD_ID>
+kagi assistant thread delete <THREAD_ID>
+kagi assistant thread export <THREAD_ID> [--format markdown|json]
 ```
-
-## Description
-
-The `kagi assistant` command provides programmatic access to Kagi's AI Assistant feature. Send prompts, receive responses, and continue multi-turn conversations via thread continuation.
-
-This command is ideal for:
-- Quick questions without opening a browser
-- Building conversational workflows
-- Integrating Assistant replies into scripts
-- Continuing previous conversations
 
 ## Authentication
 
 **Required:** `KAGI_SESSION_TOKEN`
 
-The Assistant feature requires a Kagi subscription and session token authentication.
+The Assistant feature uses Kagi's authenticated web-product stream, not the paid public API token path.
 
-## Arguments
+## Prompt Mode
 
-### `<QUERY>` (Required)
+Use prompt mode to start a new thread or continue an existing one:
 
-The prompt or question to send to the Assistant.
-
-**Example:**
 ```bash
-kagi assistant "Explain recursion in Python"
-kagi assistant "What are the latest features in Rust?"
+kagi assistant "plan a focused research session in the terminal"
+kagi assistant --thread-id <THREAD_ID> "turn that into a 3-item checklist"
 ```
 
-## Options
+### Prompt Arguments
 
-### `--thread-id <THREAD_ID>`
+#### `<QUERY>`
 
-Continue an existing conversation thread.
+The prompt to send to Kagi Assistant.
 
-**Type:** String
-**Source:** Previous Assistant response
+#### `--thread-id <THREAD_ID>`
 
-**Example:**
+Continue an existing Assistant thread.
+
+#### `--model <MODEL>`
+
+Override the model slug for a single prompt.
+
+Example:
+
 ```bash
-# Start conversation
-kagi assistant "What is machine learning?"
-# Response includes: "thread_id": "abc123..."
-
-# Continue conversation
-kagi assistant --thread-id abc123 "Give me an example"
+kagi assistant --model gpt-5-mini "reply with only the model name"
 ```
 
-## Output Format
+#### `--lens <LENS_ID>`
+
+Override the Assistant lens id for a single prompt.
+
+This is the Assistant profile `lens_id`, not the search-command lens index used by `kagi search --lens`.
+
+#### `--web-access`
+#### `--no-web-access`
+
+Force internet access on or off for a single prompt.
+
+#### `--personalized`
+#### `--no-personalized`
+
+Force Kagi personalizations on or off for a single prompt.
+
+## Thread Subcommands
+
+### `kagi assistant thread list`
+
+List Assistant threads for the current account.
+
+```bash
+kagi assistant thread list | jq -r '.threads[].id'
+```
+
+### `kagi assistant thread get <THREAD_ID>`
+
+Fetch one thread with its messages.
+
+```bash
+kagi assistant thread get "$THREAD_ID"
+```
+
+### `kagi assistant thread delete <THREAD_ID>`
+
+Delete one thread.
+
+```bash
+kagi assistant thread delete "$THREAD_ID"
+```
+
+### `kagi assistant thread export <THREAD_ID>`
+
+Export one thread as markdown to stdout.
+
+```bash
+kagi assistant thread export "$THREAD_ID"
+```
+
+### `kagi assistant thread export <THREAD_ID> --format json`
+
+Return the thread as structured JSON instead of markdown. This emits the same envelope shape as `thread get`.
+
+```bash
+kagi assistant thread export "$THREAD_ID" --format json
+```
+
+## Output Contract
+
+Prompt mode returns:
 
 ```json
 {
   "meta": {
-    "version": "202603091651.stage.c128588",
+    "version": "202603171911.stage.707e740",
     "trace": "trace-123"
   },
   "thread": {
     "id": "thread-1",
     "title": "Greeting",
-    "created_at": "2026-03-16T06:19:07Z"
+    "ack": "2026-03-16T06:19:07Z",
+    "created_at": "2026-03-16T06:19:07Z",
+    "expires_at": "2026-03-16T07:19:07Z",
+    "saved": false,
+    "shared": false,
+    "branch_id": "00000000-0000-4000-0000-000000000000",
+    "tag_ids": []
   },
   "message": {
     "id": "msg-1",
     "thread_id": "thread-1",
     "created_at": "2026-03-16T06:19:07Z",
+    "branch_list": [],
     "state": "done",
     "prompt": "Hello",
-    "markdown": "Hi"
+    "reply_html": "<p>Hi</p>",
+    "markdown": "Hi",
+    "references_markdown": null,
+    "metadata_html": "<li>meta</li>",
+    "documents": [],
+    "profile": {
+      "model": "ki_quick",
+      "model_name": "Quick"
+    },
+    "trace_id": "trace-message-1"
   }
 }
 ```
 
-### Fields
+`thread list` returns:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `meta` | object | Stream metadata such as version and trace id |
-| `thread` | object | Thread metadata for continuation |
-| `message` | object | The assistant reply payload |
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "tags": [],
+  "threads": [
+    {
+      "id": "thread-1",
+      "title": "Greeting",
+      "url": "/assistant/thread-1",
+      "snippet": "Hello",
+      "saved": false,
+      "shared": false,
+      "tag_ids": []
+    }
+  ],
+  "pagination": {
+    "next_cursor": null,
+    "has_more": false,
+    "count": 1,
+    "total_counts": {
+      "all": 1
+    }
+  }
+}
+```
 
 ## Examples
 
-### Basic Queries
+Start a thread, capture the id, continue it, then export it:
 
 ```bash
-# Simple question
-kagi assistant "What is Docker?"
+RESPONSE=$(kagi assistant --model gpt-5-mini "plan a calm terminal research session in 3 bullets")
+THREAD_ID=$(printf '%s' "$RESPONSE" | jq -r '.thread.id')
 
-# Complex query
-kagi assistant "Explain the difference between concurrency and parallelism with examples"
-
-# Code help
-kagi assistant "How do I read a file in Python?"
+printf '%s\n' "$RESPONSE" | jq -r '.message.markdown'
+kagi assistant --thread-id "$THREAD_ID" "turn that into a 3-item checklist" | jq -r '.message.markdown'
+kagi assistant thread export "$THREAD_ID"
 ```
 
-### Conversation Chains
+List threads and inspect one:
 
 ```bash
-#!/bin/bash
-# Start a conversation
-THREAD_ID=$(kagi assistant "Explain quantum computing" | jq -r '.thread.id')
-
-# Continue with follow-up
-kagi assistant --thread-id "$THREAD_ID" "What are qubits?"
-
-# Another follow-up
-kagi assistant --thread-id "$THREAD_ID" "How are they different from classical bits?"
-
-echo "Thread ID for later: $THREAD_ID"
+kagi assistant thread list | jq -r '.threads[] | "\(.id) \(.title)"'
+kagi assistant thread get "$THREAD_ID" | jq '.messages | length'
 ```
 
-### Processing Output
+Use prompt controls for a one-off request:
 
 ```bash
-# Extract just the response
-kagi assistant "Hello" | jq -r '.message.markdown'
-
-# Save conversation
-kagi assistant "Explain Rust" > conversation.json
-
-# Extract thread ID for continuation
-THREAD_ID=$(kagi assistant "Initial prompt" | jq -r '.thread.id')
+kagi assistant \
+  --model gpt-5-mini \
+  --web-access \
+  --no-personalized \
+  "What changed in Rust 1.86?"
 ```
 
-### Building Tools
+## Notes
 
-```bash
-#!/bin/bash
-# ai-helper.sh - Quick AI assistance
-
-QUESTION="$1"
-if [ -z "$QUESTION" ]; then
-  echo "Usage: ai-helper.sh 'your question'"
-  exit 1
-fi
-
-echo "🤔 Asking Kagi Assistant..."
-kagi assistant "$QUESTION" | jq -r '.message.markdown'
-```
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success - response received |
-| 1 | Error - see stderr |
-
-**Common errors:**
-- Missing session token
-- Invalid thread ID
-- Rate limiting
-- Network error
-
-## Thread Management
-
-### Starting New Threads
-
-Each `kagi assistant` call without `--thread-id` starts a new conversation:
-
-```bash
-# Thread 1
-kagi assistant "Topic A"
-
-# Thread 2 (separate conversation)
-kagi assistant "Topic B"
-```
-
-### Continuing Threads
-
-Save the `thread.id` from responses to continue:
-
-```bash
-# Get thread ID
-RESPONSE=$(kagi assistant "Initial question")
-THREAD_ID=$(echo "$RESPONSE" | jq -r '.thread.id')
-
-# Continue same thread
-kagi assistant --thread-id "$THREAD_ID" "Follow-up question"
-```
-
-### Thread Persistence
-
-- Threads persist across CLI sessions
-- Threads are associated with your Kagi account
-- You can continue threads from the web interface
-- Thread IDs are alphanumeric strings
-
-## Best Practices
-
-### Clear Prompts
-
-```bash
-# Good - specific
-kagi assistant "Explain Python list comprehensions with three examples"
-
-# Less effective - vague
-kagi assistant "Python"
-```
-
-### Context Management
-
-```bash
-# Provide context in thread
-THREAD_ID=$(kagi assistant "I'm learning Rust" | jq -r '.thread.id')
-kagi assistant --thread-id "$THREAD_ID" "What are ownership and borrowing?"
-```
-
-### Error Handling
-
-```bash
-if RESPONSE=$(kagi assistant "Question" 2>/dev/null); then
-  echo "$RESPONSE" | jq -r '.message.markdown'
-else
-  echo "Failed to get response"
-fi
-```
-
-## Limitations
-
-- Requires active Kagi subscription
-- Subject to rate limits
-- Thread availability may vary
-- Response length may be limited
+- `kagi assistant` is JSON-first. There is no pretty renderer in this command.
+- `thread export` defaults to markdown because that is the natural terminal transcript format.
+- `--mode` is intentionally not exposed. The current web app resolves higher-level Assistant profiles client-side, and I did not find a stable request field that would make a trustworthy CLI contract.
 
 ## See Also
 
-- [fastgpt](/commands/fastgpt) - Quick answers via API
-- [Authentication](/guides/authentication) - Token setup
-- [Workflows](/guides/workflows) - Conversation and automation patterns
+- [fastgpt](/commands/fastgpt) - quick answers via the paid public API
+- [auth-matrix](/reference/auth-matrix) - which commands require which token
+- [output-contract](/reference/output-contract) - JSON shapes and jq examples

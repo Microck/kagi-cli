@@ -138,8 +138,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi auth` | inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
+| `kagi assistant` | prompt Kagi Assistant, continue threads, and manage thread list/export/delete with a subscriber session token |
 | `kagi ask-page` | ask Kagi Assistant about a specific web page |
-| `kagi assistant` | prompt Kagi Assistant with a subscriber session token |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
@@ -205,6 +205,13 @@ ask assistant about a page directly:
 
 ```bash
 kagi ask-page https://rust-lang.org/ "What is this page about?"
+```
+
+list or export Assistant threads:
+
+```bash
+kagi assistant thread list
+kagi assistant thread export <THREAD_ID>
 ```
 
 use the subscriber summarizer:
