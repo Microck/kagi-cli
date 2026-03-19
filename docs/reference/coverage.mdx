@@ -31,7 +31,8 @@ These features use the subscriber web product (Session Token):
 | Lens Search | `kagi search --lens` | ✅ Implemented |
 | Filtered Search | `kagi search --region/--time/...` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
-| Assistant | `kagi assistant` | ✅ Implemented |
+| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
+| Ask Questions About a Page | `kagi ask-page` | ✅ Implemented |
 
 ### Public Product Endpoints
 
@@ -57,7 +58,8 @@ These require no authentication:
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `news` | News feed | None | ✅ |
-| `assistant` | AI assistant | Session | ✅ |
+| `assistant` | AI assistant with thread management | Session | ✅ |
+| `ask-page` | Page-focused Assistant question | Session | ✅ |
 | `fastgpt` | Fast answers | API | ✅ |
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
@@ -89,7 +91,13 @@ These require no authentication:
 | `--cache` | summarize (API), fastgpt | ✅ |
 | `--web-search` | fastgpt | ✅ |
 | `--target-language` | summarize | ✅ |
+| `<URL> <QUESTION>` | ask-page | ✅ |
 | `--thread-id` | assistant | ✅ |
+| `--model` | assistant | ✅ |
+| `--lens` | assistant | ✅ |
+| `--web-access` / `--no-web-access` | assistant | ✅ |
+| `--personalized` / `--no-personalized` | assistant | ✅ |
+| `thread list/get/delete/export` | assistant | ✅ |
 
 ## Not Available
 
@@ -129,7 +137,7 @@ These features were evaluated and left out of the public CLI surface:
 
 | Type | Support | Commands |
 |------|---------|----------|
-| Session Token | ✅ | search, filtered search, summarize --subscriber, assistant |
+| Session Token | ✅ | search, filtered search, ask-page, summarize --subscriber, assistant |
 | API Token | ✅ | search, summarize, fastgpt, enrich |
 
 ### Authentication Patterns
@@ -154,6 +162,7 @@ All commands output JSON:
 | news | Stable |
 | smallweb | Stable |
 | summarize | Stable |
+| ask-page | Stable |
 | assistant | Stable |
 | fastgpt | Stable |
 | enrich | Stable |
@@ -200,7 +209,8 @@ All commands output JSON:
 |---------|-----|-----|
 | Search | ✅ | ✅ |
 | Lens Search | ✅ | ✅ |
-| Assistant | ✅ (basic) | ✅ (full) |
+| Assistant | ✅ (prompt + threads) | ✅ (full) |
+| Ask Questions about Page | ✅ | ✅ |
 | Summarizer | ✅ | ✅ |
 | Translate | ❌ | ✅ |
 | Settings | ❌ | ✅ |

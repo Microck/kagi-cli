@@ -1,0 +1,140 @@
+---
+title: "ask-page"
+description: "Complete reference for *kagi* ask-page command - ask Kagi Assistant about a specific web page."
+---
+
+# `kagi ask-page`
+
+Ask Kagi Assistant about a specific web page and return the new thread plus the answer as JSON.
+
+![Ask Page demo](/images/demos/ask-page.gif)
+
+## Synopsis
+
+```bash
+kagi ask-page <URL> <QUESTION>
+```
+
+## Description
+
+The `kagi ask-page` command starts a new Assistant thread focused on one page URL. It mirrors the live Kagi web flow used by “Continue in Assistant” from search results, but packages it as a direct CLI command.
+
+The response includes:
+
+- stream metadata
+- the normalized source URL and question
+- the created Assistant thread
+- the Assistant reply payload
+
+Use this command when you want page-specific follow-up without manually pasting the URL into a browser Assistant session.
+
+## Authentication
+
+**Required:** `KAGI_SESSION_TOKEN`
+
+This command uses the subscriber Assistant web-product flow.
+
+## Arguments
+
+### `<URL>` (Required)
+
+Absolute page URL to discuss.
+
+Constraints:
+
+- must be an absolute `http` or `https` URL
+- empty values are rejected
+
+Examples:
+
+```bash
+kagi ask-page https://rust-lang.org/ "What is this page about?"
+kagi ask-page https://kagi.com "Summarize the main product pitch"
+```
+
+### `<QUESTION>` (Required)
+
+Question to ask about the page.
+
+Examples:
+
+```bash
+kagi ask-page https://rust-lang.org/ "What learning resources does this page link to?"
+kagi ask-page https://example.com "Give me the core claim in one sentence"
+```
+
+## Output Format
+
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "source": {
+    "url": "https://rust-lang.org/",
+    "question": "What is this page about?"
+  },
+  "thread": {
+    "id": "thread-1",
+    "title": "Rust Programming Language Website",
+    "created_at": "2026-03-19T17:58:59Z"
+  },
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "state": "done",
+    "prompt": "https://rust-lang.org/\nWhat is this page about?",
+    "markdown": "This page is about the Rust programming language."
+  }
+}
+```
+
+## Examples
+
+### Basic Usage
+
+```bash
+kagi ask-page https://rust-lang.org/ "What is this page about?"
+```
+
+### Extract Only the Answer
+
+```bash
+kagi ask-page https://rust-lang.org/ "What is this page about?" \
+  | jq -r '.message.markdown'
+```
+
+### Continue the Thread in Assistant
+
+```bash
+THREAD_ID=$(
+  kagi ask-page https://rust-lang.org/ "What is this page about?" \
+    | jq -r '.thread.id'
+)
+
+kagi assistant --thread-id "$THREAD_ID" "What learning resources does it mention?"
+```
+
+### Save a Page Analysis
+
+```bash
+kagi ask-page https://example.com "Summarize the main argument" > page-analysis.json
+```
+
+## Error Cases
+
+Typical configuration errors:
+
+```text
+Config error: ask-page URL cannot be empty
+Config error: invalid ask-page URL: relative URL without a base
+Config error: ask-page URL must use http or https, got `file`
+Config error: ask-page question cannot be empty
+```
+
+## Notes
+
+- `ask-page` always starts a new Assistant thread in this version.
+- For follow-up questions, continue the returned thread with `kagi assistant --thread-id ...`.
+- The Assistant response keeps the combined prompt in `message.prompt`, while `source.url` and `source.question` preserve the original CLI inputs separately.

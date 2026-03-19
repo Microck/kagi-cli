@@ -177,6 +177,12 @@ kagi search --region us --time month --order recency "rust release notes"
 # Test Assistant
 kagi assistant "What are the key features of Rust?"
 
+# Ask Assistant about a page
+kagi ask-page https://rust-lang.org/ "What is this page about?"
+
+# List Assistant threads
+kagi assistant thread list
+
 # Test subscriber Summarizer
 kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypoints --length digest
 ```
@@ -184,6 +190,10 @@ kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypo
 **Assistant Demo:**
 
 ![Assistant command demo](/images/demos/assistant.gif)
+
+**Ask Page Demo:**
+
+![Ask Page command demo](/images/demos/ask-page.gif)
 
 **Subscriber Summarize Demo:**
 

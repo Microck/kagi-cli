@@ -20,6 +20,7 @@ This reference provides a complete mapping of which commands require which authe
 | `summarize` | `KAGI_API_TOKEN` | None | Paid public API |
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
 | `news` | None | None | Public endpoint |
+| `ask-page` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
 | `assistant` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
 | `fastgpt` | `KAGI_API_TOKEN` | None | Paid public API |
 | `enrich web` | `KAGI_API_TOKEN` | None | Paid public API |
@@ -125,6 +126,7 @@ flowchart TD
 
 | Command | Token | Purpose |
 |---------|-------|---------|
+| `ask-page` | `KAGI_SESSION_TOKEN` | Ask Assistant about one page URL |
 | `assistant` | `KAGI_SESSION_TOKEN` | Conversational AI with threads |
 | `fastgpt` | `KAGI_API_TOKEN` | Quick factual answers |
 
@@ -154,7 +156,8 @@ Requires `KAGI_SESSION_TOKEN`:
 
 - ✅ Lens-aware search (`--lens`)
 - ✅ Filtered search (`--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, personalization flags)
-- ✅ Kagi Assistant (`assistant`)
+- ✅ Kagi Assistant prompt and thread commands (`assistant`)
+- ✅ Ask Page (`ask-page`)
 - ✅ Subscriber Summarizer (`summarize --subscriber`)
 - ✅ Base search (fallback)
 
@@ -231,6 +234,8 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 - ✅ `kagi search "query"` (uses session path)
 - ✅ `kagi search --lens 2 "query"`
 - ✅ `kagi search --region us --time month "query"`
+- ✅ `kagi ask-page https://example.com "question"`
+- ✅ `kagi ask-page https://example.com "question"`
 - ✅ `kagi assistant "prompt"`
 - ✅ `kagi summarize --subscriber --url ...`
 - ✅ `kagi news`
@@ -259,6 +264,8 @@ kagi auth set --api-token 'your_api_token'
 **Non-working:**
 - ❌ `kagi search --lens 2` - requires session token
 - ❌ `kagi search --region us "query"` - requires session token
+- ❌ `kagi ask-page https://example.com "question"` - requires session token
+- ❌ `kagi ask-page https://example.com "question"` - requires session token
 - ❌ `kagi assistant` - requires session token
 - ❌ `kagi summarize --subscriber` - requires session token
 
@@ -276,6 +283,7 @@ kagi auth set --session-token '...' --api-token '...'
 - `search`: Uses API (preferred), falls back to session if needed
 - `summarize` without `--subscriber`: Uses API
 - `summarize --subscriber`: Uses session
+- `ask-page`: Uses session
 - `assistant`: Uses session
 - `fastgpt`: Uses API
 
