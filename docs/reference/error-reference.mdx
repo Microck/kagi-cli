@@ -176,6 +176,27 @@ rm ./.kagi.toml
 kagi auth set --session-token 'YOUR_TOKEN'
 ```
 
+### "translate bootstrap did not mint a translate_session cookie"
+
+**Meaning:** The translate site accepted the request but did not issue the session cookie the CLI needs for follow-on API calls.
+
+**Likely causes:**
+- `KAGI_SESSION_TOKEN` is invalid or expired
+- the current Kagi account state no longer authorizes Translate
+- Kagi changed the bootstrap cookie behavior
+
+**Solution:**
+```bash
+# refresh and save the current Session Link
+kagi auth set --session-token 'https://kagi.com/search?token=...'
+
+# verify the token still works for subscriber features
+kagi auth check
+
+# retry translate
+kagi translate "Bonjour tout le monde"
+```
+
 ## Command Errors
 
 ### "search filters require KAGI_SESSION_TOKEN"
@@ -279,6 +300,21 @@ Error: Config: --cache is only supported for the paid public summarizer API
 ```bash
 # Remove --subscriber flag
 kagi summarize --url https://example.com --cache false
+```
+
+### "translate --to cannot be 'auto'; pass an explicit target language code"
+
+**Message:**
+```text
+configuration error: translate --to cannot be 'auto'; pass an explicit target language code
+```
+
+**Meaning:** Translate can auto-detect the source language, but the target language must always be explicit.
+
+**Solution:**
+```bash
+kagi translate "Bonjour tout le monde" --to en
+kagi translate "Bonjour tout le monde" --to ja
 ```
 
 ### "--url or --text required"

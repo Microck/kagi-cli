@@ -462,3 +462,184 @@ pub struct QuickResponse {
     #[serde(default)]
     pub followup_questions: Vec<String>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TranslateCommandRequest {
+    pub text: String,
+    pub from: String,
+    pub to: String,
+    pub quality: Option<String>,
+    pub model: Option<String>,
+    pub prediction: Option<String>,
+    pub predicted_language: Option<String>,
+    pub formality: Option<String>,
+    pub speaker_gender: Option<String>,
+    pub addressee_gender: Option<String>,
+    pub language_complexity: Option<String>,
+    pub translation_style: Option<String>,
+    pub context: Option<String>,
+    pub dictionary_language: Option<String>,
+    pub time_format: Option<String>,
+    pub use_definition_context: Option<bool>,
+    pub enable_language_features: Option<bool>,
+    pub preserve_formatting: Option<bool>,
+    pub context_memory: Option<Vec<Value>>,
+    pub fetch_alternatives: bool,
+    pub fetch_word_insights: bool,
+    pub fetch_suggestions: bool,
+    pub fetch_alignments: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TranslateOptionState {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub formality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker_gender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addressee_gender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_complexity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateBootstrapMetadata {
+    pub method: String,
+    pub authenticated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateWarning {
+    pub section: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateDetectedLanguageAlternative {
+    pub iso: String,
+    pub label: String,
+    #[serde(default, rename = "isUncertain")]
+    pub is_uncertain: bool,
+    #[serde(default, rename = "isMixed")]
+    pub is_mixed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateDetectedLanguage {
+    pub iso: String,
+    pub label: String,
+    #[serde(default, rename = "isUncertain")]
+    pub is_uncertain: bool,
+    #[serde(default, rename = "isMixed")]
+    pub is_mixed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<TranslateDetectedLanguageAlternative>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslateTextResponse {
+    pub translation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detected_language: Option<TranslateDetectedLanguage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AlternativeTranslationElement {
+    pub translation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AlternativeTranslationsResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_description: Option<String>,
+    #[serde(default)]
+    pub elements: Vec<AlternativeTranslationElement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TextAlignmentsResponse {
+    #[serde(default)]
+    pub source_blocks: Vec<Value>,
+    #[serde(default)]
+    pub target_blocks: Vec<Value>,
+    #[serde(default)]
+    pub source_roles: Vec<Value>,
+    #[serde(default)]
+    pub target_roles: Vec<Value>,
+    #[serde(default)]
+    pub alignments: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslationSuggestion {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<Value>,
+    #[serde(default, rename = "exclusiveWith")]
+    pub exclusive_with: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslationSuggestionsResponse {
+    #[serde(default)]
+    pub suggestions: Vec<TranslationSuggestion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WordInsightVariation {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WordInsight {
+    pub id: String,
+    pub original_text: String,
+    pub r#type: String,
+    #[serde(default)]
+    pub variations: Vec<WordInsightVariation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WordInsightsResponse {
+    #[serde(default)]
+    pub insights: Vec<WordInsight>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marked_translation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslateResponse {
+    pub bootstrap: TranslateBootstrapMetadata,
+    pub detected_language: TranslateDetectedLanguage,
+    pub translation: TranslateTextResponse,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternatives: Option<AlternativeTranslationsResponse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_alignments: Option<TextAlignmentsResponse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_suggestions: Option<TranslationSuggestionsResponse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_insights: Option<WordInsightsResponse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<TranslateWarning>,
+}

@@ -87,6 +87,7 @@
               "commands/assistant",
               "commands/quick",
               "commands/ask-page",
+              "commands/translate",
               "commands/fastgpt",
               "commands/enrich"
             ]
