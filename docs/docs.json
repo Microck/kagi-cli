@@ -120,6 +120,7 @@
             "group": "Development",
             "pages": [
               "project/development",
+              "project/todo",
               "project/demos"
             ]
           },
