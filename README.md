@@ -293,11 +293,7 @@ kagi enrich news "browser privacy"
 
 if you want a quick feel for the cli before installing it, this is the kind of output you get from auth setup, quick answer, translate, ask-page, the subscriber summarizer, assistant, and the public news feed:
 
-![auth demo](images/demos/auth.gif)
-
 ![quick demo](images/demos/quick.gif)
-
-![translate demo](images/demos/translate.gif)
 
 ![summarize demo](images/demos/summarize.gif)
 
