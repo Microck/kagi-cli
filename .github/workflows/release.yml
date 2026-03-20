@@ -301,7 +301,8 @@ jobs:
           end
           EOF
 
-          cat > "$BUCKET_DIR/kagi.json" <<EOF
+          mkdir -p "$BUCKET_DIR/bucket"
+          cat > "$BUCKET_DIR/bucket/kagi.json" <<EOF
           {
             "version": "${VERSION}",
             "description": "Agent-native Rust CLI for Kagi subscribers with JSON-first output.",
@@ -338,7 +339,7 @@ jobs:
           git -C "$BUCKET_DIR" config user.name "Microck"
           git -C "$BUCKET_DIR" config user.email "contact@micr.dev"
           if ! git -C "$BUCKET_DIR" diff --quiet; then
-            git -C "$BUCKET_DIR" add kagi.json
+            git -C "$BUCKET_DIR" add bucket/kagi.json
             git -C "$BUCKET_DIR" commit -m "chore: update kagi manifest for ${RELEASE_TAG}"
             push_with_token "$BUCKET_DIR"
           fi

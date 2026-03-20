@@ -13,9 +13,9 @@ export PATH="/tmp/kagi-demo-bin:$PATH"
 
 printf '\033c'
 sleep 1.2
-printf '$ kagi translate "Bonjour tout le monde" --to ja | jq -M ...\n'
+printf '$ kagi translate "Hello, how are you today?" --to es | jq -M ...\n'
 sleep 0.4
-kagi translate "Bonjour tout le monde" --to ja \
+kagi translate "Hello, how are you today?" --to es \
   | jq -M '{
       detected_language: .detected_language.label,
       translation: .translation.translation,
