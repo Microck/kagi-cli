@@ -157,14 +157,45 @@ jobs:
         run: |
           sha256sum * > "kagi-${RELEASE_TAG}-checksums.txt"
 
+      - name: Generate release notes
+        env:
+          VERSION: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${VERSION#v}"
+          awk -v version="$VERSION" '
+            $0 == "## [" version "]" { in_section=1; print; next }
+            in_section && /^## \[/ { exit }
+            in_section { print }
+          ' CHANGELOG.md > dist/release-notes.md
+
+          if [ ! -s dist/release-notes.md ]; then
+            echo "Failed to extract release notes for ${VERSION} from CHANGELOG.md" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          notes = Path("dist/release-notes.md").read_text(encoding="utf-8")
+          Path("dist/release-notes.json").write_text(
+              json.dumps({"body": notes}),
+              encoding="utf-8",
+          )
+          PY
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            RELEASE_ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --method PATCH --input dist/release-notes.json
             gh release upload "$RELEASE_TAG" dist/* --clobber
           else
-            gh release create "$RELEASE_TAG" dist/* --generate-notes --verify-tag
+            gh release create "$RELEASE_TAG" dist/* --notes-file dist/release-notes.md --title "$RELEASE_TAG" --verify-tag
           fi
 
       - name: Sync Homebrew tap and Scoop bucket
