@@ -70,8 +70,6 @@ run the guided setup:
 kagi auth
 ```
 
-![auth demo](images/demos/auth.gif)
-
 the wizard is the default setup path. it guides you through:
 
 - `Session Link` from `https://kagi.com/settings/user_details`
@@ -156,10 +154,10 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi news` | read Kagi News from public JSON endpoints |
-| `kagi quick` | get a Quick Answer with references from the subscriber web product |
-| `kagi assistant` | prompt Kagi Assistant, continue threads, and manage thread list/export/delete with a subscriber session token |
+| `kagi quick` | get a Quick Answer with references |
+| `kagi assistant` | prompt Kagi Assistant, continue threads, and manage thread list/export/delete |
 | `kagi ask-page` | ask Kagi Assistant about a specific web page |
-| `kagi translate` | translate text through Kagi Translate with a subscriber session token |
+| `kagi translate` | translate text through Kagi Translate |
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
