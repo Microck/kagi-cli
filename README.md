@@ -55,11 +55,16 @@ npm install -g kagi-cli
 pnpm add -g kagi-cli
 bun add -g kagi-cli
 
+# homebrew
 brew tap Microck/kagi
 brew install kagi
 
+# scoop
 scoop bucket add kagi https://github.com/Microck/scoop-kagi
 scoop install kagi
+
+# AUR (arch linux)
+yay -S kagi-cli
 ```
 
 ### auth
