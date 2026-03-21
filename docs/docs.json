@@ -11,7 +11,7 @@
     "light": "/images/kagi-cli-logo-light.svg",
     "dark": "/images/kagi-cli-logo-dark.svg"
   },
-  "favicon": "https://litter.catbox.moe/rfjmzn6ddhrg0l0v.png",
+  "favicon": "/images/favicon.png",
   "seo": {
     "metatags": {
       "canonical": "https://kagi.micr.dev"
