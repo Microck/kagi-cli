@@ -797,7 +797,9 @@ async fn run_batch_search(
             .map(|(_, response)| serde_json::to_value(response))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| {
-                KagiError::Parse(format!("failed to serialize batch search response: {error}"))
+                KagiError::Parse(format!(
+                    "failed to serialize batch search response: {error}"
+                ))
             })?;
         let results_json = serde_json::json!({
             "queries": queries,

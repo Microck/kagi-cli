@@ -7,6 +7,17 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.3.2]
+
+### Added
+
+- Shared cached HTTP clients for the search, quick-answer, and API-backed command paths
+
+### Changed
+
+- Reduced CLI startup overhead by switching the runtime entrypoint to Tokio `current_thread`
+- Removed extra batch JSON serialization churn by keeping batch search responses structured until final output rendering
+
 ## [0.3.1]
 
 ### Added
