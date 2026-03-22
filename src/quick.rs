@@ -3,12 +3,12 @@ use scraper::Html;
 use serde::Deserialize;
 
 use crate::error::KagiError;
+use crate::http;
 use crate::search::{SearchRequest, validate_lens_value};
 use crate::types::{
     QuickMessage, QuickMeta, QuickReferenceCollection, QuickReferenceItem, QuickResponse,
 };
 
-const USER_AGENT: &str = "kagi-cli/0.1.0 (+https://github.com/)";
 const KAGI_QUICK_ANSWER_URL: &str = "https://kagi.com/mother/context";
 
 pub async fn execute_quick(
@@ -452,11 +452,7 @@ fn format_client_error_suffix(body: &str) -> String {
 }
 
 fn build_client() -> Result<Client, KagiError> {
-    Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))
+    http::client_30s()
 }
 
 fn map_transport_error(error: reqwest::Error) -> KagiError {

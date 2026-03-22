@@ -2,12 +2,12 @@ use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
 
 use crate::error::KagiError;
+use crate::http;
 use crate::parser::parse_search_results;
 use crate::types::{SearchResponse, SearchResult};
 
 const KAGI_SEARCH_URL: &str = "https://kagi.com/html/search";
 const KAGI_API_SEARCH_URL: &str = "https://kagi.com/api/v0/search";
-const USER_AGENT: &str = "kagi-cli/0.1.0 (+https://github.com/)";
 const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "<title>Kagi Search - A Premium Search Engine</title>",
     "Welcome to Kagi",
@@ -406,11 +406,7 @@ fn looks_unauthenticated(body: &str) -> bool {
 }
 
 fn build_client() -> Result<Client, KagiError> {
-    Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))
+    http::client_20s()
 }
 
 fn map_transport_error(error: reqwest::Error) -> KagiError {

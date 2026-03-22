@@ -3,6 +3,7 @@ mod auth;
 mod auth_wizard;
 mod cli;
 mod error;
+mod http;
 mod parser;
 mod quick;
 mod search;
@@ -53,7 +54,7 @@ struct SearchRequestOptions {
     no_personalized: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(error) = run().await {
         eprintln!("{error}");
@@ -746,10 +747,9 @@ async fn run_batch_search(
         let semaphore_clone = Arc::clone(&semaphore);
         let credentials_clone = credentials.clone();
         let options_clone = options.clone();
-        let format_clone = format.clone();
         let query_clone = query.clone();
 
-        let handle: tokio::task::JoinHandle<Result<(String, String), KagiError>> =
+        let handle: tokio::task::JoinHandle<Result<(String, SearchResponse), KagiError>> =
             tokio::spawn(async move {
                 let _permit = semaphore_clone.acquire().await;
                 rate_limiter_clone.acquire().await?;
@@ -758,19 +758,7 @@ async fn run_batch_search(
 
                 let response = execute_search_request(&request, credentials_clone).await?;
 
-                let output = match format_clone.as_str() {
-                    "pretty" => format_pretty_response(&response, use_color),
-                    "compact" => serde_json::to_string(&response).map_err(|error| {
-                        KagiError::Parse(format!("failed to serialize search response: {error}"))
-                    })?,
-                    "markdown" => format_markdown_response(&response),
-                    "csv" => format_csv_response(&response),
-                    _ => serde_json::to_string_pretty(&response).map_err(|error| {
-                        KagiError::Parse(format!("failed to serialize search response: {error}"))
-                    })?,
-                };
-
-                Ok((query, output))
+                Ok((query, response))
             });
 
         handles.push(handle);
@@ -804,23 +792,17 @@ async fn run_batch_search(
     if format == "json" || format == "compact" {
         // For machine-readable formats, create a proper JSON envelope
         let queries: Vec<String> = results.iter().map(|(query, _)| query.clone()).collect();
-        let mut results_json = serde_json::json!({
-            "queries": queries,
-            "results": []
-        });
-
-        let results_array = results_json["results"].as_array_mut().unwrap();
-
-        for (query, output) in results {
-            // Parse the individual JSON output and add to array
-            let parsed: serde_json::Value = serde_json::from_str(&output).map_err(|e| {
-                KagiError::Parse(format!(
-                    "failed to parse batch result for '{}': {}",
-                    query, e
-                ))
+        let results_payload = results
+            .into_iter()
+            .map(|(_, response)| serde_json::to_value(response))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                KagiError::Parse(format!("failed to serialize batch search response: {error}"))
             })?;
-            results_array.push(parsed);
-        }
+        let results_json = serde_json::json!({
+            "queries": queries,
+            "results": results_payload
+        });
 
         if format == "compact" {
             println!("{}", serde_json::to_string(&results_json)?);
@@ -829,7 +811,15 @@ async fn run_batch_search(
         }
     } else {
         // For human-readable formats, output with headers
-        for (query, output) in results {
+        for (query, response) in results {
+            let output = match format.as_str() {
+                "pretty" => format_pretty_response(&response, use_color),
+                "markdown" => format_markdown_response(&response),
+                "csv" => format_csv_response(&response),
+                _ => serde_json::to_string_pretty(&response).map_err(|error| {
+                    KagiError::Parse(format!("failed to serialize search response: {error}"))
+                })?,
+            };
             println!("=== Results for: {} ===", query);
             println!("{}", output);
             println!();

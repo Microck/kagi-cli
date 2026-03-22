@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use tokio::time::sleep;
 
 use crate::error::KagiError;
+use crate::http;
 use crate::parser::parse_assistant_thread_list;
 #[cfg(test)]
 use crate::types::ApiMeta;
@@ -31,11 +32,6 @@ use crate::types::{
     TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
-const USER_AGENT: &str = concat!(
-    "kagi-cli/",
-    env!("CARGO_PKG_VERSION"),
-    " (+https://github.com/Microck/kagi-cli)"
-);
 const KAGI_SUMMARIZE_URL: &str = "https://kagi.com/api/v0/summarize";
 const KAGI_SUBSCRIBER_SUMMARIZE_URL: &str = "https://kagi.com/mother/summary_labs";
 const KAGI_NEWS_LATEST_URL: &str = "https://news.kagi.com/api/batches/latest";
@@ -2179,11 +2175,7 @@ where
 }
 
 fn build_client() -> Result<Client, KagiError> {
-    Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))
+    http::client_30s()
 }
 
 fn map_transport_error(error: reqwest::Error) -> KagiError {
