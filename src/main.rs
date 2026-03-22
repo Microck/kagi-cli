@@ -54,7 +54,7 @@ struct SearchRequestOptions {
     no_personalized: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(error) = run().await {
         eprintln!("{error}");
