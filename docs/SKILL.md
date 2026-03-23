@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Kagi subscription for most features. Works on macOS, Linux, and Windows. Install via Homebrew, Scoop, npm, or direct script.
 metadata:
   author: Microck
-  version: "0.3.1"
+  version: "0.3.3"
   repository: https://github.com/Microck/kagi-cli
   npm: https://www.npmjs.com/package/kagi-cli
   docs: https://kagi.micr.dev
@@ -196,7 +196,7 @@ kagi summarize --url https://example.com --engine cecil
 
 ### kagi news
 
-Fetch Kagi News (public, no auth required).
+Fetch Kagi News (public, no auth required), optionally with local content filters.
 
 ```bash
 # Tech news
@@ -204,6 +204,15 @@ kagi news --category tech --limit 5
 
 # JSON output
 kagi news --category world | jq '.stories[0].title'
+
+# List built-in content-filter presets
+kagi news --list-filter-presets
+
+# Hide stories that match the politics preset
+kagi news --filter-preset politics
+
+# Keep matching stories in output, but tag them for downstream tools
+kagi news --filter-preset politics --filter-mode blur
 ```
 
 ### kagi smallweb

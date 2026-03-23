@@ -81,6 +81,38 @@ pub enum SearchTime {
     Year,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum NewsFilterMode {
+    Hide,
+    Blur,
+}
+
+impl NewsFilterMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Hide => "hide",
+            Self::Blur => "blur",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum NewsFilterScope {
+    Title,
+    Summary,
+    All,
+}
+
+impl NewsFilterScope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Title => "title",
+            Self::Summary => "summary",
+            Self::All => "all",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "kagi",
@@ -378,6 +410,56 @@ pub struct NewsArgs {
     /// Return only the current Kagi News chaos index
     #[arg(long, conflicts_with = "list_categories")]
     pub chaos: bool,
+
+    /// List built-in content-filter presets instead of stories
+    #[arg(long, conflicts_with_all = ["list_categories", "chaos"])]
+    pub list_filter_presets: bool,
+
+    /// Built-in content-filter preset id to apply
+    #[arg(long, value_name = "PRESET_ID")]
+    pub filter_preset: Vec<String>,
+
+    /// Custom keyword to filter out from the feed
+    #[arg(long, value_name = "KEYWORD")]
+    pub filter_keyword: Vec<String>,
+
+    /// Filter behavior for matching stories
+    #[arg(long, value_name = "MODE", value_enum, default_value = "hide")]
+    pub filter_mode: NewsFilterMode,
+
+    /// Story fields to inspect for keyword matches
+    #[arg(long, value_name = "SCOPE", value_enum, default_value = "all")]
+    pub filter_scope: NewsFilterScope,
+}
+
+impl NewsArgs {
+    pub fn validate(&self) -> Result<(), String> {
+        let has_filter_inputs = self.has_filter_inputs();
+        let has_non_default_filter_options =
+            self.filter_mode != NewsFilterMode::Hide || self.filter_scope != NewsFilterScope::All;
+
+        if (self.list_categories || self.chaos || self.list_filter_presets)
+            && (has_filter_inputs || has_non_default_filter_options)
+        {
+            return Err(
+                "news filters are not supported with --list-categories, --chaos, or --list-filter-presets"
+                    .to_string(),
+            );
+        }
+
+        if !has_filter_inputs && has_non_default_filter_options {
+            return Err(
+                "--filter-mode and --filter-scope require at least one --filter-preset or --filter-keyword"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn has_filter_inputs(&self) -> bool {
+        !self.filter_preset.is_empty() || !self.filter_keyword.is_empty()
+    }
 }
 
 #[derive(Debug, Args)]
@@ -612,4 +694,56 @@ pub struct SmallWebArgs {
     /// Limit number of feed entries returned by the Small Web feed
     #[arg(long, value_name = "COUNT")]
     pub limit: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NewsArgs, NewsFilterMode, NewsFilterScope};
+
+    fn sample_news_args() -> NewsArgs {
+        NewsArgs {
+            category: "world".to_string(),
+            limit: 12,
+            lang: "default".to_string(),
+            list_categories: false,
+            chaos: false,
+            list_filter_presets: false,
+            filter_preset: vec![],
+            filter_keyword: vec![],
+            filter_mode: NewsFilterMode::Hide,
+            filter_scope: NewsFilterScope::All,
+        }
+    }
+
+    #[test]
+    fn rejects_non_default_filter_options_without_inputs() {
+        let mut args = sample_news_args();
+        args.filter_mode = NewsFilterMode::Blur;
+
+        let error = args
+            .validate()
+            .expect_err("non-default filter mode should require filter inputs");
+        assert!(error.contains("--filter-mode and --filter-scope require"));
+    }
+
+    #[test]
+    fn rejects_filters_with_listing_modes() {
+        let mut args = sample_news_args();
+        args.list_filter_presets = true;
+        args.filter_keyword = vec!["trump".to_string()];
+
+        let error = args
+            .validate()
+            .expect_err("filter inputs should conflict with preset listing");
+        assert!(error.contains("news filters are not supported"));
+    }
+
+    #[test]
+    fn accepts_filter_inputs_with_default_mode_and_scope() {
+        let mut args = sample_news_args();
+        args.filter_preset = vec!["politics".to_string()];
+
+        assert!(args.validate().is_ok());
+        assert!(args.has_filter_inputs());
+    }
 }

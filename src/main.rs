@@ -13,11 +13,11 @@ use clap::{CommandFactory, Parser};
 use clap_complete::{generate, shells};
 
 use crate::api::{
-    execute_ask_page, execute_assistant_prompt, execute_assistant_thread_delete,
+    NewsFilterRequest, execute_ask_page, execute_assistant_prompt, execute_assistant_thread_delete,
     execute_assistant_thread_export, execute_assistant_thread_get, execute_assistant_thread_list,
     execute_enrich_news, execute_enrich_web, execute_fastgpt, execute_news,
-    execute_news_categories, execute_news_chaos, execute_smallweb, execute_subscriber_summarize,
-    execute_summarize, execute_translate,
+    execute_news_categories, execute_news_chaos, execute_news_filter_presets, execute_smallweb,
+    execute_subscriber_summarize, execute_summarize, execute_translate,
 };
 use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
@@ -162,14 +162,31 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::News(args) => {
+            args.validate().map_err(KagiError::Config)?;
+
             if args.list_categories {
                 let response = execute_news_categories(&args.lang).await?;
                 print_json(&response)
             } else if args.chaos {
                 let response = execute_news_chaos(&args.lang).await?;
                 print_json(&response)
+            } else if args.list_filter_presets {
+                let response = execute_news_filter_presets(&args.lang)?;
+                print_json(&response)
             } else {
-                let response = execute_news(&args.category, args.limit, &args.lang).await?;
+                let filter_request = args.has_filter_inputs().then(|| NewsFilterRequest {
+                    preset_ids: args.filter_preset.clone(),
+                    keywords: args.filter_keyword.clone(),
+                    mode: args.filter_mode,
+                    scope: args.filter_scope,
+                });
+                let response = execute_news(
+                    &args.category,
+                    args.limit,
+                    &args.lang,
+                    filter_request.as_ref(),
+                )
+                .await?;
                 print_json(&response)
             }
         }

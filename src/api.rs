@@ -12,6 +12,7 @@ use serde_json::json;
 use serde_json::{Map, Value};
 use tokio::time::sleep;
 
+use crate::cli::{NewsFilterMode, NewsFilterScope};
 use crate::error::KagiError;
 use crate::http;
 use crate::parser::parse_assistant_thread_list;
@@ -24,12 +25,13 @@ use crate::types::{
     AssistantThreadListResponse, AssistantThreadOpenResponse, AssistantThreadPagination,
     EnrichResponse, FastGptRequest, FastGptResponse, NewsBatchCategories, NewsBatchCategory,
     NewsCategoriesResponse, NewsCategoryMetadata, NewsCategoryMetadataList, NewsChaos,
-    NewsChaosResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
-    NewsStoriesResponse, SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta,
-    SubscriberSummarizeRequest, SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse,
-    TextAlignmentsResponse, TranslateBootstrapMetadata, TranslateCommandRequest,
-    TranslateDetectedLanguage, TranslateOptionState, TranslateResponse, TranslateTextResponse,
-    TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
+    NewsChaosResponse, NewsContentFilterSummary, NewsFilterPresetListEntry,
+    NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
+    NewsStoriesResponse, NewsStoryContentFilterSummary, SmallWebFeed, SubscriberSummarization,
+    SubscriberSummarizeMeta, SubscriberSummarizeRequest, SubscriberSummarizeResponse,
+    SummarizeRequest, SummarizeResponse, TextAlignmentsResponse, TranslateBootstrapMetadata,
+    TranslateCommandRequest, TranslateDetectedLanguage, TranslateOptionState, TranslateResponse,
+    TranslateTextResponse, TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
 const KAGI_SUMMARIZE_URL: &str = "https://kagi.com/api/v0/summarize";
@@ -37,6 +39,7 @@ const KAGI_SUBSCRIBER_SUMMARIZE_URL: &str = "https://kagi.com/mother/summary_lab
 const KAGI_NEWS_LATEST_URL: &str = "https://news.kagi.com/api/batches/latest";
 const KAGI_NEWS_CATEGORIES_METADATA_URL: &str = "https://news.kagi.com/api/categories/metadata";
 const KAGI_NEWS_BATCH_CATEGORIES_URL: &str = "https://news.kagi.com/api/batches";
+const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
 const KAGI_ASSISTANT_PROMPT_URL: &str = "https://kagi.com/assistant/prompt";
 const KAGI_ASSISTANT_THREAD_OPEN_URL: &str = "https://kagi.com/assistant/thread_open";
 const KAGI_ASSISTANT_THREAD_LIST_URL: &str = "https://kagi.com/assistant/thread_list";
@@ -57,6 +60,14 @@ const ASSISTANT_ZERO_BRANCH_UUID: &str = "00000000-0000-4000-0000-000000000000";
 const TRANSLATE_BOOTSTRAP_MAX_ATTEMPTS: usize = 3;
 const TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR: &str =
     "translate bootstrap did not mint a translate_session cookie";
+
+#[derive(Debug, Clone)]
+pub struct NewsFilterRequest {
+    pub preset_ids: Vec<String>,
+    pub keywords: Vec<String>,
+    pub mode: NewsFilterMode,
+    pub scope: NewsFilterScope,
+}
 
 pub async fn execute_summarize(
     request: &SummarizeRequest,
@@ -155,6 +166,7 @@ pub async fn execute_news(
     category: &str,
     limit: u32,
     lang: &str,
+    filter_request: Option<&NewsFilterRequest>,
 ) -> Result<NewsStoriesResponse, KagiError> {
     if limit == 0 {
         return Err(KagiError::Config(
@@ -214,14 +226,42 @@ pub async fn execute_news(
         "news stories",
     )
     .await?;
+    let (stories, content_filter) = match filter_request {
+        Some(request) => {
+            let filtered = apply_news_content_filters(payload.stories, request, &normalized_lang)?;
+            (filtered.stories, Some(filtered.summary))
+        }
+        None => (payload.stories, None),
+    };
 
     Ok(NewsStoriesResponse {
         latest_batch,
         category,
-        stories: payload.stories,
+        stories,
         total_stories: payload.total_stories,
         domains: payload.domains,
         read_count: payload.read_count,
+        content_filter,
+    })
+}
+
+pub fn execute_news_filter_presets(lang: &str) -> Result<NewsFilterPresetListResponse, KagiError> {
+    let normalized_lang = normalize_news_lang(lang);
+    let presets = load_news_filter_presets()?;
+
+    Ok(NewsFilterPresetListResponse {
+        language: normalized_lang.clone(),
+        presets: presets
+            .into_iter()
+            .map(|preset| {
+                let keywords = preset.resolve_keywords(&normalized_lang);
+                NewsFilterPresetListEntry {
+                    id: preset.id,
+                    label: preset.label,
+                    keywords,
+                }
+            })
+            .collect(),
     })
 }
 
@@ -1052,6 +1092,255 @@ fn normalize_news_lang(raw: &str) -> String {
     } else {
         normalized.to_string()
     }
+}
+
+fn load_news_filter_presets() -> Result<Vec<NewsFilterPresetDefinition>, KagiError> {
+    serde_json::from_str::<NewsFilterPresetFile>(NEWS_FILTER_PRESETS_JSON)
+        .map(|payload| payload.filters)
+        .map_err(|error| {
+            KagiError::Parse(format!(
+                "failed to parse vendored news filter presets: {error}"
+            ))
+        })
+}
+
+fn apply_news_content_filters(
+    stories: Vec<Value>,
+    request: &NewsFilterRequest,
+    lang: &str,
+) -> Result<AppliedNewsFilter, KagiError> {
+    let resolved = resolve_news_filter_request(request, lang)?;
+    let mut visible_stories = Vec::with_capacity(stories.len());
+    let mut filtered_count = 0_u64;
+
+    for mut story in stories {
+        let matched_keywords =
+            match_news_story_keywords(&story, &resolved.active_keywords, resolved.scope);
+        if matched_keywords.is_empty() {
+            visible_stories.push(story);
+            continue;
+        }
+
+        filtered_count += 1;
+        match resolved.mode {
+            NewsFilterMode::Hide => {}
+            NewsFilterMode::Blur => {
+                annotate_news_story_with_filter(&mut story, &matched_keywords);
+                visible_stories.push(story);
+            }
+        }
+    }
+
+    Ok(AppliedNewsFilter {
+        stories: visible_stories,
+        summary: NewsContentFilterSummary {
+            mode: resolved.mode.as_str().to_string(),
+            scope: resolved.scope.as_str().to_string(),
+            active_presets: resolved.active_presets,
+            custom_keywords: resolved.custom_keywords,
+            active_keywords: resolved.active_keywords,
+            filtered_count,
+        },
+    })
+}
+
+fn resolve_news_filter_request(
+    request: &NewsFilterRequest,
+    lang: &str,
+) -> Result<ResolvedNewsFilter, KagiError> {
+    if request.preset_ids.is_empty() && request.keywords.is_empty() {
+        return Err(KagiError::Config(
+            "news filters require at least one --filter-preset or --filter-keyword".to_string(),
+        ));
+    }
+
+    let presets = load_news_filter_presets()?;
+    let valid_ids = presets
+        .iter()
+        .map(|preset| preset.id.as_str())
+        .collect::<Vec<_>>();
+    let mut active_presets = Vec::new();
+    let mut active_keywords = Vec::new();
+
+    for preset_id in &request.preset_ids {
+        let normalized_preset_id = preset_id.trim();
+        if normalized_preset_id.is_empty() {
+            return Err(KagiError::Config(
+                "news filter preset id cannot be empty".to_string(),
+            ));
+        }
+
+        let preset = presets
+            .iter()
+            .find(|preset| preset.id.eq_ignore_ascii_case(normalized_preset_id))
+            .ok_or_else(|| {
+                KagiError::Config(format!(
+                    "unknown news filter preset '{normalized_preset_id}'. Run `kagi news --list-filter-presets` to inspect available presets. Valid preset ids: {}",
+                    valid_ids.join(", ")
+                ))
+            })?;
+
+        push_unique_string(&mut active_presets, preset.id.clone());
+        for keyword in preset.resolve_keywords(lang) {
+            if let Some(normalized_keyword) = normalize_news_filter_keyword(&keyword) {
+                push_unique_string(&mut active_keywords, normalized_keyword);
+            }
+        }
+    }
+
+    let mut custom_keywords = Vec::new();
+    for keyword in &request.keywords {
+        if let Some(normalized_keyword) = normalize_news_filter_keyword(keyword) {
+            push_unique_string(&mut custom_keywords, normalized_keyword.clone());
+            push_unique_string(&mut active_keywords, normalized_keyword);
+        }
+    }
+
+    if active_keywords.is_empty() {
+        return Err(KagiError::Config(
+            "news filters require at least one non-empty keyword".to_string(),
+        ));
+    }
+
+    Ok(ResolvedNewsFilter {
+        active_presets,
+        custom_keywords,
+        active_keywords,
+        mode: request.mode,
+        scope: request.scope,
+    })
+}
+
+fn normalize_news_filter_keyword(raw: &str) -> Option<String> {
+    let normalized = raw.trim().to_lowercase();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn push_unique_string(values: &mut Vec<String>, candidate: String) {
+    if !values.contains(&candidate) {
+        values.push(candidate);
+    }
+}
+
+fn match_news_story_keywords(
+    story: &Value,
+    keywords: &[String],
+    scope: NewsFilterScope,
+) -> Vec<String> {
+    if keywords.is_empty() {
+        return vec![];
+    }
+
+    let searchable_text = collect_news_story_text(story, scope);
+    if searchable_text.is_empty() {
+        return vec![];
+    }
+    let lowered_text = searchable_text.to_lowercase();
+
+    keywords
+        .iter()
+        .filter(|keyword| text_contains_news_filter_keyword(&lowered_text, keyword))
+        .cloned()
+        .collect()
+}
+
+fn collect_news_story_text(story: &Value, scope: NewsFilterScope) -> String {
+    let mut parts = Vec::new();
+
+    if matches!(scope, NewsFilterScope::Title | NewsFilterScope::All) {
+        push_story_string_field(story, "title", &mut parts);
+        push_story_string_field(story, "category", &mut parts);
+    }
+
+    if matches!(scope, NewsFilterScope::Summary | NewsFilterScope::All) {
+        push_story_string_field(story, "short_summary", &mut parts);
+    }
+
+    if matches!(scope, NewsFilterScope::All) {
+        if let Some(perspectives) = story.get("perspectives").and_then(Value::as_array) {
+            for perspective in perspectives {
+                push_story_string_field(perspective, "text", &mut parts);
+                if let Some(sources) = perspective.get("sources").and_then(Value::as_array) {
+                    for source in sources {
+                        push_story_string_field(source, "name", &mut parts);
+                    }
+                }
+            }
+        }
+
+        if let Some(domains) = story.get("domains").and_then(Value::as_array) {
+            for domain in domains {
+                push_story_string_field(domain, "name", &mut parts);
+            }
+        }
+
+        if let Some(articles) = story.get("articles").and_then(Value::as_array) {
+            for article in articles {
+                push_story_string_field(article, "link", &mut parts);
+                push_story_string_field(article, "domain", &mut parts);
+            }
+        }
+    }
+
+    parts.join(" ")
+}
+
+fn push_story_string_field(value: &Value, field: &str, parts: &mut Vec<String>) {
+    if let Some(text) = value.get(field).and_then(Value::as_str) {
+        let normalized = text.trim();
+        if !normalized.is_empty() {
+            parts.push(normalized.to_string());
+        }
+    }
+}
+
+fn text_contains_news_filter_keyword(text: &str, keyword: &str) -> bool {
+    if keyword.is_empty() {
+        return false;
+    }
+
+    for (index, _) in text.match_indices(keyword) {
+        let start_ok = text[..index]
+            .chars()
+            .next_back()
+            .map(|ch| !is_news_filter_word_char(ch))
+            .unwrap_or(true);
+        let end_index = index + keyword.len();
+        let end_ok = text[end_index..]
+            .chars()
+            .next()
+            .map(|ch| !is_news_filter_word_char(ch))
+            .unwrap_or(true);
+
+        if start_ok && end_ok {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_news_filter_word_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn annotate_news_story_with_filter(story: &mut Value, matched_keywords: &[String]) {
+    let Some(object) = story.as_object_mut() else {
+        return;
+    };
+
+    object.insert(
+        "_content_filter".to_string(),
+        serde_json::to_value(NewsStoryContentFilterSummary {
+            mode: NewsFilterMode::Blur.as_str().to_string(),
+            matched_keywords: matched_keywords.to_vec(),
+        })
+        .expect("news story filter metadata should serialize"),
+    );
 }
 
 fn merge_news_category(
@@ -2064,6 +2353,54 @@ struct TranslateBootstrapResult {
     method: String,
 }
 
+#[derive(Debug, Clone)]
+struct AppliedNewsFilter {
+    stories: Vec<Value>,
+    summary: NewsContentFilterSummary,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedNewsFilter {
+    active_presets: Vec<String>,
+    custom_keywords: Vec<String>,
+    active_keywords: Vec<String>,
+    mode: NewsFilterMode,
+    scope: NewsFilterScope,
+}
+
+#[derive(Debug, Deserialize)]
+struct NewsFilterPresetFile {
+    filters: Vec<NewsFilterPresetDefinition>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct NewsFilterPresetDefinition {
+    id: String,
+    label: String,
+    keywords: NewsFilterPresetKeywords,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum NewsFilterPresetKeywords {
+    Flat(Vec<String>),
+    Localized(HashMap<String, Vec<String>>),
+}
+
+impl NewsFilterPresetDefinition {
+    fn resolve_keywords(&self, language: &str) -> Vec<String> {
+        match &self.keywords {
+            NewsFilterPresetKeywords::Flat(keywords) => keywords.clone(),
+            NewsFilterPresetKeywords::Localized(map) => map
+                .get(language)
+                .or_else(|| map.get("default"))
+                .or_else(|| map.get("en"))
+                .cloned()
+                .unwrap_or_default(),
+        }
+    }
+}
+
 async fn decode_kagi_json<T>(response: reqwest::Response, surface: &str) -> Result<T, KagiError>
 where
     T: DeserializeOwned,
@@ -2200,25 +2537,28 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, KagiEnvelope, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR,
-        TranslateSuggestionContext, build_ask_page_prompt, build_translate_option_state,
-        build_translate_payload, build_translate_suggestions_payload,
+        ApiErrorBody, KagiEnvelope, NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR,
+        TranslateSuggestionContext, apply_news_content_filters, build_ask_page_prompt,
+        build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
-        effective_translate_source_language, extract_set_cookie_value, fake_header_map,
-        finalize_translate_text_response, normalize_ask_page_question, normalize_ask_page_url,
-        normalize_assistant_query, normalize_assistant_thread_id, normalize_aux_quality,
-        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_prompt_stream,
-        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
-        parse_assistant_thread_open_stream, parse_content_disposition_filename,
-        parse_subscriber_summarize_stream, parse_translate_detect_value, resolve_news_category,
-        resolve_translate_bootstrap, should_retry_translate_bootstrap, validate_translate_request,
+        effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
+        fake_header_map, finalize_translate_text_response, normalize_ask_page_question,
+        normalize_ask_page_url, normalize_assistant_query, normalize_assistant_thread_id,
+        normalize_aux_quality, normalize_subscriber_summary_input,
+        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
+        parse_assistant_prompt_stream, parse_assistant_thread_delete_stream,
+        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
+        parse_content_disposition_filename, parse_subscriber_summarize_stream,
+        parse_translate_detect_value, resolve_news_category, resolve_translate_bootstrap,
+        should_retry_translate_bootstrap, text_contains_news_filter_keyword,
+        validate_translate_request,
     };
     use crate::api::{
         execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
         execute_assistant_thread_get, execute_assistant_thread_list,
     };
     use crate::auth::{SESSION_TOKEN_ENV, load_credential_inventory, normalize_session_token};
+    use crate::cli::{NewsFilterMode, NewsFilterScope};
     use crate::error::KagiError;
     use crate::types::{AskPageRequest, SubscriberSummarizeRequest};
     use crate::types::{
@@ -2473,6 +2813,135 @@ mod tests {
         assert_eq!(resolved.id, "batch-world");
         assert_eq!(resolved.category_id, "world");
         assert_eq!(resolved.metadata.expect("metadata").category_type, "core");
+    }
+
+    #[test]
+    fn lists_news_filter_presets_with_language_fallback() {
+        let response = execute_news_filter_presets("xx").expect("preset list should load");
+        let politics = response
+            .presets
+            .iter()
+            .find(|preset| preset.id == "politics")
+            .expect("politics preset should exist");
+
+        assert_eq!(response.language, "xx");
+        assert_eq!(politics.label, "Politics");
+        assert!(politics.keywords.contains(&"trump".to_string()));
+    }
+
+    #[test]
+    fn news_filter_keyword_matching_respects_word_boundaries() {
+        assert!(text_contains_news_filter_keyword(
+            "trump and iran trade threats",
+            "trump"
+        ));
+        assert!(!text_contains_news_filter_keyword(
+            "the strumpet headline",
+            "trump"
+        ));
+        assert!(text_contains_news_filter_keyword(
+            "u.s. adults remain concerned",
+            "u.s."
+        ));
+    }
+
+    #[test]
+    fn hide_mode_omits_matching_news_stories() {
+        let stories = vec![
+            json!({
+                "title": "Trump and Iran trade threats",
+                "category": "Middle East",
+                "short_summary": "Escalation in the strait."
+            }),
+            json!({
+                "title": "Satellite launch succeeds",
+                "category": "Science",
+                "short_summary": "A quiet day for spaceflight."
+            }),
+        ];
+        let filtered = apply_news_content_filters(
+            stories,
+            &NewsFilterRequest {
+                preset_ids: vec![],
+                keywords: vec!["trump".to_string()],
+                mode: NewsFilterMode::Hide,
+                scope: NewsFilterScope::All,
+            },
+            "en",
+        )
+        .expect("hide mode should succeed");
+
+        assert_eq!(filtered.stories.len(), 1);
+        assert_eq!(filtered.summary.mode, "hide");
+        assert_eq!(filtered.summary.scope, "all");
+        assert_eq!(filtered.summary.filtered_count, 1);
+        assert_eq!(filtered.summary.active_keywords, vec!["trump".to_string()]);
+        assert_eq!(filtered.stories[0]["title"], "Satellite launch succeeds");
+    }
+
+    #[test]
+    fn blur_mode_tags_matching_news_stories() {
+        let stories = vec![
+            json!({
+                "title": "Election coverage intensifies",
+                "category": "Politics",
+                "short_summary": "Candidates enter the final stretch."
+            }),
+            json!({
+                "title": "Mars rover finds new rock sample",
+                "category": "Science",
+                "short_summary": "Planetary geology keeps moving."
+            }),
+        ];
+        let filtered = apply_news_content_filters(
+            stories,
+            &NewsFilterRequest {
+                preset_ids: vec![],
+                keywords: vec!["election".to_string()],
+                mode: NewsFilterMode::Blur,
+                scope: NewsFilterScope::All,
+            },
+            "en",
+        )
+        .expect("blur mode should succeed");
+
+        assert_eq!(filtered.stories.len(), 2);
+        assert_eq!(filtered.summary.mode, "blur");
+        assert_eq!(filtered.summary.filtered_count, 1);
+        assert_eq!(
+            filtered.stories[0]["_content_filter"]["mode"],
+            Value::String("blur".to_string())
+        );
+        assert_eq!(
+            filtered.stories[0]["_content_filter"]["matched_keywords"],
+            json!(["election"])
+        );
+        assert!(filtered.stories[1].get("_content_filter").is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_news_filter_preset() {
+        let error = apply_news_content_filters(
+            vec![json!({
+                "title": "Example",
+                "category": "World",
+                "short_summary": "Summary"
+            })],
+            &NewsFilterRequest {
+                preset_ids: vec!["not-a-real-preset".to_string()],
+                keywords: vec![],
+                mode: NewsFilterMode::Hide,
+                scope: NewsFilterScope::All,
+            },
+            "en",
+        )
+        .expect_err("unknown presets should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("unknown news filter preset 'not-a-real-preset'")
+        );
     }
 
     #[test]

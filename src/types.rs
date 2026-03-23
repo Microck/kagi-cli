@@ -209,6 +209,8 @@ pub struct NewsStoriesResponse {
     #[serde(default)]
     pub domains: Vec<Value>,
     pub read_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_filter: Option<NewsContentFilterSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -225,6 +227,35 @@ pub struct NewsChaos {
 pub struct NewsChaosResponse {
     pub latest_batch: NewsLatestBatch,
     pub chaos: NewsChaos,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NewsFilterPresetListEntry {
+    pub id: String,
+    pub label: String,
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NewsFilterPresetListResponse {
+    pub language: String,
+    pub presets: Vec<NewsFilterPresetListEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NewsContentFilterSummary {
+    pub mode: String,
+    pub scope: String,
+    pub active_presets: Vec<String>,
+    pub custom_keywords: Vec<String>,
+    pub active_keywords: Vec<String>,
+    pub filtered_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NewsStoryContentFilterSummary {
+    pub mode: String,
+    pub matched_keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

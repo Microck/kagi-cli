@@ -1,6 +1,6 @@
 ---
 title: "news"
-description: "Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category filtering."
+description: "Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category and content filtering."
 ---
 
 # `kagi news`
@@ -19,7 +19,7 @@ kagi news [OPTIONS]
 
 The `kagi news` command fetches the latest news from Kagi's public news endpoints. Unlike search commands, this requires no authentication and can be used immediately after installation.
 
-Kagi News provides a curated selection of important stories across various categories, updated throughout the day.
+Kagi News provides a curated selection of important stories across various categories, updated throughout the day. You can also apply local content filters with built-in presets or custom keywords before the CLI emits JSON.
 
 ## Authentication
 
@@ -95,6 +95,69 @@ The chaos index measures the level of disruption and uncertainty in current news
 kagi news --chaos
 ```
 
+### `--list-filter-presets`
+
+List built-in content-filter presets instead of fetching stories.
+
+**Example:**
+```bash
+kagi news --list-filter-presets
+kagi news --list-filter-presets --lang en | jq '.presets[].id'
+```
+
+### `--filter-preset <PRESET_ID>`
+
+Apply a built-in content-filter preset. Repeat the flag to combine multiple presets.
+
+Use `kagi news --list-filter-presets` to inspect available ids.
+
+**Example:**
+```bash
+kagi news --filter-preset politics
+kagi news --filter-preset politics --filter-preset conflicts
+```
+
+### `--filter-keyword <KEYWORD>`
+
+Apply a custom filter keyword. Repeat the flag to combine multiple keywords.
+
+**Example:**
+```bash
+kagi news --filter-keyword trump
+kagi news --filter-keyword trump --filter-keyword election
+```
+
+### `--filter-mode <MODE>`
+
+How to handle matching stories.
+
+**Default:** `hide`
+**Values:** `hide`, `blur`
+
+- `hide` removes matching stories from `.stories`
+- `blur` keeps matching stories in `.stories` and tags them with `_content_filter`
+
+**Example:**
+```bash
+kagi news --filter-preset politics --filter-mode blur
+```
+
+### `--filter-scope <SCOPE>`
+
+Which story fields to inspect for keyword matches.
+
+**Default:** `all`
+**Values:** `title`, `summary`, `all`
+
+- `title` checks title and category
+- `summary` checks `short_summary`
+- `all` also checks perspectives, source names, story domains, and article links/domains
+
+**Example:**
+```bash
+kagi news --filter-keyword trump --filter-scope title
+```
+
 ## Output Format
 
 ### News Response
@@ -112,7 +175,15 @@ kagi news --chaos
   "stories": [],
   "total_stories": "20",
   "domains": [],
-  "read_count": 1234
+  "read_count": 1234,
+  "content_filter": {
+    "mode": "blur",
+    "scope": "all",
+    "active_presets": ["politics"],
+    "custom_keywords": ["trump"],
+    "active_keywords": ["trump", "election"],
+    "filtered_count": 1
+  }
 }
 ```
 
@@ -126,6 +197,22 @@ kagi news --chaos
 | `total_stories` | string | Total number of stories in the category |
 | `domains` | array | Domain-level metadata from the feed |
 | `read_count` | integer | Aggregate read count for the category |
+| `content_filter` | object | Present when local content filters are active |
+
+### Filter Preset Response
+
+```json
+{
+  "language": "en",
+  "presets": [
+    {
+      "id": "politics",
+      "label": "Politics",
+      "keywords": ["trump", "biden", "election"]
+    }
+  ]
+}
+```
 
 ## Examples
 
@@ -142,6 +229,22 @@ kagi news --category tech
 kagi news --category business --limit 5
 ```
 
+### Content Filtering
+
+```bash
+# Hide stories that match the built-in politics preset
+kagi news --filter-preset politics
+
+# Keep matching stories, but tag them for downstream tooling
+kagi news --filter-preset politics --filter-mode blur
+
+# Filter with custom keywords only
+kagi news --filter-keyword trump --filter-keyword election
+
+# Limit matching to title/category checks
+kagi news --filter-keyword trump --filter-scope title
+```
+
 ### Processing Output
 
 ```bash
@@ -156,6 +259,13 @@ kagi news | jq '.latest_batch'
 
 # Save to file
 kagi news --category tech > tech-news.json
+
+# Inspect active content-filter metadata
+kagi news --filter-preset politics | jq '.content_filter'
+
+# See which stories were tagged in blur mode
+kagi news --filter-preset politics --filter-mode blur \
+  | jq '.stories[] | select(._content_filter != null) | {title, _content_filter}'
 ```
 
 ### Daily Briefing
@@ -192,6 +302,7 @@ kagi news --chaos
 ### Empty results
 
 - Try different category
+- Check whether local content filters removed every story
 - Check network connectivity
 - Verify Kagi endpoints are accessible
 

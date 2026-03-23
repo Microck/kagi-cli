@@ -7,6 +7,17 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.3.3]
+
+### Added
+
+- Local `kagi news` content filters with built-in presets, custom keywords, hide mode, blur-mode tagging, and preset listing
+
+### Changed
+
+- Moved `kagi news` filtering examples out of the top-level README and kept them in the command docs instead
+- Updated cargo dependencies in line with the current Dependabot PR set: `cliclack 0.5.2`, `scraper 0.26.0`, `toml 1.0.7+spec-1.1.0`, and `rustls-webpki 0.103.10`
+
 ## [0.3.2]
 
 ### Added
