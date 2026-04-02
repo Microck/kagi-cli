@@ -216,6 +216,12 @@ prefix a search with one of your configured snaps:
 kagi search --snap reddit "rust async runtime"
 ```
 
+open search results in your default web browser:
+
+```bash
+kagi search --web "rust release notes"
+```
+
 run a filtered search against the subscriber web-product path:
 
 ```bash

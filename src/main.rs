@@ -116,15 +116,20 @@ async fn run() -> Result<(), KagiError> {
                 personalized: args.personalized,
                 no_personalized: args.no_personalized,
             };
-            let request = build_search_request(args.query, &options);
-            let format_str = match args.format {
-                cli::OutputFormat::Json => "json",
-                cli::OutputFormat::Pretty => "pretty",
-                cli::OutputFormat::Compact => "compact",
-                cli::OutputFormat::Markdown => "markdown",
-                cli::OutputFormat::Csv => "csv",
-            };
-            run_search(request, format_str.to_string(), !args.no_color).await
+            if args.web {
+                let request = build_search_request(args.query, &options);
+                open_search_in_browser(&request)
+            } else {
+                let request = build_search_request(args.query, &options);
+                let format_str = match args.format {
+                    cli::OutputFormat::Json => "json",
+                    cli::OutputFormat::Pretty => "pretty",
+                    cli::OutputFormat::Compact => "compact",
+                    cli::OutputFormat::Markdown => "markdown",
+                    cli::OutputFormat::Csv => "csv",
+                };
+                run_search(request, format_str.to_string(), !args.no_color).await
+            }
         }
         Commands::Auth(auth) => match auth.command {
             AuthSubcommand::Status => run_auth_status(),
@@ -871,6 +876,48 @@ fn build_search_request(query: String, options: &SearchRequestOptions) -> search
     request
 }
 
+fn build_kagi_search_url(request: &search::SearchRequest) -> String {
+    let mut url = format!(
+        "https://kagi.com/search?q={}",
+        urlencoding::encode(request.query.trim())
+    );
+    if let Some(lens) = request.lens.as_deref() {
+        url.push_str(&format!("&l={}", urlencoding::encode(lens)));
+    }
+    if let Some(region) = request.region.as_deref() {
+        url.push_str(&format!("&r={}", urlencoding::encode(region)));
+    }
+    if let Some(time_filter) = request.time_filter.as_deref() {
+        url.push_str(&format!("&dr={}", urlencoding::encode(time_filter)));
+    }
+    if let Some(from_date) = request.from_date.as_deref() {
+        url.push_str(&format!("&from_date={}", urlencoding::encode(from_date)));
+    }
+    if let Some(to_date) = request.to_date.as_deref() {
+        url.push_str(&format!("&to_date={}", urlencoding::encode(to_date)));
+    }
+    if let Some(order) = request.order.as_deref() {
+        url.push_str(&format!("&order={}", urlencoding::encode(order)));
+    }
+    if request.verbatim == Some(true) {
+        url.push_str("&verbatim=1");
+    }
+    if let Some(personalized) = request.personalized {
+        url.push_str(if personalized {
+            "&personalized=1"
+        } else {
+            "&personalized=0"
+        });
+    }
+    url
+}
+
+fn open_search_in_browser(request: &search::SearchRequest) -> Result<(), KagiError> {
+    request.validate()?;
+    let url = build_kagi_search_url(request);
+    open::that(&url).map_err(|error| KagiError::Config(format!("failed to open browser: {error}")))
+}
+
 fn search_auth_requirement(request: &search::SearchRequest) -> SearchAuthRequirement {
     if request.lens.is_some() {
         SearchAuthRequirement::Lens
@@ -1228,13 +1275,14 @@ async fn run_batch_search(
 #[cfg(test)]
 mod tests {
     use super::{
-        RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
-        format_csv_response, format_markdown_response, format_pretty_response,
-        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
-        should_fallback_to_session,
+        RateLimiter, SearchRequestOptions, bool_flag_choice, build_kagi_search_url,
+        build_search_request, format_csv_response, format_markdown_response,
+        format_pretty_response, is_bare_auth_invocation_from, parse_context_memory_json,
+        print_assistant_response, should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
+    use crate::search;
     use crate::types::{
         AssistantMessage, AssistantMeta, AssistantPromptResponse, AssistantThread, SearchResponse,
         SearchResult,
@@ -1372,6 +1420,51 @@ mod tests {
         );
 
         assert_eq!(request.query, "@reddit rust");
+    }
+
+    #[test]
+    fn builds_kagi_search_url_for_plain_query() {
+        let request = search::SearchRequest::new("rust programming");
+        let url = build_kagi_search_url(&request);
+        assert_eq!(url, "https://kagi.com/search?q=rust%20programming");
+    }
+
+    #[test]
+    fn builds_kagi_search_url_with_all_filters() {
+        let request = search::SearchRequest::new("rust")
+            .with_lens("2")
+            .with_region("us")
+            .with_time_filter("3")
+            .with_order("4")
+            .with_verbatim(true)
+            .with_personalized(false);
+
+        let url = build_kagi_search_url(&request);
+        assert!(url.starts_with("https://kagi.com/search?q=rust"));
+        assert!(url.contains("&l=2"));
+        assert!(url.contains("&r=us"));
+        assert!(url.contains("&dr=3"));
+        assert!(url.contains("&order=4"));
+        assert!(url.contains("&verbatim=1"));
+        assert!(url.contains("&personalized=0"));
+    }
+
+    #[test]
+    fn builds_kagi_search_url_with_date_range() {
+        let request = search::SearchRequest::new("rust")
+            .with_from_date("2026-01-01")
+            .with_to_date("2026-03-01");
+
+        let url = build_kagi_search_url(&request);
+        assert!(url.contains("&from_date=2026-01-01"));
+        assert!(url.contains("&to_date=2026-03-01"));
+    }
+
+    #[test]
+    fn builds_kagi_search_url_encodes_special_characters() {
+        let request = search::SearchRequest::new("what is rust?");
+        let url = build_kagi_search_url(&request);
+        assert_eq!(url, "https://kagi.com/search?q=what%20is%20rust%3F");
     }
 
     #[test]

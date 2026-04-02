@@ -231,12 +231,16 @@ pub struct SearchArgs {
     #[arg(value_name = "QUERY", required = true)]
     pub query: String,
 
+    /// Open search results in the default web browser instead of outputting to terminal
+    #[arg(long)]
+    pub web: bool,
+
     /// Output format
-    #[arg(long, value_name = "FORMAT", default_value_t = OutputFormat::Json)]
+    #[arg(long, value_name = "FORMAT", default_value_t = OutputFormat::Json, conflicts_with = "web")]
     pub format: OutputFormat,
 
     /// Disable colored terminal output (only affects pretty format)
-    #[arg(long)]
+    #[arg(long, conflicts_with = "web")]
     pub no_color: bool,
 
     /// Prefix the search with a Snap shortcut (for example "reddit" becomes "@reddit QUERY")
@@ -1320,5 +1324,49 @@ mod tests {
 
         let rendered = error.to_string();
         assert!(rendered.contains("--shortcut-menu"));
+    }
+
+    #[test]
+    fn parses_search_web_flag() {
+        let cli = Cli::try_parse_from(["kagi", "search", "--web", "rust"])
+            .expect("search --web should parse");
+
+        match cli.command.expect("command") {
+            Commands::Search(args) => {
+                assert!(args.web);
+                assert_eq!(args.query, "rust");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_search_without_web_flag() {
+        let cli = Cli::try_parse_from(["kagi", "search", "rust"]).expect("search should parse");
+
+        match cli.command.expect("command") {
+            Commands::Search(args) => {
+                assert!(!args.web);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_search_web_with_format() {
+        let error = Cli::try_parse_from(["kagi", "search", "--web", "--format", "pretty", "rust"])
+            .expect_err("--web and --format should conflict");
+
+        let rendered = error.to_string();
+        assert!(rendered.contains("--web"));
+    }
+
+    #[test]
+    fn rejects_search_web_with_no_color() {
+        let error = Cli::try_parse_from(["kagi", "search", "--web", "--no-color", "rust"])
+            .expect_err("--web and --no-color should conflict");
+
+        let rendered = error.to_string();
+        assert!(rendered.contains("--web"));
     }
 }

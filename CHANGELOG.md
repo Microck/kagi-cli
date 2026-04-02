@@ -7,6 +7,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi search --web` to open search results in the default web browser instead of outputting to terminal
+
 ## [0.4.0]
 
 ### Added
