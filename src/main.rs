@@ -51,6 +51,8 @@ use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
+use tracing::{error, warn};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone)]
 struct SearchRequestOptions {
@@ -68,10 +70,21 @@ struct SearchRequestOptions {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    init_tracing();
     if let Err(error) = run().await {
         eprintln!("{error}");
         std::process::exit(1);
     }
+}
+
+fn init_tracing() {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false)
+        .without_time()
+        .with_writer(std::io::stderr)
+        .try_init();
 }
 
 async fn run() -> Result<(), KagiError> {
@@ -1137,16 +1150,19 @@ async fn run_batch_search(
         let options_clone = options.clone();
         let query_clone = query.clone();
 
-        let handle: tokio::task::JoinHandle<Result<(String, SearchResponse), KagiError>> =
+        let handle: tokio::task::JoinHandle<(String, Result<SearchResponse, KagiError>)> =
             tokio::spawn(async move {
                 let _permit = semaphore_clone.acquire().await;
-                rate_limiter_clone.acquire().await?;
+                let result = async {
+                    rate_limiter_clone.acquire().await?;
 
-                let request = build_search_request(query_clone, &options_clone);
+                    let request = build_search_request(query_clone, &options_clone);
 
-                let response = execute_search_request(&request, credentials_clone).await?;
+                    execute_search_request(&request, credentials_clone).await
+                }
+                .await;
 
-                Ok((query, response))
+                (query, result)
             });
 
         handles.push(handle);
@@ -1157,13 +1173,13 @@ async fn run_batch_search(
 
     for handle in handles {
         match handle.await {
-            Ok(Ok((query, output))) => results.push((query, output)),
-            Ok(Err(e)) => {
-                eprintln!("Error processing query: {e}");
+            Ok((query, Ok(output))) => results.push((query, output)),
+            Ok((query, Err(e))) => {
+                error!(query = %query, error = %e, "batch query failed");
                 had_errors = true;
             }
             Err(e) => {
-                eprintln!("Task failed: {e}");
+                warn!(error = %e, "batch worker task failed");
                 had_errors = true;
             }
         }

@@ -67,11 +67,21 @@ impl SearchAuthPreference {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Credential {
     pub kind: CredentialKind,
     pub source: CredentialSource,
     pub value: String,
+}
+
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credential")
+            .field("kind", &self.kind)
+            .field("source", &self.source)
+            .field("value", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -725,6 +735,19 @@ mod tests {
         assert!(status.contains("selected: api-token (env)"));
         assert!(status.contains("preferred auth for base search: session"));
         assert!(!status.contains("secret-api"));
+    }
+
+    #[test]
+    fn credential_debug_redacts_secret_values() {
+        let credential = Credential {
+            kind: CredentialKind::ApiToken,
+            source: CredentialSource::Env,
+            value: "super-secret".to_string(),
+        };
+
+        let rendered = format!("{credential:?}");
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains("super-secret"));
     }
 
     #[test]

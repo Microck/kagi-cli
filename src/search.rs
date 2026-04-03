@@ -1,8 +1,9 @@
 use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
+use tracing::debug;
 
 use crate::error::KagiError;
-use crate::http;
+use crate::http::{self, map_transport_error};
 use crate::parser::parse_search_results;
 use crate::types::{SearchResponse, SearchResult};
 
@@ -260,6 +261,7 @@ pub async fn execute_api_search(
                 KagiError::Network(format!("failed to read response body: {error}"))
             })?;
             let api_response: ApiSearchResponse = serde_json::from_str(&body).map_err(|error| {
+                debug!(body, error = %error, "failed to parse Kagi Search API response body");
                 KagiError::Parse(format!("failed to parse Kagi API response: {error}"))
             })?;
             Ok(SearchResponse {
@@ -267,7 +269,7 @@ pub async fn execute_api_search(
             })
         }
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, "search api").await;
             Err(KagiError::Auth(format!(
                 "Kagi Search API request rejected: HTTP {status}{}",
                 format_api_error_suffix(&body)
@@ -407,18 +409,6 @@ fn looks_unauthenticated(body: &str) -> bool {
 
 fn build_client() -> Result<Client, KagiError> {
     http::client_20s()
-}
-
-fn map_transport_error(error: reqwest::Error) -> KagiError {
-    if error.is_timeout() {
-        return KagiError::Network("request to Kagi timed out".to_string());
-    }
-
-    if error.is_connect() {
-        return KagiError::Network(format!("failed to connect to Kagi: {error}"));
-    }
-
-    KagiError::Network(format!("request to Kagi failed: {error}"))
 }
 
 #[derive(Debug, Deserialize)]

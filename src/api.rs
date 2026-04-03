@@ -11,10 +11,11 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use serde_json::{Map, Value};
 use tokio::time::sleep;
+use tracing::debug;
 
 use crate::cli::{NewsFilterMode, NewsFilterScope};
 use crate::error::KagiError;
-use crate::http;
+use crate::http::{self, map_transport_error};
 use crate::parser::{
     parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
     parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
@@ -511,7 +512,7 @@ pub async fn execute_assistant_thread_export(
             "invalid or expired Kagi session token".to_string(),
         )),
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, "assistant export").await;
             Err(KagiError::Config(format!(
                 "Kagi Assistant export request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -1529,7 +1530,9 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
                     })?;
                 last_message = Some(message);
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown subscriber summarizer stream frame");
+            }
         }
     }
 
@@ -2453,7 +2456,7 @@ async fn read_authenticated_html_response(
             "invalid or expired Kagi session token".to_string(),
         )),
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
                 "Kagi {surface} request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -2554,7 +2557,7 @@ async fn execute_assistant_stream(
             "invalid or expired Kagi session token".to_string(),
         )),
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
                 "Kagi {surface} request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -2563,7 +2566,7 @@ async fn execute_assistant_stream(
         status if status.is_server_error() => Err(KagiError::Network(format!(
             "Kagi {surface} server error: HTTP {status}{}",
             {
-                let body = response.text().await.unwrap_or_else(|_| String::new());
+                let body = http::read_error_body(response, surface).await;
                 if body.trim().is_empty() {
                     String::new()
                 } else if looks_like_html_document(&body) {
@@ -2634,7 +2637,9 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown assistant prompt stream frame");
+            }
         }
     }
 
@@ -2723,7 +2728,9 @@ fn parse_assistant_thread_open_stream(
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown assistant thread-open stream frame");
+            }
         }
     }
 
@@ -2797,7 +2804,9 @@ fn parse_assistant_thread_list_stream(
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown assistant thread-list stream frame");
+            }
         }
     }
 
@@ -2847,7 +2856,9 @@ fn parse_assistant_thread_delete_stream(
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown assistant thread-delete stream frame");
+            }
         }
     }
 
@@ -3473,6 +3484,7 @@ where
                 KagiError::Network(format!("failed to read {surface} response body: {error}"))
             })?;
             serde_json::from_str(&body).map_err(|error| {
+                debug!(surface, body, error = %error, "failed to parse Kagi API response body");
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
         }
@@ -3480,7 +3492,7 @@ where
             "invalid Kagi API token or access is not enabled for {surface}"
         ))),
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, surface).await;
             let parsed_error = serde_json::from_str::<ApiErrorBody>(&body)
                 .ok()
                 .and_then(|payload| payload.error)
@@ -3517,8 +3529,19 @@ where
                 KagiError::Network(format!("failed to read {surface} response body: {error}"))
             })?;
             serde_json::from_str(&body).map_err(|error| {
+                debug!(surface, body, error = %error, "failed to parse free Kagi response body");
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
+        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(format!(
+            "authentication is not supported for public Kagi {surface} endpoints"
+        ))),
+        status if status.is_client_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Config(format!(
+                "Kagi {surface} request rejected: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
         }
         status if status.is_server_error() => Err(KagiError::Network(format!(
             "Kagi {surface} server error: HTTP {status}"
@@ -3549,6 +3572,7 @@ where
                 ));
             }
             serde_json::from_str(&body).map_err(|error| {
+                debug!(surface, body, error = %error, "failed to parse Kagi Translate response body");
                 KagiError::Parse(format!(
                     "failed to parse Kagi Translate {surface} response: {error}"
                 ))
@@ -3558,7 +3582,7 @@ where
             "invalid or expired Kagi session token for Kagi Translate".to_string(),
         )),
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
                 "Kagi Translate {surface} request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -3575,18 +3599,6 @@ where
 
 fn build_client() -> Result<Client, KagiError> {
     http::client_30s()
-}
-
-fn map_transport_error(error: reqwest::Error) -> KagiError {
-    if error.is_timeout() {
-        return KagiError::Network("request to Kagi timed out".to_string());
-    }
-
-    if error.is_connect() {
-        return KagiError::Network(format!("failed to connect to Kagi: {error}"));
-    }
-
-    KagiError::Network(format!("request to Kagi failed: {error}"))
 }
 
 #[cfg(test)]

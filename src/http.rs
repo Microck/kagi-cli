@@ -1,7 +1,8 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use reqwest::Client;
+use reqwest::{Client, Response};
+use tracing::debug;
 
 use crate::error::KagiError;
 
@@ -20,6 +21,28 @@ pub fn client_20s() -> Result<Client, KagiError> {
 
 pub fn client_30s() -> Result<Client, KagiError> {
     cached_client(&CLIENT_30S, Duration::from_secs(30))
+}
+
+pub fn map_transport_error(error: reqwest::Error) -> KagiError {
+    if error.is_timeout() {
+        return KagiError::Network("request to Kagi timed out".to_string());
+    }
+
+    if error.is_connect() {
+        return KagiError::Network(format!("failed to connect to Kagi: {error}"));
+    }
+
+    KagiError::Network(format!("request to Kagi failed: {error}"))
+}
+
+pub async fn read_error_body(response: Response, surface: &str) -> String {
+    match response.text().await {
+        Ok(body) => body,
+        Err(error) => {
+            debug!(surface, error = %error, "failed to read error response body");
+            String::new()
+        }
+    }
 }
 
 fn cached_client(

@@ -16,7 +16,7 @@
 
 ---
 
-`kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, ask-page, assistant, translate, summarization, feeds, paid API commands, and account-level settings like lenses, custom assistants, custom bangs, and redirect rules. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
+`kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, ask-page, assistant, translate, summarization, public feeds through `news` and `smallweb`, paid API commands like `fastgpt` and `enrich`, and account-level settings like lenses, custom assistants, custom bangs, and redirect rules. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
 the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link` or `API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
@@ -30,7 +30,7 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 
 - use your existing session-link URL for subscriber features
 - get structured JSON for scripts, agents, and other tooling
-- use one CLI for search, quick answers, assistant, translate, summarization, and feeds
+- use one CLI for search, quick answers, assistant, translate, summarization, `news`, and `smallweb`
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
 ## quickstart
@@ -155,7 +155,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 
 | command | purpose |
 | --- | --- |
-| `kagi search` | search Kagi with JSON by default, optional live filters, or `--format pretty` for terminal output |
+| `kagi search` | search Kagi with `json` by default, or render as `pretty`, `compact`, `markdown`, or `csv` |
 | `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
@@ -186,6 +186,9 @@ kagi --generate-completion zsh > ~/.zsh/completion/_kagi
 
 # fish
 kagi --generate-completion fish > ~/.config/fish/completions/kagi.fish
+
+# powershell
+kagi --generate-completion powershell >> $PROFILE
 ```
 
 see the [installation guide](https://kagi.micr.dev/guides/installation) for platform-specific setup details.
@@ -220,6 +223,19 @@ run a filtered search against the subscriber web-product path:
 
 ```bash
 kagi search --region us --time month --order recency "rust release notes"
+```
+
+use explicit date bounds instead of a preset time window:
+
+```bash
+kagi search --from-date 2026-03-01 --to-date 2026-03-31 "rust release notes"
+```
+
+force personalized search on or off for one request:
+
+```bash
+kagi search --personalized "best cafes nearby"
+kagi search --no-personalized "best cafes nearby"
 ```
 
 run a few searches in parallel:
@@ -263,7 +279,9 @@ manage custom assistants:
 
 ```bash
 kagi assistant custom list
-kagi assistant custom create "Release Notes" --model gpt-5-mini --web-access
+kagi assistant custom get "Release Notes"
+kagi assistant custom create "Release Notes" --model gpt-5-mini --web-access --lens 2 --instructions "Focus on release diffs and migration notes."
+kagi assistant custom update "Release Notes" --bang-trigger relnotes --no-personalized
 ```
 
 get a quick answer with references:
@@ -323,6 +341,17 @@ inspect account-level search settings:
 kagi lens list
 kagi bang custom list
 kagi redirect list
+```
+
+inspect or change one lens, bang, or redirect rule:
+
+```bash
+kagi lens get "Default"
+kagi lens update "Default" --description "primary search profile"
+kagi bang custom create "Docs" --trigger docs --template "https://docs.rs/releases/search?query=%s"
+kagi bang custom update docs --shortcut-menu
+kagi redirect create '^https://old.example.com/(.*)|https://new.example.com/$1'
+kagi redirect disable '^https://old.example.com/(.*)|https://new.example.com/$1'
 ```
 
 ## what it looks like

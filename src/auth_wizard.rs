@@ -559,13 +559,22 @@ mod tests {
     #[test]
     fn prompts_for_preference_when_both_methods_exist_and_choice_changes_it() {
         let config = snapshot(Some("api"), None, SearchAuthPreference::Session);
-        assert!(!should_prompt_preference(&config, CredentialKind::ApiToken));
+        assert!(!should_prompt_preference_with_other_method(
+            &config,
+            CredentialKind::ApiToken,
+            false
+        ));
 
         let config = snapshot(Some("api"), Some("session"), SearchAuthPreference::Session);
-        assert!(should_prompt_preference(&config, CredentialKind::ApiToken));
-        assert!(!should_prompt_preference(
+        assert!(should_prompt_preference_with_other_method(
             &config,
-            CredentialKind::SessionToken
+            CredentialKind::ApiToken,
+            true
+        ));
+        assert!(!should_prompt_preference_with_other_method(
+            &config,
+            CredentialKind::SessionToken,
+            true
         ));
     }
 

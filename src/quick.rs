@@ -1,9 +1,10 @@
 use reqwest::{Client, StatusCode, Url, header};
 use scraper::Html;
 use serde::Deserialize;
+use tracing::debug;
 
 use crate::error::KagiError;
-use crate::http;
+use crate::http::{self, map_transport_error};
 use crate::search::{SearchRequest, validate_lens_value};
 use crate::types::{
     QuickMessage, QuickMeta, QuickReferenceCollection, QuickReferenceItem, QuickResponse,
@@ -74,11 +75,14 @@ pub async fn execute_quick(
 
             parse_quick_answer_stream(&body, query, lens)
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            debug!(status = %response.status(), "Kagi Quick Answer rejected the session token");
+            Err(KagiError::Auth(
+                "invalid or expired Kagi session token".to_string(),
+            ))
+        }
         status if status.is_client_error() => {
-            let body = response.text().await.unwrap_or_else(|_| String::new());
+            let body = http::read_error_body(response, "quick answer").await;
             Err(KagiError::Config(format!(
                 "Kagi Quick Answer request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -228,7 +232,9 @@ fn parse_quick_answer_stream(
                     "invalid or expired Kagi session token".to_string(),
                 ));
             }
-            _ => {}
+            _ => {
+                debug!(tag, "ignoring unknown Kagi Quick Answer stream frame");
+            }
         }
     }
 
@@ -453,18 +459,6 @@ fn format_client_error_suffix(body: &str) -> String {
 
 fn build_client() -> Result<Client, KagiError> {
     http::client_30s()
-}
-
-fn map_transport_error(error: reqwest::Error) -> KagiError {
-    if error.is_timeout() {
-        return KagiError::Network("request to Kagi timed out".to_string());
-    }
-
-    if error.is_connect() {
-        return KagiError::Network(format!("failed to connect to Kagi: {error}"));
-    }
-
-    KagiError::Network(format!("request to Kagi failed: {error}"))
 }
 
 #[derive(Debug, Deserialize)]

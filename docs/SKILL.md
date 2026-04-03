@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Kagi subscription for most features. Works on macOS, Linux, and Windows. Install via Homebrew, Scoop, npm, or direct script.
 metadata:
   author: Microck
-  version: "0.3.3"
+  version: "0.4.0"
   repository: https://github.com/Microck/kagi-cli
   npm: https://www.npmjs.com/package/kagi-cli
   docs: https://kagi.micr.dev
@@ -13,7 +13,7 @@ metadata:
 
 ## Overview
 
-kagi-cli is a terminal CLI that provides command-line access to Kagi search, Quick Answer, AI Assistant, translation, summarization, and news feeds. It outputs JSON by default for scripting and automation, with `--format pretty` for human-readable terminal output.
+kagi-cli is a terminal CLI that provides command-line access to Kagi search, Quick Answer, AI Assistant, translation, summarization, public feeds through `news` and `smallweb`, and account-level search settings like lenses, custom assistants, custom bangs, and redirects. It outputs JSON by default for scripting and automation, with `--format pretty` for human-readable terminal output on the commands that support alternate renderers.
 
 The CLI prioritizes the subscriber session-token path, so existing Kagi subscribers can use most features without paying for API access. Paid API features (summarize, fastgpt, enrich) are available by setting `KAGI_API_TOKEN`.
 
@@ -49,7 +49,7 @@ kagi auth
 Opens a guided TTY wizard that walks through:
 - Choosing Session Link (subscriber, free) or API Token (paid)
 - Pasting credentials
-- Saving to `~/.kagi.toml`
+- Saving to `./.kagi.toml`
 - Immediate validation
 
 ### Non-Interactive Setup
@@ -69,11 +69,11 @@ export KAGI_API_TOKEN='...'
 
 | Credential | What It Unlocks |
 |------------|-----------------|
-| `KAGI_SESSION_TOKEN` | search, search --lens, quick, ask-page, assistant, translate, summarize --subscriber |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | summarize, fastgpt, enrich web, enrich news |
 | none | news, smallweb, auth status, --help |
 
-Environment variables override `~/.kagi.toml`. When both tokens are present, base `kagi search` defaults to session token; set `preferred_auth = "api"` in config to prefer API.
+Environment variables override `./.kagi.toml`. When both tokens are present, base `kagi search` defaults to session token; set `[auth] preferred_auth = "api"` in config to prefer API.
 
 ## Commands
 
@@ -94,6 +94,12 @@ kagi search --lens 2 "query"
 # Filtered search
 kagi search --time month --region us --order recency "rust release notes"
 
+# Date-bounded search
+kagi search --from-date 2026-03-01 --to-date 2026-03-31 "rust release notes"
+
+# Per-request personalization override
+kagi search --no-personalized "rust release notes"
+
 # Output formats: json (default), pretty, compact, markdown, csv
 kagi search --format markdown "query" > results.md
 ```
@@ -107,7 +113,7 @@ Get a direct answer with references instead of a list of results.
 kagi quick --format pretty "what is rust"
 
 # JSON for scripting
-kagi quick "capital of japan" | jq '.answer'
+kagi quick "capital of japan" | jq -r '.message.markdown'
 
 # Markdown for documentation
 kagi quick --format markdown "explain async/await" > notes.md
@@ -126,8 +132,8 @@ kagi translate "Bonjour tout le monde"
 # Translate to specific target
 kagi translate "Hello world" --to es
 
-# JSON output
-kagi translate "Good morning" --to de --format json | jq '.translation.translation'
+# Translation output is always JSON
+kagi translate "Good morning" --to de | jq -r '.translation.translation'
 
 # Skip extras for faster response
 kagi translate "text" --to ja --no-alternatives --no-word-insights
@@ -161,14 +167,41 @@ kagi assistant "Explain quantum computing"
 # Continue existing thread
 kagi assistant --thread-id "<thread-id>" "Give me an example"
 
+# Use a saved assistant profile with prompt overrides
+kagi assistant --assistant research --model gpt-5-mini --web-access --no-personalized "Summarize the latest Rust release"
+
 # List threads
 kagi assistant thread list
+
+# Get one thread as JSON
+kagi assistant thread get "<thread-id>"
 
 # Export thread
 kagi assistant thread export "<thread-id>" --format markdown > thread.md
 
 # Delete thread
 kagi assistant thread delete "<thread-id>"
+```
+
+### kagi assistant custom
+
+Manage saved assistant profiles.
+
+```bash
+# List built-in and custom assistants
+kagi assistant custom list
+
+# Inspect one assistant by id or exact name
+kagi assistant custom get "Release Notes"
+
+# Create a custom assistant
+kagi assistant custom create "Release Notes" --model gpt-5-mini --web-access --lens 2 --instructions "Focus on release diffs and migrations."
+
+# Update an existing custom assistant
+kagi assistant custom update "Release Notes" --bang-trigger relnotes --no-personalized
+
+# Delete a custom assistant
+kagi assistant custom delete "Release Notes"
 ```
 
 ### kagi ask-page
@@ -240,9 +273,49 @@ kagi enrich web "local-first software"
 kagi enrich news "browser privacy"
 ```
 
+### kagi lens
+
+Manage Kagi search lenses.
+
+```bash
+kagi lens list
+kagi lens get "Default"
+kagi lens create "Rust Docs" --included-sites rust-lang.org,docs.rs --shortcut rustdocs
+kagi lens update "Rust Docs" --description "Rust docs only" --region us
+kagi lens enable "Rust Docs"
+kagi lens disable "Rust Docs"
+kagi lens delete "Rust Docs"
+```
+
+### kagi bang custom
+
+Manage custom bangs.
+
+```bash
+kagi bang custom list
+kagi bang custom get docs
+kagi bang custom create "Docs" --trigger docs --template "https://docs.rs/releases/search?query=%s"
+kagi bang custom update docs --shortcut-menu
+kagi bang custom delete docs
+```
+
+### kagi redirect
+
+Manage redirect rules.
+
+```bash
+kagi redirect list
+kagi redirect get '^https://old.example.com/(.*)|https://new.example.com/$1'
+kagi redirect create '^https://old.example.com/(.*)|https://new.example.com/$1'
+kagi redirect update '^https://old.example.com/(.*)|https://new.example.com/$1' '^https://old.example.com/(.*)|https://docs.example.com/$1'
+kagi redirect enable '^https://old.example.com/(.*)|https://docs.example.com/$1'
+kagi redirect disable '^https://old.example.com/(.*)|https://new.example.com/$1'
+kagi redirect delete '^https://old.example.com/(.*)|https://docs.example.com/$1'
+```
+
 ## Output Formats
 
-All commands support multiple output formats:
+`search` and `batch` support `json`, `pretty`, `compact`, `markdown`, and `csv`. `quick` and `assistant` support `json`, `pretty`, `compact`, and `markdown`. Commands like `translate`, `news`, `smallweb`, `fastgpt`, `enrich`, `ask-page`, and `summarize` emit JSON only.
 
 | Format | Use Case |
 |--------|----------|
@@ -298,7 +371,7 @@ kagi assistant "Summarize what I found about topic"
 ### Daily News Briefing
 
 ```bash
-kagi news --category tech --limit 5 --format pretty
+kagi news --category tech --limit 5
 ```
 
 ### Content Analysis
@@ -318,7 +391,7 @@ kagi ask-page "$URL" "What is the author's main argument?"
 kagi translate "text" --to es
 
 # Full analysis
-kagi translate "text" --to de --format json | jq '{
+kagi translate "text" --to de | jq '{
   translation: .translation.translation,
   alternatives: .alternatives.elements[0:3],
   insights: .word_insights.insights[0:5]
