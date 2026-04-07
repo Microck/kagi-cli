@@ -44,47 +44,43 @@ use crate::types::{
     TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
-const KAGI_SUMMARIZE_URL: &str = "https://kagi.com/api/v0/summarize";
-const KAGI_SUBSCRIBER_SUMMARIZE_URL: &str = "https://kagi.com/mother/summary_labs";
-const KAGI_NEWS_LATEST_URL: &str = "https://news.kagi.com/api/batches/latest";
-const KAGI_NEWS_CATEGORIES_METADATA_URL: &str = "https://news.kagi.com/api/categories/metadata";
-const KAGI_NEWS_BATCH_CATEGORIES_URL: &str = "https://news.kagi.com/api/batches";
+const KAGI_SUMMARIZE_PATH: &str = "/api/v0/summarize";
+const KAGI_SUBSCRIBER_SUMMARIZE_PATH: &str = "/mother/summary_labs";
+const KAGI_NEWS_LATEST_PATH: &str = "/api/batches/latest";
+const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
+const KAGI_NEWS_BATCH_CATEGORIES_PATH: &str = "/api/batches";
 const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
-const KAGI_ASSISTANT_PROMPT_URL: &str = "https://kagi.com/assistant/prompt";
-const KAGI_ASSISTANT_THREAD_OPEN_URL: &str = "https://kagi.com/assistant/thread_open";
-const KAGI_ASSISTANT_THREAD_LIST_URL: &str = "https://kagi.com/assistant/thread_list";
-const KAGI_ASSISTANT_THREAD_DELETE_URL: &str = "https://kagi.com/assistant/thread_delete";
-const KAGI_SETTINGS_ASSISTANT_URL: &str = "https://kagi.com/html/settings/assistant";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_URL: &str = "https://kagi.com/settings/custom_assistant";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_URL: &str =
-    "https://kagi.com/settings/ast/profiles/update";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_URL: &str =
-    "https://kagi.com/settings/ast/profiles/delete";
-const KAGI_SETTINGS_LENSES_URL: &str = "https://kagi.com/html/settings/lenses";
-const KAGI_SETTINGS_CREATE_LENS_URL: &str = "https://kagi.com/settings/create_lens";
-const KAGI_LENSES_CREATE_URL: &str = "https://kagi.com/lenses/create";
-const KAGI_LENSES_UPDATE_URL: &str = "https://kagi.com/lenses/update";
-const KAGI_LENSES_DELETE_URL: &str = "https://kagi.com/lenses/delete";
-const KAGI_LENSES_SUBSCRIBE_URL: &str = "https://kagi.com/lenses/subscribe";
-const KAGI_SETTINGS_CUSTOM_BANGS_URL: &str = "https://kagi.com/settings/custom_bangs";
-const KAGI_SETTINGS_CUSTOM_BANG_FORM_URL: &str = "https://kagi.com/settings/custom_bangs_form";
-const KAGI_CUSTOM_BANGS_MODIFY_URL: &str = "https://kagi.com/bangs/modify";
-const KAGI_SETTINGS_REDIRECTS_URL: &str = "https://kagi.com/settings/redirects";
-const KAGI_REDIRECTS_CREATE_UPDATE_URL: &str = "https://kagi.com/rewrite_rules";
-const KAGI_REDIRECTS_DELETE_URL: &str = "https://kagi.com/rewrite_rules/delete";
-const KAGI_REDIRECTS_TOGGLE_URL: &str = "https://kagi.com/rewrite_rules/toggle";
-const KAGI_FASTGPT_URL: &str = "https://kagi.com/api/v0/fastgpt";
-const KAGI_ENRICH_WEB_URL: &str = "https://kagi.com/api/v0/enrich/web";
-const KAGI_ENRICH_NEWS_URL: &str = "https://kagi.com/api/v0/enrich/news";
-const KAGI_SMALLWEB_FEED_URL: &str = "https://kagi.com/api/v1/smallweb/feed/";
-const KAGI_TRANSLATE_DETECT_URL: &str = "https://translate.kagi.com/api/detect";
-const KAGI_TRANSLATE_URL: &str = "https://translate.kagi.com/api/translate";
-const KAGI_TRANSLATE_ALTERNATIVES_URL: &str =
-    "https://translate.kagi.com/api/alternative-translations";
-const KAGI_TRANSLATE_ALIGNMENTS_URL: &str = "https://translate.kagi.com/api/text-alignments";
-const KAGI_TRANSLATE_SUGGESTIONS_URL: &str =
-    "https://translate.kagi.com/api/translation-suggestions";
-const KAGI_TRANSLATE_WORD_INSIGHTS_URL: &str = "https://translate.kagi.com/api/word-insights";
+const KAGI_ASSISTANT_PROMPT_PATH: &str = "/assistant/prompt";
+const KAGI_ASSISTANT_THREAD_OPEN_PATH: &str = "/assistant/thread_open";
+const KAGI_ASSISTANT_THREAD_LIST_PATH: &str = "/assistant/thread_list";
+const KAGI_ASSISTANT_THREAD_DELETE_PATH: &str = "/assistant/thread_delete";
+const KAGI_SETTINGS_ASSISTANT_PATH: &str = "/html/settings/assistant";
+const KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH: &str = "/settings/custom_assistant";
+const KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH: &str = "/settings/ast/profiles/update";
+const KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_PATH: &str = "/settings/ast/profiles/delete";
+const KAGI_SETTINGS_LENSES_PATH: &str = "/html/settings/lenses";
+const KAGI_SETTINGS_CREATE_LENS_PATH: &str = "/settings/create_lens";
+const KAGI_LENSES_CREATE_PATH: &str = "/lenses/create";
+const KAGI_LENSES_UPDATE_PATH: &str = "/lenses/update";
+const KAGI_LENSES_DELETE_PATH: &str = "/lenses/delete";
+const KAGI_LENSES_SUBSCRIBE_PATH: &str = "/lenses/subscribe";
+const KAGI_SETTINGS_CUSTOM_BANGS_PATH: &str = "/settings/custom_bangs";
+const KAGI_SETTINGS_CUSTOM_BANG_FORM_PATH: &str = "/settings/custom_bangs_form";
+const KAGI_CUSTOM_BANGS_MODIFY_PATH: &str = "/bangs/modify";
+const KAGI_SETTINGS_REDIRECTS_PATH: &str = "/settings/redirects";
+const KAGI_REDIRECTS_CREATE_UPDATE_PATH: &str = "/rewrite_rules";
+const KAGI_REDIRECTS_DELETE_PATH: &str = "/rewrite_rules/delete";
+const KAGI_REDIRECTS_TOGGLE_PATH: &str = "/rewrite_rules/toggle";
+const KAGI_FASTGPT_PATH: &str = "/api/v0/fastgpt";
+const KAGI_ENRICH_WEB_PATH: &str = "/api/v0/enrich/web";
+const KAGI_ENRICH_NEWS_PATH: &str = "/api/v0/enrich/news";
+const KAGI_SMALLWEB_FEED_PATH: &str = "/api/v1/smallweb/feed/";
+const KAGI_TRANSLATE_DETECT_PATH: &str = "/api/detect";
+const KAGI_TRANSLATE_PATH: &str = "/api/translate";
+const KAGI_TRANSLATE_ALTERNATIVES_PATH: &str = "/api/alternative-translations";
+const KAGI_TRANSLATE_ALIGNMENTS_PATH: &str = "/api/text-alignments";
+const KAGI_TRANSLATE_SUGGESTIONS_PATH: &str = "/api/translation-suggestions";
+const KAGI_TRANSLATE_WORD_INSIGHTS_PATH: &str = "/api/word-insights";
 const ASSISTANT_ZERO_BRANCH_UUID: &str = "00000000-0000-4000-0000-000000000000";
 const TRANSLATE_BOOTSTRAP_MAX_ATTEMPTS: usize = 3;
 const TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR: &str =
@@ -121,7 +117,7 @@ pub async fn execute_summarize(
 
     let client = build_client()?;
     let response = client
-        .post(KAGI_SUMMARIZE_URL)
+        .post(http::kagi_url(KAGI_SUMMARIZE_PATH))
         .header(header::AUTHORIZATION, format!("Bot {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .json(request)
@@ -153,7 +149,7 @@ pub async fn execute_subscriber_summarize(
 
     let client = build_client()?;
     let response = client
-        .get(KAGI_SUBSCRIBER_SUMMARIZE_URL)
+        .get(http::kagi_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
         .query(&[
             (field_name, source_value.as_str()),
             ("stream", "1"),
@@ -212,7 +208,7 @@ pub async fn execute_news(
     let normalized_lang = normalize_news_lang(lang);
     let latest_batch: NewsLatestBatch = decode_kagi_free_json(
         client
-            .get(KAGI_NEWS_LATEST_URL)
+            .get(http::kagi_news_url(KAGI_NEWS_LATEST_PATH))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
             .await
@@ -222,7 +218,7 @@ pub async fn execute_news(
     .await?;
     let metadata: NewsCategoryMetadataList = decode_kagi_free_json(
         client
-            .get(KAGI_NEWS_CATEGORIES_METADATA_URL)
+            .get(http::kagi_news_url(KAGI_NEWS_CATEGORIES_METADATA_PATH))
             .send()
             .await
             .map_err(map_transport_error)?,
@@ -233,7 +229,8 @@ pub async fn execute_news(
         client
             .get(format!(
                 "{}/{}/categories",
-                KAGI_NEWS_BATCH_CATEGORIES_URL, latest_batch.id
+                http::kagi_news_url(KAGI_NEWS_BATCH_CATEGORIES_PATH),
+                latest_batch.id
             ))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
@@ -248,7 +245,9 @@ pub async fn execute_news(
         client
             .get(format!(
                 "{}/{}/categories/{}/stories",
-                KAGI_NEWS_BATCH_CATEGORIES_URL, latest_batch.id, category.id
+                http::kagi_news_url(KAGI_NEWS_BATCH_CATEGORIES_PATH),
+                latest_batch.id,
+                category.id
             ))
             .query(&[
                 ("limit", limit.to_string()),
@@ -304,7 +303,7 @@ pub async fn execute_news_categories(lang: &str) -> Result<NewsCategoriesRespons
     let normalized_lang = normalize_news_lang(lang);
     let latest_batch: NewsLatestBatch = decode_kagi_free_json(
         client
-            .get(KAGI_NEWS_LATEST_URL)
+            .get(http::kagi_news_url(KAGI_NEWS_LATEST_PATH))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
             .await
@@ -314,7 +313,7 @@ pub async fn execute_news_categories(lang: &str) -> Result<NewsCategoriesRespons
     .await?;
     let metadata: NewsCategoryMetadataList = decode_kagi_free_json(
         client
-            .get(KAGI_NEWS_CATEGORIES_METADATA_URL)
+            .get(http::kagi_news_url(KAGI_NEWS_CATEGORIES_METADATA_PATH))
             .send()
             .await
             .map_err(map_transport_error)?,
@@ -325,7 +324,8 @@ pub async fn execute_news_categories(lang: &str) -> Result<NewsCategoriesRespons
         client
             .get(format!(
                 "{}/{}/categories",
-                KAGI_NEWS_BATCH_CATEGORIES_URL, latest_batch.id
+                http::kagi_news_url(KAGI_NEWS_BATCH_CATEGORIES_PATH),
+                latest_batch.id
             ))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
@@ -359,7 +359,7 @@ pub async fn execute_news_chaos(lang: &str) -> Result<NewsChaosResponse, KagiErr
     let normalized_lang = normalize_news_lang(lang);
     let latest_batch: NewsLatestBatch = decode_kagi_free_json(
         client
-            .get(KAGI_NEWS_LATEST_URL)
+            .get(http::kagi_news_url(KAGI_NEWS_LATEST_PATH))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
             .await
@@ -371,7 +371,8 @@ pub async fn execute_news_chaos(lang: &str) -> Result<NewsChaosResponse, KagiErr
         client
             .get(format!(
                 "{}/{}/chaos",
-                KAGI_NEWS_BATCH_CATEGORIES_URL, latest_batch.id
+                http::kagi_news_url(KAGI_NEWS_BATCH_CATEGORIES_PATH),
+                latest_batch.id
             ))
             .query(&[("lang", normalized_lang.as_str())])
             .send()
@@ -395,7 +396,7 @@ pub async fn execute_assistant_prompt(
     let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
     let profile = assistant_profile_payload(request);
     let body = execute_assistant_stream(
-        KAGI_ASSISTANT_PROMPT_URL,
+        &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
         &json!({
             "focus": {
                 "thread_id": thread_id,
@@ -417,7 +418,7 @@ pub async fn execute_assistant_thread_list(
     token: &str,
 ) -> Result<AssistantThreadListResponse, KagiError> {
     let body = execute_assistant_stream(
-        KAGI_ASSISTANT_THREAD_LIST_URL,
+        &http::kagi_url(KAGI_ASSISTANT_THREAD_LIST_PATH),
         &json!({ "limit": 100 }),
         token,
         "Assistant thread list",
@@ -434,7 +435,7 @@ pub async fn execute_assistant_thread_get(
     let thread_id = normalize_assistant_thread_id(Some(thread_id))?
         .ok_or_else(|| KagiError::Config("assistant thread id cannot be empty".to_string()))?;
     let body = execute_assistant_stream(
-        KAGI_ASSISTANT_THREAD_OPEN_URL,
+        &http::kagi_url(KAGI_ASSISTANT_THREAD_OPEN_PATH),
         &json!({
             "focus": {
                 "thread_id": thread_id,
@@ -455,7 +456,7 @@ pub async fn execute_assistant_thread_delete(
 ) -> Result<AssistantThreadDeleteResponse, KagiError> {
     let thread = execute_assistant_thread_get(thread_id, token).await?.thread;
     let body = execute_assistant_stream(
-        KAGI_ASSISTANT_THREAD_DELETE_URL,
+        &http::kagi_url(KAGI_ASSISTANT_THREAD_DELETE_PATH),
         &json!({
             "threads": [{
                 "id": thread.id,
@@ -481,7 +482,7 @@ pub async fn execute_assistant_thread_export(
         .ok_or_else(|| KagiError::Config("assistant thread id cannot be empty".to_string()))?;
     let client = build_client()?;
     let response = client
-        .get(format!("https://kagi.com/assistant/{thread_id}/download"))
+        .get(http::kagi_url(&format!("/assistant/{thread_id}/download")))
         .header(header::COOKIE, format!("kagi_session={token}"))
         .send()
         .await
@@ -531,7 +532,7 @@ pub async fn execute_custom_assistant_list(
     token: &str,
 ) -> Result<Vec<AssistantProfileSummary>, KagiError> {
     let html = fetch_authenticated_html(
-        KAGI_SETTINGS_ASSISTANT_URL,
+        &http::kagi_url(KAGI_SETTINGS_ASSISTANT_PATH),
         token,
         "Assistant settings page",
     )
@@ -566,7 +567,7 @@ pub async fn execute_custom_assistant_create(
 ) -> Result<AssistantProfileDetails, KagiError> {
     let mut details = parse_assistant_profile_form(
         &fetch_authenticated_html(
-            KAGI_SETTINGS_CUSTOM_ASSISTANT_URL,
+            &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH),
             token,
             "new custom assistant form",
         )
@@ -593,7 +594,7 @@ pub async fn execute_custom_assistant_create(
     }
 
     let (url, _) = post_authenticated_form(
-        KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_URL,
+        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH),
         &build_custom_assistant_form(&details),
         token,
         "custom assistant create",
@@ -636,7 +637,7 @@ pub async fn execute_custom_assistant_update(
     }
 
     post_authenticated_form(
-        KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_URL,
+        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH),
         &build_custom_assistant_form(&details),
         token,
         "custom assistant update",
@@ -652,7 +653,7 @@ pub async fn execute_custom_assistant_delete(
     let assistants = execute_custom_assistant_list(token).await?;
     let assistant = resolve_custom_assistant_ref(&assistants, target, true)?;
     post_authenticated_form(
-        KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_URL,
+        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_PATH),
         &[("profile_id".to_string(), assistant.id.clone())],
         token,
         "custom assistant delete",
@@ -664,8 +665,12 @@ pub async fn execute_custom_assistant_delete(
 }
 
 pub async fn execute_lens_list(token: &str) -> Result<Vec<LensSummary>, KagiError> {
-    let html =
-        fetch_authenticated_html(KAGI_SETTINGS_LENSES_URL, token, "lens settings page").await?;
+    let html = fetch_authenticated_html(
+        &http::kagi_url(KAGI_SETTINGS_LENSES_PATH),
+        token,
+        "lens settings page",
+    )
+    .await?;
     parse_lens_list(&html)
 }
 
@@ -682,12 +687,17 @@ pub async fn execute_lens_create(
     token: &str,
 ) -> Result<LensDetails, KagiError> {
     let mut details = parse_lens_form(
-        &fetch_authenticated_html(KAGI_SETTINGS_CREATE_LENS_URL, token, "new lens form").await?,
+        &fetch_authenticated_html(
+            &http::kagi_url(KAGI_SETTINGS_CREATE_LENS_PATH),
+            token,
+            "new lens form",
+        )
+        .await?,
     )?;
     apply_lens_create_request(&mut details, request)?;
 
     let (url, _) = post_authenticated_form(
-        KAGI_LENSES_CREATE_URL,
+        &http::kagi_url(KAGI_LENSES_CREATE_PATH),
         &build_lens_form(&details),
         token,
         "lens create",
@@ -710,7 +720,7 @@ pub async fn execute_lens_update(
     apply_lens_update_request(&mut details, request)?;
 
     post_authenticated_form(
-        KAGI_LENSES_UPDATE_URL,
+        &http::kagi_url(KAGI_LENSES_UPDATE_PATH),
         &build_lens_form(&details),
         token,
         "lens update",
@@ -726,7 +736,7 @@ pub async fn execute_lens_delete(
     let lenses = execute_lens_list(token).await?;
     let lens = resolve_lens_ref(&lenses, target)?;
     post_authenticated_form(
-        KAGI_LENSES_DELETE_URL,
+        &http::kagi_url(KAGI_LENSES_DELETE_PATH),
         &[("id".to_string(), lens.id.clone())],
         token,
         "lens delete",
@@ -752,7 +762,7 @@ pub async fn execute_lens_set_enabled(
     }
 
     post_authenticated_form(
-        KAGI_LENSES_SUBSCRIBE_URL,
+        &http::kagi_url(KAGI_LENSES_SUBSCRIBE_PATH),
         &[
             ("lens_id".to_string(), lens.id.clone()),
             (lens.toggle_field.clone(), lens.toggle_value.clone()),
@@ -775,8 +785,12 @@ pub async fn execute_lens_set_enabled(
 }
 
 pub async fn execute_custom_bang_list(token: &str) -> Result<Vec<CustomBangSummary>, KagiError> {
-    let html = fetch_authenticated_html(KAGI_SETTINGS_CUSTOM_BANGS_URL, token, "custom bangs page")
-        .await?;
+    let html = fetch_authenticated_html(
+        &http::kagi_url(KAGI_SETTINGS_CUSTOM_BANGS_PATH),
+        token,
+        "custom bangs page",
+    )
+    .await?;
     parse_custom_bang_list(&html)
 }
 
@@ -801,7 +815,7 @@ pub async fn execute_custom_bang_create(
 ) -> Result<CustomBangDetails, KagiError> {
     let mut details = parse_custom_bang_form(
         &fetch_authenticated_html(
-            KAGI_SETTINGS_CUSTOM_BANG_FORM_URL,
+            &http::kagi_url(KAGI_SETTINGS_CUSTOM_BANG_FORM_PATH),
             token,
             "new custom bang form",
         )
@@ -810,7 +824,7 @@ pub async fn execute_custom_bang_create(
     apply_custom_bang_create_request(&mut details, request)?;
 
     let (url, _) = post_authenticated_form(
-        KAGI_CUSTOM_BANGS_MODIFY_URL,
+        &http::kagi_url(KAGI_CUSTOM_BANGS_MODIFY_PATH),
         &build_custom_bang_form(&details, false),
         token,
         "custom bang create",
@@ -833,7 +847,7 @@ pub async fn execute_custom_bang_update(
     apply_custom_bang_update_request(&mut details, request)?;
 
     post_authenticated_form(
-        KAGI_CUSTOM_BANGS_MODIFY_URL,
+        &http::kagi_url(KAGI_CUSTOM_BANGS_MODIFY_PATH),
         &build_custom_bang_form(&details, false),
         token,
         "custom bang update",
@@ -851,7 +865,7 @@ pub async fn execute_custom_bang_delete(
     let details = execute_custom_bang_get(&bang.id, token).await?;
 
     post_authenticated_form(
-        KAGI_CUSTOM_BANGS_MODIFY_URL,
+        &http::kagi_url(KAGI_CUSTOM_BANGS_MODIFY_PATH),
         &build_custom_bang_form(&details, true),
         token,
         "custom bang delete",
@@ -863,8 +877,12 @@ pub async fn execute_custom_bang_delete(
 }
 
 pub async fn execute_redirect_list(token: &str) -> Result<Vec<RedirectRuleSummary>, KagiError> {
-    let html =
-        fetch_authenticated_html(KAGI_SETTINGS_REDIRECTS_URL, token, "redirects page").await?;
+    let html = fetch_authenticated_html(
+        &http::kagi_url(KAGI_SETTINGS_REDIRECTS_PATH),
+        token,
+        "redirects page",
+    )
+    .await?;
     parse_redirect_list(&html)
 }
 
@@ -891,7 +909,7 @@ pub async fn execute_redirect_create(
 ) -> Result<RedirectRuleDetails, KagiError> {
     let rule = normalize_redirect_rule(&request.rule)?;
     let (url, _) = post_authenticated_form(
-        KAGI_REDIRECTS_CREATE_UPDATE_URL,
+        &http::kagi_url(KAGI_REDIRECTS_CREATE_UPDATE_PATH),
         &[("regex".to_string(), rule.clone())],
         token,
         "redirect create",
@@ -911,7 +929,7 @@ pub async fn execute_redirect_update(
     let redirect = resolve_redirect_ref(&redirects, &request.target)?;
     let rule = normalize_redirect_rule(&request.rule)?;
     post_authenticated_form(
-        KAGI_REDIRECTS_CREATE_UPDATE_URL,
+        &http::kagi_url(KAGI_REDIRECTS_CREATE_UPDATE_PATH),
         &[
             ("rule_id".to_string(), redirect.id.clone()),
             ("regex".to_string(), rule),
@@ -930,7 +948,7 @@ pub async fn execute_redirect_delete(
     let redirects = execute_redirect_list(token).await?;
     let redirect = resolve_redirect_ref(&redirects, target)?;
     post_authenticated_form(
-        KAGI_REDIRECTS_DELETE_URL,
+        &http::kagi_url(KAGI_REDIRECTS_DELETE_PATH),
         &[("rule_id".to_string(), redirect.id.clone())],
         token,
         "redirect delete",
@@ -956,7 +974,7 @@ pub async fn execute_redirect_set_enabled(
     }
 
     post_authenticated_form(
-        KAGI_REDIRECTS_TOGGLE_URL,
+        &http::kagi_url(KAGI_REDIRECTS_TOGGLE_PATH),
         &[("rule_id".to_string(), redirect.id.clone())],
         token,
         if enabled {
@@ -1142,7 +1160,7 @@ pub async fn execute_fastgpt(
 
     let client = build_client()?;
     let response = client
-        .post(KAGI_FASTGPT_URL)
+        .post(http::kagi_url(KAGI_FASTGPT_PATH))
         .header(header::AUTHORIZATION, format!("Bot {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .json(request)
@@ -1154,16 +1172,28 @@ pub async fn execute_fastgpt(
 }
 
 pub async fn execute_enrich_web(query: &str, token: &str) -> Result<EnrichResponse, KagiError> {
-    execute_enrich(KAGI_ENRICH_WEB_URL, query, token, "web enrichment").await
+    execute_enrich(
+        &http::kagi_url(KAGI_ENRICH_WEB_PATH),
+        query,
+        token,
+        "web enrichment",
+    )
+    .await
 }
 
 pub async fn execute_enrich_news(query: &str, token: &str) -> Result<EnrichResponse, KagiError> {
-    execute_enrich(KAGI_ENRICH_NEWS_URL, query, token, "news enrichment").await
+    execute_enrich(
+        &http::kagi_url(KAGI_ENRICH_NEWS_PATH),
+        query,
+        token,
+        "news enrichment",
+    )
+    .await
 }
 
 pub async fn execute_smallweb(limit: Option<u32>) -> Result<SmallWebFeed, KagiError> {
     let client = build_client()?;
-    let mut request = client.get(KAGI_SMALLWEB_FEED_URL);
+    let mut request = client.get(http::kagi_url(KAGI_SMALLWEB_FEED_PATH));
     if let Some(limit) = limit {
         request = request.query(&[("limit", limit)]);
     }
@@ -1218,7 +1248,7 @@ async fn bootstrap_translate_session(
 
     for attempt in 0..TRANSLATE_BOOTSTRAP_MAX_ATTEMPTS {
         let response = client
-            .get("https://translate.kagi.com/")
+            .get(http::kagi_translate_url("/"))
             .header(header::COOKIE, format!("kagi_session={session_token}"))
             .send()
             .await
@@ -1248,7 +1278,7 @@ async fn execute_translate_detect(
     text: &str,
 ) -> Result<TranslateDetectedLanguage, KagiError> {
     let response = client
-        .post(KAGI_TRANSLATE_DETECT_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_DETECT_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&json!({
@@ -1271,7 +1301,7 @@ async fn execute_translate_text(
     effective_source_language: &str,
 ) -> Result<TranslateTextResponse, KagiError> {
     let response = client
-        .post(KAGI_TRANSLATE_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&build_translate_payload(
@@ -1330,7 +1360,7 @@ async fn execute_translate_alternatives(
     }
 
     let response = client
-        .post(KAGI_TRANSLATE_ALTERNATIVES_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_ALTERNATIVES_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&Value::Object(payload))
@@ -1349,7 +1379,7 @@ async fn execute_translate_text_alignments(
     target_text: &str,
 ) -> Result<TextAlignmentsResponse, KagiError> {
     let response = client
-        .post(KAGI_TRANSLATE_ALIGNMENTS_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_ALIGNMENTS_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&json!({
@@ -1379,7 +1409,7 @@ async fn execute_translate_suggestions(
     context: TranslateSuggestionContext<'_>,
 ) -> Result<TranslationSuggestionsResponse, KagiError> {
     let response = client
-        .post(KAGI_TRANSLATE_SUGGESTIONS_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_SUGGESTIONS_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&build_translate_suggestions_payload(context, translate_session).map(Value::Object)?)
@@ -1400,7 +1430,7 @@ async fn execute_translate_word_insights(
     translation_options: Option<&TranslateOptionState>,
 ) -> Result<WordInsightsResponse, KagiError> {
     let response = client
-        .post(KAGI_TRANSLATE_WORD_INSIGHTS_URL)
+        .post(http::kagi_translate_url(KAGI_TRANSLATE_WORD_INSIGHTS_PATH))
         .header(header::COOKIE, cookie_header)
         .header(header::CONTENT_TYPE, "application/json")
         .json(
@@ -1961,7 +1991,7 @@ fn absolute_kagi_url(path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         path.to_string()
     } else {
-        format!("https://kagi.com{path}")
+        http::kagi_url(path)
     }
 }
 

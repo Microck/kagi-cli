@@ -7,8 +7,8 @@ use crate::http::{self, map_transport_error};
 use crate::parser::parse_search_results;
 use crate::types::{SearchResponse, SearchResult};
 
-const KAGI_SEARCH_URL: &str = "https://kagi.com/html/search";
-const KAGI_API_SEARCH_URL: &str = "https://kagi.com/api/v0/search";
+const KAGI_SEARCH_PATH: &str = "/html/search";
+const KAGI_API_SEARCH_PATH: &str = "/api/v0/search";
 const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "<title>Kagi Search - A Premium Search Engine</title>",
     "Welcome to Kagi",
@@ -197,7 +197,7 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
     let query_params = build_search_query_params(request)?;
 
     let response = client
-        .get(KAGI_SEARCH_URL)
+        .get(http::kagi_url(KAGI_SEARCH_PATH))
         .query(&query_params)
         .header(header::COOKIE, format!("kagi_session={token}"))
         .send()
@@ -248,7 +248,7 @@ pub async fn execute_api_search(
 
     let client = build_client()?;
     let response = client
-        .get(KAGI_API_SEARCH_URL)
+        .get(http::kagi_url(KAGI_API_SEARCH_PATH))
         .query(&[("q", request.query.trim())])
         .header(header::AUTHORIZATION, format!("Bot {token}"))
         .send()
