@@ -7,6 +7,14 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Golden-path integration test coverage for CLI commands (lens, bangs, redirects, saved-assistant) with mocked HTTP responses
+
+### Changed
+
+- CI workflows now use concurrency groups to cancel redundant runs on the same branch
+
 ## [0.4.1]
 
 ### Added
