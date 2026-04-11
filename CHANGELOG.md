@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Fixed
+
+- Made Assistant thread parsing tolerate missing `expires_at` values from `thread.json` stream frames so thread commands stop failing when Kagi omits that field
+
 ## [0.4.1]
 
 ### Added

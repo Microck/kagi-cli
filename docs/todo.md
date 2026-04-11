@@ -1,6 +1,6 @@
 # TODO
 
-Last reviewed against the shipped CLI surface: 2026-04-03 (`v0.4.1`).
+Last reviewed against the shipped CLI surface: 2026-04-11 (`v0.4.2`).
 
 This backlog is based on:
 
