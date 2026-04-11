@@ -3386,7 +3386,8 @@ struct AssistantThreadPayload {
     title: String,
     ack: String,
     created_at: String,
-    expires_at: String,
+    #[serde(default)]
+    expires_at: Option<String>,
     saved: bool,
     shared: bool,
     branch_id: String,
@@ -3401,7 +3402,7 @@ impl From<AssistantThreadPayload> for AssistantThread {
             title: payload.title,
             ack: payload.ack,
             created_at: payload.created_at,
-            expires_at: payload.expires_at,
+            expires_at: payload.expires_at.unwrap_or_default(),
             saved: payload.saved,
             shared: payload.shared,
             branch_id: payload.branch_id,

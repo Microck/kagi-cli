@@ -295,6 +295,7 @@ pub struct AssistantThread {
     pub title: String,
     pub ack: String,
     pub created_at: String,
+    #[serde(default)]
     pub expires_at: String,
     pub saved: bool,
     pub shared: bool,
