@@ -934,38 +934,74 @@ fn print_assistant_response(
 ) -> Result<(), KagiError> {
     match format {
         AssistantOutputFormat::Pretty => {
-            let title_color = if use_color { "\x1b[1;34m" } else { "" };
-            let muted_color = if use_color { "\x1b[36m" } else { "" };
-            let reset_color = if use_color { "\x1b[0m" } else { "" };
-            let content = response
-                .message
-                .markdown
-                .as_deref()
-                .or(response.message.reply_html.as_deref())
-                .unwrap_or("")
-                .trim();
-            println!(
-                "{title_color}Thread{reset_color}: {}\n{muted_color}Message{reset_color}: {}\n\n{}",
-                response.thread.id, response.message.id, content
-            );
+            println!("{}", format_assistant_pretty(response, use_color));
             Ok(())
         }
         AssistantOutputFormat::Compact => print_compact_json(response),
         AssistantOutputFormat::Markdown => {
-            println!(
-                "{}",
-                response
-                    .message
-                    .markdown
-                    .as_deref()
-                    .or(response.message.reply_html.as_deref())
-                    .unwrap_or("")
-                    .trim()
-            );
+            println!("{}", format_assistant_markdown(response));
             Ok(())
         }
         AssistantOutputFormat::Json => print_json(response),
     }
+}
+
+fn assistant_message_content(response: &crate::types::AssistantPromptResponse) -> &str {
+    response
+        .message
+        .markdown
+        .as_deref()
+        .or(response.message.reply_html.as_deref())
+        .unwrap_or("")
+        .trim()
+}
+
+fn assistant_references_markdown(response: &crate::types::AssistantPromptResponse) -> &str {
+    response
+        .message
+        .references_markdown
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+}
+
+fn format_assistant_pretty(
+    response: &crate::types::AssistantPromptResponse,
+    use_color: bool,
+) -> String {
+    let title_color = if use_color { "\x1b[1;34m" } else { "" };
+    let muted_color = if use_color { "\x1b[36m" } else { "" };
+    let reset_color = if use_color { "\x1b[0m" } else { "" };
+    let mut sections = vec![format!(
+        "{title_color}Thread{reset_color}: {}\n{muted_color}Message{reset_color}: {}\n\n{}",
+        response.thread.id,
+        response.message.id,
+        assistant_message_content(response)
+    )];
+    let references = assistant_references_markdown(response);
+
+    if !references.is_empty() {
+        sections.push(format!(
+            "{title_color}References{reset_color}\n\n{references}"
+        ));
+    }
+
+    sections.join("\n\n")
+}
+
+fn format_assistant_markdown(response: &crate::types::AssistantPromptResponse) -> String {
+    let mut sections = vec![assistant_message_content(response).to_string()];
+    let references = assistant_references_markdown(response);
+
+    if !references.is_empty() {
+        sections.push(references.to_string());
+    }
+
+    sections
+        .into_iter()
+        .filter(|section| !section.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 async fn run_search(
@@ -1245,9 +1281,9 @@ async fn run_batch_search(
 mod tests {
     use super::{
         RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
-        format_csv_response, format_markdown_response, format_pretty_response,
-        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
-        should_fallback_to_session,
+        format_assistant_markdown, format_assistant_pretty, format_csv_response,
+        format_markdown_response, format_pretty_response, is_bare_auth_invocation_from,
+        parse_context_memory_json, print_assistant_response, should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -1475,9 +1511,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prints_assistant_markdown_and_pretty_formats() {
-        let response = AssistantPromptResponse {
+    fn sample_assistant_response(references_markdown: Option<&str>) -> AssistantPromptResponse {
+        AssistantPromptResponse {
             meta: AssistantMeta::default(),
             thread: AssistantThread {
                 id: "thread-1".to_string(),
@@ -1498,15 +1533,47 @@ mod tests {
                 state: "done".to_string(),
                 prompt: "Hello".to_string(),
                 reply_html: Some("<p>Hello</p>".to_string()),
-                markdown: Some("Hello".to_string()),
+                markdown: Some("Hello[^1]".to_string()),
                 references_html: None,
-                references_markdown: None,
+                references_markdown: references_markdown.map(str::to_string),
                 metadata_html: None,
                 documents: vec![],
                 profile: None,
                 trace_id: None,
             },
-        };
+        }
+    }
+
+    #[test]
+    fn formats_assistant_markdown_with_references() {
+        let response =
+            sample_assistant_response(Some("[^1]: [Example](https://example.com) (100%)"));
+
+        let output = format_assistant_markdown(&response);
+
+        assert_eq!(
+            output,
+            "Hello[^1]\n\n[^1]: [Example](https://example.com) (100%)"
+        );
+    }
+
+    #[test]
+    fn formats_assistant_pretty_with_references_section() {
+        let response =
+            sample_assistant_response(Some("[^1]: [Example](https://example.com) (100%)"));
+
+        let output = format_assistant_pretty(&response, false);
+
+        assert!(output.contains("Thread: thread-1"));
+        assert!(output.contains("Message: msg-1"));
+        assert!(output.contains("Hello[^1]"));
+        assert!(output.contains("References"));
+        assert!(output.contains("[^1]: [Example](https://example.com) (100%)"));
+    }
+
+    #[test]
+    fn prints_assistant_markdown_and_pretty_formats() {
+        let response = sample_assistant_response(None);
 
         assert!(
             print_assistant_response(&response, AssistantOutputFormat::Markdown, false).is_ok()
