@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.4.3]
+
+### Fixed
+
+- Restored Assistant references in `--format pretty` and `--format markdown` output so footnotes and source links match the JSON response
+
 ## [0.4.2]
 
 ### Fixed
