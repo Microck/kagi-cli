@@ -19,7 +19,7 @@ pub enum CredentialKind {
 }
 
 impl CredentialKind {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::ApiToken => "api-token",
             Self::SessionToken => "session-token",
@@ -34,7 +34,7 @@ pub enum CredentialSource {
 }
 
 impl CredentialSource {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Env => "env",
             Self::Config => "config",
@@ -59,7 +59,7 @@ impl SearchAuthPreference {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Session => "session",
             Self::Api => "api",

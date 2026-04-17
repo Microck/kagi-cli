@@ -182,7 +182,7 @@ pub struct NewsCategoriesResponse {
     pub categories: Vec<NewsResolvedCategory>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NewsStoriesPayload {
     #[serde(rename = "batchId")]
     pub batch_id: String,
@@ -200,7 +200,7 @@ pub struct NewsStoriesPayload {
     pub read_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NewsStoriesResponse {
     pub latest_batch: NewsLatestBatch,
     pub category: NewsResolvedCategory,
@@ -374,7 +374,7 @@ pub struct AssistantThreadPagination {
     pub total_counts: HashMap<String, u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AssistantThreadListResponse {
     pub meta: AssistantMeta,
     #[serde(default)]
@@ -383,7 +383,7 @@ pub struct AssistantThreadListResponse {
     pub pagination: AssistantThreadPagination,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AssistantThreadOpenResponse {
     pub meta: AssistantMeta,
     #[serde(default)]
@@ -720,7 +720,7 @@ pub struct QuickResponse {
     pub followup_questions: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranslateCommandRequest {
     pub text: String,
     pub from: String,
@@ -747,7 +747,7 @@ pub struct TranslateCommandRequest {
     pub fetch_alignments: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TranslateOptionState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub formality: Option<String>,
@@ -797,7 +797,7 @@ pub struct TranslateDetectedLanguage {
     pub alternatives: Vec<TranslateDetectedLanguageAlternative>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TranslateTextResponse {
     pub translation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -825,7 +825,7 @@ pub struct AlternativeTranslationsResponse {
     pub elements: Vec<AlternativeTranslationElement>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TextAlignmentsResponse {
     #[serde(default)]
     pub source_blocks: Vec<Value>,
@@ -839,7 +839,7 @@ pub struct TextAlignmentsResponse {
     pub alignments: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TranslationSuggestion {
     pub id: String,
     pub label: String,
@@ -876,7 +876,7 @@ pub struct WordInsight {
     pub variations: Vec<WordInsightVariation>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WordInsightsResponse {
     #[serde(default)]
     pub insights: Vec<WordInsight>,

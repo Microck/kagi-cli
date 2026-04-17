@@ -20,6 +20,6 @@ pub enum KagiError {
 
 impl From<serde_json::Error> for KagiError {
     fn from(err: serde_json::Error) -> Self {
-        KagiError::Parse(format!("JSON serialization error: {}", err))
+        Self::Parse(format!("JSON serialization error: {err}"))
     }
 }

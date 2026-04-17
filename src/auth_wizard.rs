@@ -16,7 +16,7 @@ use crate::search;
 
 const VALIDATION_QUERY: &str = "rust lang";
 const GOLD: u8 = 220;
-const AUTH_ASCII_ART: &str = r#"  ███████                                                                     ███████                                              ███████    █████    
+const AUTH_ASCII_ART: &str = r"  ███████                                                                     ███████                                              ███████    █████    
   ███████                                                                    █████████                                             ███████  █████████  
   ███████                                                                    █████████                                             ███████  █████████  
   ███████                                                          ███████    ███████                                              ███████   ███████   
@@ -36,7 +36,7 @@ const AUTH_ASCII_ART: &str = r#"  ███████                         
                                                   ███████████████████████                                                                              
                                                    ███████████████████████                                                                             
                                                       ████████    ████████                                                                             
-                                                                    ███"#;
+                                                                    ███";
 
 struct KagiAuthTheme;
 
@@ -255,7 +255,7 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
 
 fn render_auth_intro() -> Result<(), KagiError> {
     let term = Term::stdout();
-    let width = term.size_checked().map(|(_rows, cols)| cols).unwrap_or(0);
+    let width = term.size_checked().map_or(0, |(_rows, cols)| cols);
 
     if should_render_auth_ascii(width) {
         let mut stdout = io::stdout().lock();
@@ -334,7 +334,7 @@ fn build_candidate_credential(kind: CredentialKind, input: &str) -> Result<Crede
     })
 }
 
-fn kind_display(kind: CredentialKind) -> &'static str {
+const fn kind_display(kind: CredentialKind) -> &'static str {
     match kind {
         CredentialKind::ApiToken => "API token",
         CredentialKind::SessionToken => "Session Link",
@@ -361,15 +361,13 @@ fn format_inventory_summary(inventory: &crate::auth::CredentialInventory) -> Str
         wizard_status_line(
             "Selected",
             &inventory
-                .preferred_for_status()
-                .map(|credential| {
+                .preferred_for_status().map_or_else(|| "none".to_string(), |credential| {
                     format!(
                         "{} ({})",
                         credential.kind.as_str(),
                         credential.source.as_str()
                     )
-                })
-                .unwrap_or_else(|| "none".to_string()),
+                }),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
         wizard_status_line(
@@ -390,15 +388,13 @@ fn format_saved_summary(inventory: &crate::auth::CredentialInventory) -> String 
         wizard_status_line(
             "Selected",
             &inventory
-                .preferred_for_status()
-                .map(|credential| {
+                .preferred_for_status().map_or_else(|| "none".to_string(), |credential| {
                     format!(
                         "{} ({})",
                         credential.kind.as_str(),
                         credential.source.as_str()
                     )
-                })
-                .unwrap_or_else(|| "none".to_string()),
+                }),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
         wizard_status_line(
@@ -413,14 +409,14 @@ fn format_saved_summary(inventory: &crate::auth::CredentialInventory) -> String 
     .join("\n")
 }
 
-fn method_title(kind: CredentialKind) -> &'static str {
+const fn method_title(kind: CredentialKind) -> &'static str {
     match kind {
         CredentialKind::ApiToken => "API Token Setup",
         CredentialKind::SessionToken => "Session Link Setup",
     }
 }
 
-fn method_prompt(kind: CredentialKind) -> &'static str {
+const fn method_prompt(kind: CredentialKind) -> &'static str {
     match kind {
         CredentialKind::ApiToken => "Paste your API token",
         CredentialKind::SessionToken => "Paste your Session Link or raw session token",
@@ -460,7 +456,7 @@ fn env_override_notice(kind: CredentialKind) -> Option<String> {
     env::var_os(env_var).map(|_| env_override_message(env_var))
 }
 
-fn has_config_credential(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) -> bool {
+const fn has_config_credential(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) -> bool {
     match kind {
         CredentialKind::ApiToken => snapshot.api_token.is_some(),
         CredentialKind::SessionToken => snapshot.session_token.is_some(),
@@ -483,14 +479,14 @@ fn should_prompt_preference_with_other_method(
     other_method_configured && snapshot.search_preference != preference_for_kind(kind)
 }
 
-fn preference_for_kind(kind: CredentialKind) -> SearchAuthPreference {
+const fn preference_for_kind(kind: CredentialKind) -> SearchAuthPreference {
     match kind {
         CredentialKind::ApiToken => SearchAuthPreference::Api,
         CredentialKind::SessionToken => SearchAuthPreference::Session,
     }
 }
 
-fn other_kind(kind: CredentialKind) -> CredentialKind {
+const fn other_kind(kind: CredentialKind) -> CredentialKind {
     match kind {
         CredentialKind::ApiToken => CredentialKind::SessionToken,
         CredentialKind::SessionToken => CredentialKind::ApiToken,
@@ -501,7 +497,7 @@ fn other_method_configured(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) 
     has_config_credential(snapshot, other_kind(kind))
 }
 
-fn env_var_name(kind: CredentialKind) -> &'static str {
+const fn env_var_name(kind: CredentialKind) -> &'static str {
     match kind {
         CredentialKind::ApiToken => API_TOKEN_ENV,
         CredentialKind::SessionToken => SESSION_TOKEN_ENV,
