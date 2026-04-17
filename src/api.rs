@@ -144,8 +144,7 @@ pub async fn execute_subscriber_summarize(
     let target_language = request
         .target_language
         .as_deref()
-        .map(str::trim)
-        .unwrap_or("");
+        .map_or("", str::trim);
 
     let client = build_client()?;
     let response = client
@@ -1822,14 +1821,12 @@ fn text_contains_news_filter_keyword(text: &str, keyword: &str) -> bool {
         let start_ok = text[..index]
             .chars()
             .next_back()
-            .map(|ch| !is_news_filter_word_char(ch))
-            .unwrap_or(true);
+            .map_or(true, |ch| !is_news_filter_word_char(ch));
         let end_index = index + keyword.len();
         let end_ok = text[end_index..]
             .chars()
             .next()
-            .map(|ch| !is_news_filter_word_char(ch))
-            .unwrap_or(true);
+            .map_or(true, |ch| !is_news_filter_word_char(ch));
 
         if start_ok && end_ok {
             return true;
@@ -1839,7 +1836,7 @@ fn text_contains_news_filter_keyword(text: &str, keyword: &str) -> bool {
     false
 }
 
-fn is_news_filter_word_char(ch: char) -> bool {
+const fn is_news_filter_word_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
@@ -1896,8 +1893,7 @@ fn resolve_news_category(
             || category.category_name.eq_ignore_ascii_case(requested)
             || metadata_map
                 .get(&category.category_id)
-                .map(|entry| entry.display_name.eq_ignore_ascii_case(requested))
-                .unwrap_or(false)
+                .is_some_and(|entry| entry.display_name.eq_ignore_ascii_case(requested))
     }) {
         return Ok(merge_news_category(
             category.clone(),
@@ -2951,7 +2947,7 @@ fn format_client_error_suffix(body: &str) -> String {
     }
 
     if let Ok(payload) = serde_json::from_str::<Value>(trimmed) {
-        return format!("; {}", payload);
+        return format!("; {payload}");
     }
 
     format!("; {trimmed}")

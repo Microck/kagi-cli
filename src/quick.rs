@@ -105,8 +105,7 @@ pub fn format_quick_pretty(response: &QuickResponse, use_color: bool) -> String 
 
     let mut sections = Vec::new();
     sections.push(format!(
-        "{heading_color}Quick Answer{reset_color}\n\n{}",
-        answer
+        "{heading_color}Quick Answer{reset_color}\n\n{answer}"
     ));
 
     if !response.references.items.is_empty() {
@@ -266,7 +265,7 @@ fn parse_quick_answer_stream(
     Ok(QuickResponse {
         meta,
         query: query.to_string(),
-        lens: lens.map(|value| value.to_string()),
+        lens: lens.map(std::string::ToString::to_string),
         message: QuickMessage {
             id: message.id,
             thread_id: message.thread_id,
@@ -323,25 +322,25 @@ fn parse_quick_reference_line(line: &str) -> Option<QuickReferenceItem> {
         title,
         domain: Url::parse(&url)
             .ok()
-            .and_then(|parsed| parsed.host_str().map(|host| host.to_string())),
+            .and_then(|parsed| parsed.host_str().map(std::string::ToString::to_string)),
         url,
         contribution_pct,
     })
 }
 
 fn render_pretty_answer(response: &QuickResponse) -> String {
-    if !response.message.markdown.trim().is_empty() {
-        prettify_markdown(&response.message.markdown)
-    } else {
+    if response.message.markdown.trim().is_empty() {
         html_to_text(&response.message.html)
+    } else {
+        prettify_markdown(&response.message.markdown)
     }
 }
 
 fn render_markdown_answer(response: &QuickResponse) -> String {
-    if !response.message.markdown.trim().is_empty() {
-        response.message.markdown.trim().to_string()
-    } else {
+    if response.message.markdown.trim().is_empty() {
         html_to_text(&response.message.html)
+    } else {
+        response.message.markdown.trim().to_string()
     }
 }
 
@@ -446,7 +445,7 @@ fn format_client_error_suffix(body: &str) -> String {
     }
 
     if let Ok(payload) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        return format!("; {}", payload);
+        return format!("; {payload}");
     }
 
     let detail = html_to_text(trimmed);

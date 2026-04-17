@@ -33,11 +33,11 @@ pub enum OutputFormat {
 impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutputFormat::Json => write!(f, "json"),
-            OutputFormat::Pretty => write!(f, "pretty"),
-            OutputFormat::Compact => write!(f, "compact"),
-            OutputFormat::Markdown => write!(f, "markdown"),
-            OutputFormat::Csv => write!(f, "csv"),
+            Self::Json => write!(f, "json"),
+            Self::Pretty => write!(f, "pretty"),
+            Self::Compact => write!(f, "compact"),
+            Self::Markdown => write!(f, "markdown"),
+            Self::Csv => write!(f, "csv"),
         }
     }
 }
@@ -57,10 +57,10 @@ pub enum QuickOutputFormat {
 impl std::fmt::Display for QuickOutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            QuickOutputFormat::Json => write!(f, "json"),
-            QuickOutputFormat::Pretty => write!(f, "pretty"),
-            QuickOutputFormat::Compact => write!(f, "compact"),
-            QuickOutputFormat::Markdown => write!(f, "markdown"),
+            Self::Json => write!(f, "json"),
+            Self::Pretty => write!(f, "pretty"),
+            Self::Compact => write!(f, "compact"),
+            Self::Markdown => write!(f, "markdown"),
         }
     }
 }
@@ -76,10 +76,10 @@ pub enum AssistantOutputFormat {
 impl std::fmt::Display for AssistantOutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssistantOutputFormat::Json => write!(f, "json"),
-            AssistantOutputFormat::Pretty => write!(f, "pretty"),
-            AssistantOutputFormat::Compact => write!(f, "compact"),
-            AssistantOutputFormat::Markdown => write!(f, "markdown"),
+            Self::Json => write!(f, "json"),
+            Self::Pretty => write!(f, "pretty"),
+            Self::Compact => write!(f, "compact"),
+            Self::Markdown => write!(f, "markdown"),
         }
     }
 }
@@ -107,7 +107,7 @@ pub enum LensTemplate {
 }
 
 impl LensTemplate {
-    pub fn as_form_value(&self) -> &'static str {
+    pub const fn as_form_value(&self) -> &'static str {
         match self {
             Self::Default => "0",
             Self::News => "1",
@@ -122,7 +122,7 @@ pub enum NewsFilterMode {
 }
 
 impl NewsFilterMode {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Hide => "hide",
             Self::Blur => "blur",
@@ -138,7 +138,7 @@ pub enum NewsFilterScope {
 }
 
 impl NewsFilterScope {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Title => "title",
             Self::Summary => "summary",
@@ -199,7 +199,7 @@ pub enum Commands {
     AskPage(AskPageArgs),
     /// Translate text through Kagi Translate using session-token auth
     Translate(Box<TranslateArgs>),
-    /// Answer a query with Kagi's FastGPT API
+    /// Answer a query with Kagi's `FastGPT` API
     Fastgpt(FastGptArgs),
     /// Query Kagi's enrichment indexes
     Enrich(EnrichCommand),
@@ -246,13 +246,13 @@ pub struct SearchArgs {
     /// Scope search to a Kagi lens by numeric index (e.g., "0", "1", "2").
     ///
     /// Lens indices are user-specific. Find yours by:
-    /// 1. Visit https://kagi.com/settings/lenses to see enabled lenses
+    /// 1. Visit <https://kagi.com/settings/lenses> to see enabled lenses
     /// 2. Search in Kagi web UI with a lens active
     /// 3. Check the URL for the "l=" parameter value
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
 
-    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    /// Restrict results to a Kagi region code such as "us", "gb", or "`no_region`"
     #[arg(long, value_name = "REGION")]
     pub region: Option<String>,
 
@@ -315,7 +315,7 @@ pub struct BatchSearchArgs {
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
 
-    /// Restrict results to a Kagi region code such as "us", "gb", or "no_region"
+    /// Restrict results to a Kagi region code such as "us", "gb", or "`no_region`"
     #[arg(long, value_name = "REGION")]
     pub region: Option<String>,
 
@@ -505,7 +505,7 @@ impl NewsArgs {
         Ok(())
     }
 
-    pub fn has_filter_inputs(&self) -> bool {
+    pub const fn has_filter_inputs(&self) -> bool {
         !self.filter_preset.is_empty() || !self.filter_keyword.is_empty()
     }
 }
@@ -799,7 +799,7 @@ pub struct TranslateArgs {
     #[arg(long)]
     pub preserve_formatting: Option<bool>,
 
-    /// Raw JSON array passed through as context_memory
+    /// Raw JSON array passed through as `context_memory`
     #[arg(long, value_name = "JSON")]
     pub context_memory_json: Option<String>,
 
@@ -849,7 +849,7 @@ pub struct EnrichCommand {
 pub enum EnrichSubcommand {
     /// Query Kagi's Teclis web enrichment index
     Web(EnrichArgs),
-    /// Query Kagi's TinyGem news enrichment index
+    /// Query Kagi's `TinyGem` news enrichment index
     News(EnrichArgs),
 }
 

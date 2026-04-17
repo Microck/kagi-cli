@@ -73,12 +73,12 @@ impl SearchRequest {
         self
     }
 
-    pub fn with_verbatim(mut self, verbatim: bool) -> Self {
+    pub const fn with_verbatim(mut self, verbatim: bool) -> Self {
         self.verbatim = Some(verbatim);
         self
     }
 
-    pub fn with_personalized(mut self, personalized: bool) -> Self {
+    pub const fn with_personalized(mut self, personalized: bool) -> Self {
         self.personalized = Some(personalized);
         self
     }
@@ -176,10 +176,9 @@ impl SearchRequest {
 pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
     if lens.parse::<u32>().is_err() {
         return Err(KagiError::Config(format!(
-            "lens '{}' must be a numeric index (e.g., '0', '1', '2'). \
+            "lens '{lens}' must be a numeric index (e.g., '0', '1', '2'). \
              Visit https://kagi.com/settings/lenses to see your enabled lenses, \
-             then use the index from the 'l=' parameter in your browser URL.",
-            lens
+             then use the index from the 'l=' parameter in your browser URL."
         )));
     }
 
@@ -387,7 +386,7 @@ fn days_in_month(year: u32, month: u32) -> u32 {
     }
 }
 
-fn is_leap_year(year: u32) -> bool {
+const fn is_leap_year(year: u32) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 

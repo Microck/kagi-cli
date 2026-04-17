@@ -676,7 +676,7 @@ fn print_completion(shell: CompletionShell) {
         CompletionShell::Zsh => generate(shells::Zsh, &mut cmd, "kagi", &mut std::io::stdout()),
         CompletionShell::Fish => generate(shells::Fish, &mut cmd, "kagi", &mut std::io::stdout()),
         CompletionShell::PowerShell => {
-            generate(shells::PowerShell, &mut cmd, "kagi", &mut std::io::stdout())
+            generate(shells::PowerShell, &mut cmd, "kagi", &mut std::io::stdout());
         }
     }
 }
@@ -737,7 +737,7 @@ async fn execute_primary_search_request(
     }
 }
 
-fn should_fallback_to_session(error: &KagiError) -> bool {
+const fn should_fallback_to_session(error: &KagiError) -> bool {
     matches!(error, KagiError::Auth(_))
 }
 
@@ -801,7 +801,7 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn bool_flag_choice(enabled: bool, disabled: bool) -> Option<bool> {
+const fn bool_flag_choice(enabled: bool, disabled: bool) -> Option<bool> {
     match (enabled, disabled) {
         (true, false) => Some(true),
         (false, true) => Some(false),
@@ -1084,7 +1084,7 @@ fn format_markdown_response(response: &SearchResponse) -> String {
 fn escape_csv_field(field: &str) -> String {
     if field.contains('"') || field.contains(',') || field.contains('\n') || field.contains('\r') {
         let escaped = field.replace('"', "\"\"");
-        format!("\"{}\"", escaped)
+        format!("\"{escaped}\"")
     } else {
         field.to_string()
     }
@@ -1101,7 +1101,7 @@ fn format_csv_response(response: &SearchResponse) -> String {
         let title = escape_csv_field(&result.title);
         let url = escape_csv_field(&result.url);
         let snippet = escape_csv_field(&result.snippet);
-        output.push_str(&format!("{},{},{}\n", title, url, snippet));
+        output.push_str(&format!("{title},{url},{snippet}\n"));
     }
 
     output
@@ -1138,12 +1138,12 @@ impl RateLimiter {
 
             let now = Instant::now();
             let elapsed = now.duration_since(*last_refill).as_secs_f64();
-            let refill_interval = 60.0 / self.refill_rate as f64;
+            let refill_interval = 60.0 / f64::from(self.refill_rate);
             let refill_tokens = (elapsed / refill_interval).floor() as u32;
 
             if refill_tokens > 0 {
                 *tokens = (*tokens + refill_tokens).min(self.capacity);
-                *last_refill += Duration::from_secs_f64(refill_tokens as f64 * refill_interval);
+                *last_refill += Duration::from_secs_f64(f64::from(refill_tokens) * refill_interval);
             }
 
             if *tokens > 0 {
@@ -1262,8 +1262,8 @@ async fn run_batch_search(
                     KagiError::Parse(format!("failed to serialize search response: {error}"))
                 })?,
             };
-            println!("=== Results for: {} ===", query);
-            println!("{}", output);
+            println!("=== Results for: {query} ===");
+            println!("{output}");
             println!();
         }
     }

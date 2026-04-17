@@ -67,13 +67,11 @@ pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSumm
         let saved = element
             .value()
             .attr("data-saved")
-            .map(|value| value == "true")
-            .unwrap_or(false);
+            .is_some_and(|value| value == "true");
         let shared = element
             .value()
             .attr("data-public")
-            .map(|value| value == "true")
-            .unwrap_or(false);
+            .is_some_and(|value| value == "true");
         let tag_ids =
             serde_json::from_str::<Vec<String>>(element.value().attr("data-tags").unwrap_or("[]"))
                 .map_err(|error| {
@@ -171,8 +169,7 @@ pub fn parse_assistant_profile_list(html: &str) -> Result<Vec<AssistantProfileSu
             .last()
             .and_then(|block| block.select(&dd_selector).next())
             .map(|node| node.text().collect::<String>())
-            .map(|value| parse_toggle_text(&value))
-            .unwrap_or(false);
+            .is_some_and(|value| parse_toggle_text(&value));
         let edit_url = item
             .select(&edit_selector)
             .next()
@@ -419,8 +416,7 @@ pub fn parse_redirect_list(html: &str) -> Result<Vec<RedirectRuleSummary>, KagiE
         let enabled = toggle_form
             .and_then(|form| form.select(&button_selector).next())
             .and_then(|button| button.value().attr("class"))
-            .map(|class_name| class_name.contains("--enabled"))
-            .unwrap_or(false);
+            .is_some_and(|class_name| class_name.contains("--enabled"));
 
         redirects.push(RedirectRuleSummary {
             id,
@@ -500,7 +496,7 @@ fn extract_checked_radio_value(document: &Html, name: &str) -> Option<String> {
         node.value()
             .attr("checked")
             .map(|_| ())
-            .and_then(|_| node.value().attr("value"))
+            .and_then(|()| node.value().attr("value"))
             .map(str::to_string)
     })
 }
