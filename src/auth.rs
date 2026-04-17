@@ -19,6 +19,10 @@ pub enum CredentialKind {
 }
 
 impl CredentialKind {
+    /// Returns the string representation of this credential kind.
+    /// 
+    /// # Returns
+    /// `"api-token"` or `"session-token"`.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ApiToken => "api-token",
@@ -34,6 +38,10 @@ pub enum CredentialSource {
 }
 
 impl CredentialSource {
+    /// Returns the string representation of this credential source.
+    /// 
+    /// # Returns
+    /// `"env"` or `"config"`.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Env => "env",
@@ -59,6 +67,10 @@ impl SearchAuthPreference {
         }
     }
 
+    /// Returns the string representation of this search auth preference.
+    /// 
+    /// # Returns
+    /// `"session"` or `"api"`.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Session => "session",
@@ -106,6 +118,16 @@ pub struct CredentialInventory {
 }
 
 impl CredentialInventory {
+    /// Resolves the appropriate credentials for a search request based on the auth requirement.
+    /// 
+    /// # Arguments
+    /// * `requirement` - The authentication requirement (Base, Lens, or Filtered).
+    /// 
+    /// # Returns
+    /// `SearchCredentials` with the primary and optional fallback session credential.
+    /// 
+    /// # Errors
+    /// Returns `KagiError::Config` if no suitable credentials are available.
     pub fn resolve_for_search(
         &self,
         requirement: SearchAuthRequirement,
@@ -172,6 +194,10 @@ impl CredentialInventory {
         ))
     }
 
+    /// Returns the preferred credential for status display, based on the search auth preference.
+    /// 
+    /// # Returns
+    /// The preferred credential, or `None` if no credentials are configured.
     pub fn preferred_for_status(&self) -> Option<&Credential> {
         match self.search_preference {
             SearchAuthPreference::Session => {
@@ -202,6 +228,14 @@ pub struct ConfigAuthSnapshot {
     pub search_preference: SearchAuthPreference,
 }
 
+/// Loads the credential inventory from the default config path and environment variables.
+/// 
+/// # Returns
+/// A `CredentialInventory` with resolved API token, session token, and preferences.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if the config file cannot be read or parsed,
+/// or if session token normalization fails.
 pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
     load_credential_inventory_from_path(Path::new(DEFAULT_CONFIG_PATH))
 }
@@ -256,6 +290,13 @@ fn load_credential_inventory_from_path(
     })
 }
 
+/// Formats a human-readable status summary of the credential inventory.
+/// 
+/// # Arguments
+/// * `inventory` - The credential inventory to summarize.
+/// 
+/// # Returns
+/// A multi-line status string.
 pub fn format_status(inventory: &CredentialInventory) -> String {
     let selected = inventory.preferred_for_status();
     let selected_line = if let Some(credential) = selected {
@@ -278,6 +319,13 @@ pub fn format_status(inventory: &CredentialInventory) -> String {
     )
 }
 
+/// Loads a snapshot of auth configuration from the default config path.
+/// 
+/// # Returns
+/// A `ConfigAuthSnapshot` with raw config values.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if the config file cannot be read or parsed.
 pub fn load_config_auth_snapshot() -> Result<ConfigAuthSnapshot, KagiError> {
     load_config_auth_snapshot_from_path(Path::new(DEFAULT_CONFIG_PATH))
 }
@@ -342,6 +390,16 @@ fn build_session_credential(
     })
 }
 
+/// Normalizes and validates an API token string.
+/// 
+/// # Arguments
+/// * `input` - The raw API token input.
+/// 
+/// # Returns
+/// The trimmed API token string.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if the token is empty after trimming.
 pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -351,6 +409,17 @@ pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
     Ok(trimmed.to_string())
 }
 
+/// Saves API and/or session credentials to the default config file.
+/// 
+/// # Arguments
+/// * `api_token` - Optional API token to save.
+/// * `session_input` - Optional session token or session link URL to save.
+/// 
+/// # Returns
+/// The updated `CredentialInventory` after saving.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if neither credential is provided, or on I/O or serialization errors.
 pub fn save_credentials(
     api_token: Option<&str>,
     session_input: Option<&str>,
@@ -358,6 +427,18 @@ pub fn save_credentials(
     save_credentials_with_preference(api_token, session_input, None)
 }
 
+/// Saves credentials with an optional search auth preference to the default config file.
+/// 
+/// # Arguments
+/// * `api_token` - Optional API token to save.
+/// * `session_input` - Optional session token or session link URL to save.
+/// * `preferred_auth` - Optional search auth preference to set.
+/// 
+/// # Returns
+/// The updated `CredentialInventory` after saving.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if neither credential is provided, or on I/O or serialization errors.
 pub fn save_credentials_with_preference(
     api_token: Option<&str>,
     session_input: Option<&str>,
@@ -423,6 +504,20 @@ fn normalize_optional_session_token(input: Option<String>) -> Result<Option<Stri
         .transpose()
 }
 
+/// Normalizes and validates a session token or session link URL.
+/// 
+/// If the input is a URL, extracts the `token` query parameter.
+/// Otherwise, returns the trimmed raw value.
+/// 
+/// # Arguments
+/// * `input` - The raw session token or session link URL.
+/// 
+/// # Returns
+/// The normalized session token string.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if the input is empty, the URL is invalid,
+/// or the URL does not contain a non-empty `token` parameter.
 pub fn normalize_session_token(input: &str) -> Result<String, KagiError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

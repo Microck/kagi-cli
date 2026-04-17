@@ -85,10 +85,26 @@ impl Theme for KagiAuthTheme {
     }
 }
 
+/// Checks whether the current terminal environment supports interactive authentication.
+/// 
+/// # Returns
+/// `true` if stdin, stdout, and stderr are all connected to a terminal.
 pub fn supports_interactive_auth() -> bool {
     io::stdin().is_terminal() && io::stdout().is_terminal() && io::stderr().is_terminal()
 }
 
+/// Runs the interactive authentication wizard.
+/// 
+/// Guides the user through selecting an auth method (API token or session link),
+/// entering credentials, validating them against the Kagi API, and saving to the
+/// local config file.
+/// 
+/// # Returns
+/// `Ok(())` on successful completion, or an error if the wizard fails.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` for I/O or configuration errors,
+/// and `KagiError::Auth` or `KagiError::Network` if credential validation fails.
 pub async fn run_auth_wizard() -> Result<(), KagiError> {
     let _ = ctrlc::set_handler(|| {});
     cliclack::set_theme(KagiAuthTheme);
@@ -288,6 +304,16 @@ fn auth_ascii_width() -> u16 {
         .min(u16::MAX as usize) as u16
 }
 
+/// Validates a credential by executing a test search against the Kagi API.
+/// 
+/// # Arguments
+/// * `credential` - The credential to validate.
+/// 
+/// # Returns
+/// `Ok(())` if the credential is valid.
+/// 
+/// # Errors
+/// Returns an error if the validation request fails (auth, network, or parse error).
 pub async fn validate_credential(credential: &Credential) -> Result<(), KagiError> {
     let request = search::SearchRequest::new(VALIDATION_QUERY.to_string());
     match credential.kind {

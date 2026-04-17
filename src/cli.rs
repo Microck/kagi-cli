@@ -107,6 +107,7 @@ pub enum LensTemplate {
 }
 
 impl LensTemplate {
+    /// Returns the form value string for this lens template.
     pub const fn as_form_value(&self) -> &'static str {
         match self {
             Self::Default => "0",
@@ -122,6 +123,7 @@ pub enum NewsFilterMode {
 }
 
 impl NewsFilterMode {
+    /// Returns the string representation of this news filter mode.
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Hide => "hide",
@@ -138,6 +140,7 @@ pub enum NewsFilterScope {
 }
 
 impl NewsFilterScope {
+    /// Returns the string representation of this news filter scope.
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Title => "title",
@@ -349,6 +352,10 @@ pub struct BatchSearchArgs {
 }
 
 impl BatchSearchArgs {
+    /// Validates batch search arguments.
+    /// 
+    /// # Errors
+    /// Returns an error if concurrency or rate-limit is zero.
     pub fn validate(&self) -> Result<(), String> {
         if self.concurrency == 0 {
             return Err("concurrency must be at least 1".to_string());
@@ -481,6 +488,11 @@ pub struct NewsArgs {
 }
 
 impl NewsArgs {
+    /// Validates news arguments.
+    /// 
+    /// # Errors
+    /// Returns an error if filter options conflict with list/chaos modes,
+    /// or if filter mode/scope are used without filter inputs.
     pub fn validate(&self) -> Result<(), String> {
         let has_filter_inputs = self.has_filter_inputs();
         let has_non_default_filter_options =
@@ -505,6 +517,7 @@ impl NewsArgs {
         Ok(())
     }
 
+    /// Returns `true` if any filter inputs (presets or keywords) are specified.
     pub const fn has_filter_inputs(&self) -> bool {
         !self.filter_preset.is_empty() || !self.filter_keyword.is_empty()
     }

@@ -29,6 +29,10 @@ pub struct SearchRequest {
 }
 
 impl SearchRequest {
+    /// Creates a new `SearchRequest` with the given query and no filters.
+    /// 
+    /// # Arguments
+    /// * `query` - The search query string.
     pub fn new(query: impl Into<String>) -> Self {
         Self {
             query: query.into(),
@@ -43,46 +47,79 @@ impl SearchRequest {
         }
     }
 
+    /// Sets the lens filter for this search request.
+    /// 
+    /// # Arguments
+    /// * `lens` - The numeric lens index as a string.
     pub fn with_lens(mut self, lens: impl Into<String>) -> Self {
         self.lens = Some(lens.into());
         self
     }
 
+    /// Sets the region filter for this search request.
+    /// 
+    /// # Arguments
+    /// * `region` - A Kagi region code (e.g. `"us"`, `"gb"`).
     pub fn with_region(mut self, region: impl Into<String>) -> Self {
         self.region = Some(region.into());
         self
     }
 
+    /// Sets the time filter for this search request.
+    /// 
+    /// # Arguments
+    /// * `time_filter` - A time window value (e.g. `"day"`, `"week"`).
     pub fn with_time_filter(mut self, time_filter: impl Into<String>) -> Self {
         self.time_filter = Some(time_filter.into());
         self
     }
 
+    /// Sets the from-date filter for this search request.
+    /// 
+    /// # Arguments
+    /// * `from_date` - Start date in `YYYY-MM-DD` format.
     pub fn with_from_date(mut self, from_date: impl Into<String>) -> Self {
         self.from_date = Some(from_date.into());
         self
     }
 
+    /// Sets the to-date filter for this search request.
+    /// 
+    /// # Arguments
+    /// * `to_date` - End date in `YYYY-MM-DD` format.
     pub fn with_to_date(mut self, to_date: impl Into<String>) -> Self {
         self.to_date = Some(to_date.into());
         self
     }
 
+    /// Sets the sort order for this search request.
+    /// 
+    /// # Arguments
+    /// * `order` - The sort order value.
     pub fn with_order(mut self, order: impl Into<String>) -> Self {
         self.order = Some(order.into());
         self
     }
 
+    /// Sets verbatim mode for this search request.
+    /// 
+    /// # Arguments
+    /// * `verbatim` - Whether to enable verbatim search.
     pub const fn with_verbatim(mut self, verbatim: bool) -> Self {
         self.verbatim = Some(verbatim);
         self
     }
 
+    /// Sets the personalization flag for this search request.
+    /// 
+    /// # Arguments
+    /// * `personalized` - Whether to enable personalized search.
     pub const fn with_personalized(mut self, personalized: bool) -> Self {
         self.personalized = Some(personalized);
         self
     }
 
+    /// Returns `true` if any runtime filter (region, time, dates, order, verbatim, personalized) is set.
     pub fn has_runtime_filters(&self) -> bool {
         self.region.is_some()
             || self.time_filter.is_some()
@@ -93,10 +130,18 @@ impl SearchRequest {
             || self.personalized.is_some()
     }
 
+    /// Returns `true` if this request requires session-token authentication (lens or runtime filters).
     pub fn requires_session_auth(&self) -> bool {
         self.lens.is_some() || self.has_runtime_filters()
     }
 
+    /// Validates the search request parameters.
+    /// 
+    /// Checks that the query is non-empty, optional fields are properly formatted,
+    /// dates are valid ISO format, and conflicting options are not combined.
+    /// 
+    /// # Errors
+    /// Returns `KagiError::Config` with a descriptive message if validation fails.
     pub fn validate(&self) -> Result<(), KagiError> {
         if self.query.trim().is_empty() {
             return Err(KagiError::Config(
@@ -173,6 +218,13 @@ impl SearchRequest {
     }
 }
 
+/// Validates that a lens value is a numeric index.
+/// 
+/// # Arguments
+/// * `lens` - The lens value to validate.
+/// 
+/// # Errors
+/// Returns `KagiError::Config` if the value is not a valid numeric index.
 pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
     if lens.parse::<u32>().is_err() {
         return Err(KagiError::Config(format!(
@@ -185,6 +237,18 @@ pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
     Ok(())
 }
 
+/// Executes a search request using session-token authentication and returns the raw HTML response.
+/// 
+/// # Arguments
+/// * `request` - The search request with query and filters.
+/// * `token` - The Kagi session token.
+/// 
+/// # Returns
+/// The raw HTML response body from Kagi search.
+/// 
+/// # Errors
+/// Returns `KagiError::Auth` if the token is missing or expired,
+/// `KagiError::Network` for transport or server errors.
 pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<String, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
@@ -229,6 +293,20 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
     }
 }
 
+/// Executes a search request using API-token authentication via the Kagi Search API.
+/// 
+/// # Arguments
+/// * `request` - The search request. Must not require session-only features (lens, filters).
+/// * `token` - The Kagi API token.
+/// 
+/// # Returns
+/// A `SearchResponse` with parsed search results.
+/// 
+/// # Errors
+/// Returns `KagiError::Auth` if the token is missing or rejected,
+/// `KagiError::Config` if the request requires session-only features,
+/// `KagiError::Network` for transport or server errors,
+/// `KagiError::Parse` if the API response cannot be deserialized.
 pub async fn execute_api_search(
     request: &SearchRequest,
     token: &str,
@@ -283,6 +361,17 @@ pub async fn execute_api_search(
     }
 }
 
+/// Executes a search request using session-token authentication and returns parsed results.
+/// 
+/// # Arguments
+/// * `request` - The search request with query and optional filters.
+/// * `token` - The Kagi session token.
+/// 
+/// # Returns
+/// A `SearchResponse` with parsed search results.
+/// 
+/// # Errors
+/// Delegates to `search_with_lens` and `parse_search_results`.
 pub async fn execute_search(
     request: &SearchRequest,
     token: &str,
