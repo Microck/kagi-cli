@@ -1821,12 +1821,12 @@ fn text_contains_news_filter_keyword(text: &str, keyword: &str) -> bool {
         let start_ok = text[..index]
             .chars()
             .next_back()
-            .map_or(true, |ch| !is_news_filter_word_char(ch));
+            .is_none_or(|ch| !is_news_filter_word_char(ch));
         let end_index = index + keyword.len();
         let end_ok = text[end_index..]
             .chars()
             .next()
-            .map_or(true, |ch| !is_news_filter_word_char(ch));
+            .is_none_or(|ch| !is_news_filter_word_char(ch));
 
         if start_ok && end_ok {
             return true;
