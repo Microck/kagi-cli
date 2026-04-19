@@ -3241,9 +3241,9 @@ fn parse_assistant_thread_list_stream(
                             "failed to parse assistant thread list frame: {error}"
                         ))
                     })?;
-                threads = parse_assistant_thread_list(&payload.html)?;
+                threads = parse_assistant_thread_list(payload.html.as_str())?;
                 pagination = Some(AssistantThreadPagination {
-                    next_cursor: payload.next_cursor,
+                    next_cursor: payload.next_cursor.into_opaque_string(),
                     has_more: payload.has_more,
                     count: payload.count,
                     total_counts: payload.total_counts,
@@ -3868,15 +3868,50 @@ struct AssistantMessagePayload {
 
 #[derive(Debug, Deserialize)]
 struct AssistantThreadListPayload {
-    html: String,
+    html: AssistantThreadListHtml,
     #[serde(default)]
-    next_cursor: Option<String>,
+    next_cursor: AssistantThreadListCursor,
     #[serde(default)]
     has_more: bool,
     #[serde(default)]
     count: u64,
     #[serde(default)]
     total_counts: HashMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum AssistantThreadListHtml {
+    Raw(String),
+    Wrapped { html: String },
+}
+
+impl AssistantThreadListHtml {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Raw(html) => html,
+            Self::Wrapped { html } => html,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum AssistantThreadListCursor {
+    String(String),
+    Opaque(Value),
+    #[default]
+    Missing,
+}
+
+impl AssistantThreadListCursor {
+    fn into_opaque_string(self) -> Option<String> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Opaque(value) => Some(value.to_string()),
+            Self::Missing => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -4666,6 +4701,32 @@ mod tests {
         assert_eq!(parsed.threads[0].id, "thread-1");
         assert_eq!(parsed.pagination.count, 1);
         assert_eq!(parsed.pagination.total_counts.get("all"), Some(&1));
+    }
+
+    #[test]
+    fn parses_assistant_thread_list_stream_with_wrapped_html_and_object_cursor() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-list-object\"}\0\n",
+            "tags.json:[]\0\n",
+            "thread_list.html:{\"html\":{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"true\\\" data-tags='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\"},\"next_cursor\":{\"offset\":100,\"has_more\":true},\"has_more\":true,\"count\":100,\"total_counts\":{\"all\":250}}\0\n"
+        );
+
+        let parsed = parse_assistant_thread_list_stream(raw).expect("thread list parses");
+        assert_eq!(parsed.meta.trace.as_deref(), Some("trace-list-object"));
+        assert_eq!(parsed.threads.len(), 1);
+        assert_eq!(parsed.threads[0].id, "thread-2");
+        let next_cursor = parsed
+            .pagination
+            .next_cursor
+            .as_deref()
+            .expect("wrapped cursor should be preserved");
+        let next_cursor_json: Value =
+            serde_json::from_str(next_cursor).expect("cursor should stay valid JSON");
+        assert_eq!(next_cursor_json["offset"], 100);
+        assert_eq!(next_cursor_json["has_more"], true);
+        assert!(parsed.pagination.has_more);
+        assert_eq!(parsed.pagination.count, 100);
+        assert_eq!(parsed.pagination.total_counts.get("all"), Some(&250));
     }
 
     #[test]
