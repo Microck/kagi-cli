@@ -50,6 +50,7 @@ const KAGI_NEWS_LATEST_PATH: &str = "/api/batches/latest";
 const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
 const KAGI_NEWS_BATCH_CATEGORIES_PATH: &str = "/api/batches";
 const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
+const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const KAGI_ASSISTANT_PROMPT_PATH: &str = "/assistant/prompt";
 const KAGI_ASSISTANT_THREAD_OPEN_PATH: &str = "/assistant/thread_open";
 const KAGI_ASSISTANT_THREAD_LIST_PATH: &str = "/assistant/thread_list";
@@ -2404,6 +2405,13 @@ fn trimmed_optional(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
+fn debug_body_preview(body: &str) -> &str {
+    match body.char_indices().nth(DEBUG_BODY_PREVIEW_LIMIT) {
+        Some((idx, _)) => &body[..idx],
+        None => body,
+    }
+}
+
 fn normalize_optional_form_value(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();
@@ -3943,7 +3951,13 @@ where
                 KagiError::Network(format!("failed to read {surface} response body: {error}"))
             })?;
             serde_json::from_str(&body).map_err(|error| {
-                debug!(surface, body, error = %error, "failed to parse Kagi API response body");
+                debug!(
+                    surface,
+                    body_len = body.len(),
+                    body_preview = %debug_body_preview(&body),
+                    error = %error,
+                    "failed to parse Kagi API response body"
+                );
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
         }
@@ -3988,7 +4002,13 @@ where
                 KagiError::Network(format!("failed to read {surface} response body: {error}"))
             })?;
             serde_json::from_str(&body).map_err(|error| {
-                debug!(surface, body, error = %error, "failed to parse free Kagi response body");
+                debug!(
+                    surface,
+                    body_len = body.len(),
+                    body_preview = %debug_body_preview(&body),
+                    error = %error,
+                    "failed to parse free Kagi response body"
+                );
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
         }
@@ -4031,7 +4051,13 @@ where
                 ));
             }
             serde_json::from_str(&body).map_err(|error| {
-                debug!(surface, body, error = %error, "failed to parse Kagi Translate response body");
+                debug!(
+                    surface,
+                    body_len = body.len(),
+                    body_preview = %debug_body_preview(&body),
+                    error = %error,
+                    "failed to parse Kagi Translate response body"
+                );
                 KagiError::Parse(format!(
                     "failed to parse Kagi Translate {surface} response: {error}"
                 ))

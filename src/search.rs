@@ -9,6 +9,7 @@ use crate::types::{SearchResponse, SearchResult};
 
 const KAGI_SEARCH_PATH: &str = "/html/search";
 const KAGI_API_SEARCH_PATH: &str = "/api/v0/search";
+const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "<title>Kagi Search - A Premium Search Engine</title>",
     "Welcome to Kagi",
@@ -338,7 +339,12 @@ pub async fn execute_api_search(
                 KagiError::Network(format!("failed to read response body: {error}"))
             })?;
             let api_response: ApiSearchResponse = serde_json::from_str(&body).map_err(|error| {
-                debug!(body, error = %error, "failed to parse Kagi Search API response body");
+                debug!(
+                    body_len = body.len(),
+                    body_preview = %debug_body_preview(&body),
+                    error = %error,
+                    "failed to parse Kagi Search API response body"
+                );
                 KagiError::Parse(format!("failed to parse Kagi API response: {error}"))
             })?;
             Ok(SearchResponse {
@@ -379,6 +385,13 @@ pub async fn execute_search(
     let html = search_with_lens(request, token).await?;
     let data = parse_search_results(&html)?;
     Ok(SearchResponse { data })
+}
+
+fn debug_body_preview(body: &str) -> &str {
+    match body.char_indices().nth(DEBUG_BODY_PREVIEW_LIMIT) {
+        Some((idx, _)) => &body[..idx],
+        None => body,
+    }
 }
 
 fn build_search_query_params(

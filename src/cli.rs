@@ -429,6 +429,20 @@ pub struct SummarizeArgs {
     pub cache: Option<bool>,
 }
 
+impl SummarizeArgs {
+    /// Validates summarize arguments.
+    ///
+    /// # Errors
+    /// Returns an error when neither `--url` nor `--text` is provided.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.url.is_none() && self.text.is_none() {
+            return Err("summarize requires exactly one of --url or --text".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct FastGptArgs {
     /// Query to answer
@@ -1222,7 +1236,7 @@ pub struct RedirectUpdateArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, NewsArgs, NewsFilterMode, NewsFilterScope};
+    use super::{Cli, Commands, NewsArgs, NewsFilterMode, NewsFilterScope, SummarizeArgs};
     use clap::Parser;
 
     fn sample_news_args() -> NewsArgs {
@@ -1270,6 +1284,25 @@ mod tests {
 
         assert!(args.validate().is_ok());
         assert!(args.has_filter_inputs());
+    }
+
+    #[test]
+    fn rejects_summarize_args_without_url_or_text() {
+        let args = SummarizeArgs {
+            url: None,
+            text: None,
+            subscriber: false,
+            length: None,
+            engine: None,
+            summary_type: None,
+            target_language: None,
+            cache: None,
+        };
+
+        let error = args
+            .validate()
+            .expect_err("summarize should require url or text input");
+        assert!(error.contains("exactly one of --url or --text"));
     }
 
     #[test]

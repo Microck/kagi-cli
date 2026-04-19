@@ -51,7 +51,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
-use tracing::{error, warn};
+use tracing::error;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone)]
@@ -72,6 +72,7 @@ struct SearchRequestOptions {
 async fn main() {
     init_tracing();
     if let Err(error) = run().await {
+        error!(error = %error, "kagi exited with error");
         eprintln!("{error}");
         std::process::exit(1);
     }
@@ -145,6 +146,8 @@ async fn run() -> Result<(), KagiError> {
             AuthSubcommand::Set(args) => run_auth_set(args),
         },
         Commands::Summarize(args) => {
+            args.validate().map_err(KagiError::Config)?;
+
             if args.subscriber {
                 if args.engine.is_some() {
                     return Err(KagiError::Config(
@@ -1184,7 +1187,8 @@ async fn run_batch_search(
         let semaphore_clone = Arc::clone(&semaphore);
         let credentials_clone = credentials.clone();
         let options_clone = options.clone();
-        let query_clone = query.clone();
+        let query_for_task = query.clone();
+        let query_for_logging = query.clone();
 
         let handle: tokio::task::JoinHandle<(String, Result<SearchResponse, KagiError>)> =
             tokio::spawn(async move {
@@ -1192,7 +1196,7 @@ async fn run_batch_search(
                 let result = async {
                     rate_limiter_clone.acquire().await?;
 
-                    let request = build_search_request(query_clone, &options_clone);
+                    let request = build_search_request(query_for_task, &options_clone);
 
                     execute_search_request(&request, credentials_clone).await
                 }
@@ -1201,21 +1205,21 @@ async fn run_batch_search(
                 (query, result)
             });
 
-        handles.push(handle);
+        handles.push((query_for_logging, handle));
     }
 
     let mut results = vec![];
     let mut had_errors = false;
 
-    for handle in handles {
+    for (query, handle) in handles {
         match handle.await {
-            Ok((query, Ok(output))) => results.push((query, output)),
-            Ok((query, Err(e))) => {
-                error!(query = %query, error = %e, "batch query failed");
+            Ok((completed_query, Ok(output))) => results.push((completed_query, output)),
+            Ok((completed_query, Err(e))) => {
+                error!(query = %completed_query, error = %e, "batch query failed");
                 had_errors = true;
             }
             Err(e) => {
-                warn!(error = %e, "batch worker task failed");
+                error!(query = %query, error = %e, "batch worker task failed");
                 had_errors = true;
             }
         }
@@ -1447,21 +1451,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiter_refill() {
-        let rate_limiter = RateLimiter::new(2, 60); // 2 tokens, 60 per minute
+        let rate_limiter = RateLimiter::new(2, 60_000); // 2 tokens, 1000 tokens/sec
 
         // Acquire both tokens
         rate_limiter.acquire().await.unwrap();
         rate_limiter.acquire().await.unwrap();
 
-        // Third acquisition should wait (but we can't easily test the wait in a test)
-        // This just verifies it doesn't panic
-        let result = rate_limiter.acquire().await;
+        // Bound the wait so the test proves refill behavior without relying on a long sleep.
+        let result = tokio::time::timeout(Duration::from_millis(50), rate_limiter.acquire())
+            .await
+            .expect("rate limiter should refill within timeout");
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_rate_limiter_throttles_under_contention() {
-        let rate_limiter = Arc::new(RateLimiter::new(1, 1200)); // 1 token capacity, 20 tokens/sec
+        let rate_limiter = Arc::new(RateLimiter::new(1, 600)); // 1 token capacity, 10 tokens/sec
         let start = Instant::now();
 
         let mut handles = Vec::new();
@@ -1483,8 +1488,8 @@ mod tests {
 
         let elapsed = latest.duration_since(start);
         assert!(
-            elapsed >= Duration::from_millis(95),
-            "expected throttling to delay final acquisition by at least ~100ms, got {:?}",
+            elapsed >= Duration::from_millis(150),
+            "expected throttling to delay final acquisition by at least ~200ms, got {:?}",
             elapsed
         );
     }
