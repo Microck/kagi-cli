@@ -47,13 +47,13 @@ pub fn parse_search_results(html: &str) -> Result<Vec<SearchResult>, KagiError> 
 }
 
 /// Parses a list of assistant threads from the Kagi settings HTML.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the assistant thread list page.
-/// 
+///
 /// # Returns
 /// A vector of `AssistantThreadSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements or attributes are missing.
 pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSummary>, KagiError> {
@@ -134,13 +134,13 @@ pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSumm
 }
 
 /// Parses a list of assistant profiles from the Kagi settings HTML.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the assistant profiles page.
-/// 
+///
 /// # Returns
 /// A vector of `AssistantProfileSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements or attributes are missing.
 pub fn parse_assistant_profile_list(html: &str) -> Result<Vec<AssistantProfileSummary>, KagiError> {
@@ -215,13 +215,13 @@ pub fn parse_assistant_profile_list(html: &str) -> Result<Vec<AssistantProfileSu
 }
 
 /// Parses the assistant profile edit form from HTML to extract field values.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the assistant profile form.
-/// 
+///
 /// # Returns
 /// An `AssistantProfileDetails` with all form field values.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if required fields are missing from the form.
 pub fn parse_assistant_profile_form(html: &str) -> Result<AssistantProfileDetails, KagiError> {
@@ -257,13 +257,13 @@ pub fn parse_assistant_profile_form(html: &str) -> Result<AssistantProfileDetail
 }
 
 /// Parses a list of Kagi lenses from the settings HTML.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the lenses list page.
-/// 
+///
 /// # Returns
 /// A vector of `LensSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements or attributes are missing.
 pub fn parse_lens_list(html: &str) -> Result<Vec<LensSummary>, KagiError> {
@@ -330,13 +330,13 @@ pub fn parse_lens_list(html: &str) -> Result<Vec<LensSummary>, KagiError> {
 }
 
 /// Parses the lens edit form from HTML to extract field values.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the lens form.
-/// 
+///
 /// # Returns
 /// A `LensDetails` with all form field values.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if the lens name field is missing.
 pub fn parse_lens_form(html: &str) -> Result<LensDetails, KagiError> {
@@ -366,13 +366,13 @@ pub fn parse_lens_form(html: &str) -> Result<LensDetails, KagiError> {
 }
 
 /// Parses a list of custom bangs from the settings HTML table.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the custom bangs page.
-/// 
+///
 /// # Returns
 /// A vector of `CustomBangSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements are missing.
 pub fn parse_custom_bang_list(html: &str) -> Result<Vec<CustomBangSummary>, KagiError> {
@@ -413,13 +413,13 @@ pub fn parse_custom_bang_list(html: &str) -> Result<Vec<CustomBangSummary>, Kagi
 }
 
 /// Parses the custom bang edit form from HTML to extract field values.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the custom bang form.
-/// 
+///
 /// # Returns
 /// A `CustomBangDetails` with all form field values.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if the name or trigger field is missing.
 pub fn parse_custom_bang_form(html: &str) -> Result<CustomBangDetails, KagiError> {
@@ -449,13 +449,13 @@ pub fn parse_custom_bang_form(html: &str) -> Result<CustomBangDetails, KagiError
 }
 
 /// Parses a list of redirect rules from the settings HTML table.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the redirect rules page.
-/// 
+///
 /// # Returns
 /// A vector of `RedirectRuleSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements are missing.
 pub fn parse_redirect_list(html: &str) -> Result<Vec<RedirectRuleSummary>, KagiError> {
@@ -510,13 +510,13 @@ pub fn parse_redirect_list(html: &str) -> Result<Vec<RedirectRuleSummary>, KagiE
 }
 
 /// Parses the redirect rule edit form from HTML to extract field values.
-/// 
+///
 /// # Arguments
 /// * `html` - The HTML content of the redirect rule form.
-/// 
+///
 /// # Returns
 /// A `RedirectRuleDetails` with the form field values.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if the rule field is missing.
 pub fn parse_redirect_form(html: &str) -> Result<RedirectRuleDetails, KagiError> {

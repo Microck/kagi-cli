@@ -31,7 +31,7 @@ pub struct SearchRequest {
 
 impl SearchRequest {
     /// Creates a new `SearchRequest` with the given query and no filters.
-    /// 
+    ///
     /// # Arguments
     /// * `query` - The search query string.
     pub fn new(query: impl Into<String>) -> Self {
@@ -49,7 +49,7 @@ impl SearchRequest {
     }
 
     /// Sets the lens filter for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `lens` - The numeric lens index as a string.
     pub fn with_lens(mut self, lens: impl Into<String>) -> Self {
@@ -58,7 +58,7 @@ impl SearchRequest {
     }
 
     /// Sets the region filter for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `region` - A Kagi region code (e.g. `"us"`, `"gb"`).
     pub fn with_region(mut self, region: impl Into<String>) -> Self {
@@ -67,7 +67,7 @@ impl SearchRequest {
     }
 
     /// Sets the time filter for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `time_filter` - A time window value (e.g. `"day"`, `"week"`).
     pub fn with_time_filter(mut self, time_filter: impl Into<String>) -> Self {
@@ -76,7 +76,7 @@ impl SearchRequest {
     }
 
     /// Sets the from-date filter for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `from_date` - Start date in `YYYY-MM-DD` format.
     pub fn with_from_date(mut self, from_date: impl Into<String>) -> Self {
@@ -85,7 +85,7 @@ impl SearchRequest {
     }
 
     /// Sets the to-date filter for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `to_date` - End date in `YYYY-MM-DD` format.
     pub fn with_to_date(mut self, to_date: impl Into<String>) -> Self {
@@ -94,7 +94,7 @@ impl SearchRequest {
     }
 
     /// Sets the sort order for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `order` - The sort order value.
     pub fn with_order(mut self, order: impl Into<String>) -> Self {
@@ -103,7 +103,7 @@ impl SearchRequest {
     }
 
     /// Sets verbatim mode for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `verbatim` - Whether to enable verbatim search.
     pub const fn with_verbatim(mut self, verbatim: bool) -> Self {
@@ -112,7 +112,7 @@ impl SearchRequest {
     }
 
     /// Sets the personalization flag for this search request.
-    /// 
+    ///
     /// # Arguments
     /// * `personalized` - Whether to enable personalized search.
     pub const fn with_personalized(mut self, personalized: bool) -> Self {
@@ -137,10 +137,10 @@ impl SearchRequest {
     }
 
     /// Validates the search request parameters.
-    /// 
+    ///
     /// Checks that the query is non-empty, optional fields are properly formatted,
     /// dates are valid ISO format, and conflicting options are not combined.
-    /// 
+    ///
     /// # Errors
     /// Returns `KagiError::Config` with a descriptive message if validation fails.
     pub fn validate(&self) -> Result<(), KagiError> {
@@ -220,10 +220,10 @@ impl SearchRequest {
 }
 
 /// Validates that a lens value is a numeric index.
-/// 
+///
 /// # Arguments
 /// * `lens` - The lens value to validate.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the value is not a valid numeric index.
 pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
@@ -239,14 +239,14 @@ pub fn validate_lens_value(lens: &str) -> Result<(), KagiError> {
 }
 
 /// Executes a search request using session-token authentication and returns the raw HTML response.
-/// 
+///
 /// # Arguments
 /// * `request` - The search request with query and filters.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The raw HTML response body from Kagi search.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing or expired,
 /// `KagiError::Network` for transport or server errors.
@@ -295,14 +295,14 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
 }
 
 /// Executes a search request using API-token authentication via the Kagi Search API.
-/// 
+///
 /// # Arguments
 /// * `request` - The search request. Must not require session-only features (lens, filters).
 /// * `token` - The Kagi API token.
-/// 
+///
 /// # Returns
 /// A `SearchResponse` with parsed search results.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing or rejected,
 /// `KagiError::Config` if the request requires session-only features,
@@ -368,14 +368,14 @@ pub async fn execute_api_search(
 }
 
 /// Executes a search request using session-token authentication and returns parsed results.
-/// 
+///
 /// # Arguments
 /// * `request` - The search request with query and optional filters.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `SearchResponse` with parsed search results.
-/// 
+///
 /// # Errors
 /// Delegates to `search_with_lens` and `parse_search_results`.
 pub async fn execute_search(

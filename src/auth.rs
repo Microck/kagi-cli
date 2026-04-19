@@ -20,7 +20,7 @@ pub enum CredentialKind {
 
 impl CredentialKind {
     /// Returns the string representation of this credential kind.
-    /// 
+    ///
     /// # Returns
     /// `"api-token"` or `"session-token"`.
     pub const fn as_str(self) -> &'static str {
@@ -39,7 +39,7 @@ pub enum CredentialSource {
 
 impl CredentialSource {
     /// Returns the string representation of this credential source.
-    /// 
+    ///
     /// # Returns
     /// `"env"` or `"config"`.
     pub const fn as_str(self) -> &'static str {
@@ -68,7 +68,7 @@ impl SearchAuthPreference {
     }
 
     /// Returns the string representation of this search auth preference.
-    /// 
+    ///
     /// # Returns
     /// `"session"` or `"api"`.
     pub const fn as_str(self) -> &'static str {
@@ -119,13 +119,13 @@ pub struct CredentialInventory {
 
 impl CredentialInventory {
     /// Resolves the appropriate credentials for a search request based on the auth requirement.
-    /// 
+    ///
     /// # Arguments
     /// * `requirement` - The authentication requirement (Base, Lens, or Filtered).
-    /// 
+    ///
     /// # Returns
     /// `SearchCredentials` with the primary and optional fallback session credential.
-    /// 
+    ///
     /// # Errors
     /// Returns `KagiError::Config` if no suitable credentials are available.
     pub fn resolve_for_search(
@@ -195,7 +195,7 @@ impl CredentialInventory {
     }
 
     /// Returns the preferred credential for status display, based on the search auth preference.
-    /// 
+    ///
     /// # Returns
     /// The preferred credential, or `None` if no credentials are configured.
     pub fn preferred_for_status(&self) -> Option<&Credential> {
@@ -229,10 +229,10 @@ pub struct ConfigAuthSnapshot {
 }
 
 /// Loads the credential inventory from the default config path and environment variables.
-/// 
+///
 /// # Returns
 /// A `CredentialInventory` with resolved API token, session token, and preferences.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the config file cannot be read or parsed,
 /// or if session token normalization fails.
@@ -291,10 +291,10 @@ fn load_credential_inventory_from_path(
 }
 
 /// Formats a human-readable status summary of the credential inventory.
-/// 
+///
 /// # Arguments
 /// * `inventory` - The credential inventory to summarize.
-/// 
+///
 /// # Returns
 /// A multi-line status string.
 pub fn format_status(inventory: &CredentialInventory) -> String {
@@ -320,10 +320,10 @@ pub fn format_status(inventory: &CredentialInventory) -> String {
 }
 
 /// Loads a snapshot of auth configuration from the default config path.
-/// 
+///
 /// # Returns
 /// A `ConfigAuthSnapshot` with raw config values.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the config file cannot be read or parsed.
 pub fn load_config_auth_snapshot() -> Result<ConfigAuthSnapshot, KagiError> {
@@ -391,13 +391,13 @@ fn build_session_credential(
 }
 
 /// Normalizes and validates an API token string.
-/// 
+///
 /// # Arguments
 /// * `input` - The raw API token input.
-/// 
+///
 /// # Returns
 /// The trimmed API token string.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the token is empty after trimming.
 pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
@@ -410,14 +410,14 @@ pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
 }
 
 /// Saves API and/or session credentials to the default config file.
-/// 
+///
 /// # Arguments
 /// * `api_token` - Optional API token to save.
 /// * `session_input` - Optional session token or session link URL to save.
-/// 
+///
 /// # Returns
 /// The updated `CredentialInventory` after saving.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if neither credential is provided, or on I/O or serialization errors.
 pub fn save_credentials(
@@ -428,15 +428,15 @@ pub fn save_credentials(
 }
 
 /// Saves credentials with an optional search auth preference to the default config file.
-/// 
+///
 /// # Arguments
 /// * `api_token` - Optional API token to save.
 /// * `session_input` - Optional session token or session link URL to save.
 /// * `preferred_auth` - Optional search auth preference to set.
-/// 
+///
 /// # Returns
 /// The updated `CredentialInventory` after saving.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if neither credential is provided, or on I/O or serialization errors.
 pub fn save_credentials_with_preference(
@@ -505,16 +505,16 @@ fn normalize_optional_session_token(input: Option<String>) -> Result<Option<Stri
 }
 
 /// Normalizes and validates a session token or session link URL.
-/// 
+///
 /// If the input is a URL, extracts the `token` query parameter.
 /// Otherwise, returns the trimmed raw value.
-/// 
+///
 /// # Arguments
 /// * `input` - The raw session token or session link URL.
-/// 
+///
 /// # Returns
 /// The normalized session token string.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the input is empty, the URL is invalid,
 /// or the URL does not contain a non-empty `token` parameter.
@@ -952,8 +952,7 @@ mod tests {
         )
         .expect("save should succeed");
         let snapshot =
-            load_config_auth_snapshot_from_path(path.path())
-                .expect("config snapshot should load");
+            load_config_auth_snapshot_from_path(path.path()).expect("config snapshot should load");
 
         assert_eq!(snapshot.api_token.as_deref(), Some("existing-api"));
         assert_eq!(snapshot.session_token.as_deref(), Some("new-session"));

@@ -23,7 +23,7 @@ static CLIENT_20S: OnceLock<Result<Client, String>> = OnceLock::new();
 static CLIENT_30S: OnceLock<Result<Client, String>> = OnceLock::new();
 
 /// Returns a shared HTTP client with a 20-second timeout.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Network` if the client cannot be constructed.
 pub fn client_20s() -> Result<Client, KagiError> {
@@ -31,7 +31,7 @@ pub fn client_20s() -> Result<Client, KagiError> {
 }
 
 /// Returns a shared HTTP client with a 30-second timeout.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Network` if the client cannot be constructed.
 pub fn client_30s() -> Result<Client, KagiError> {
@@ -39,10 +39,10 @@ pub fn client_30s() -> Result<Client, KagiError> {
 }
 
 /// Maps a `reqwest::Error` to a domain-specific `KagiError`.
-/// 
+///
 /// # Arguments
 /// * `error` - The transport-level error from reqwest.
-/// 
+///
 /// # Returns
 /// A `KagiError::Network` variant with a descriptive message.
 pub fn map_transport_error(error: reqwest::Error) -> KagiError {
@@ -58,11 +58,11 @@ pub fn map_transport_error(error: reqwest::Error) -> KagiError {
 }
 
 /// Reads the response body text, returning an empty string on failure.
-/// 
+///
 /// # Arguments
 /// * `response` - The HTTP response to consume.
 /// * `surface` - A label used in debug logging on read failure.
-/// 
+///
 /// # Returns
 /// The response body as a string, or an empty string if the body could not be read.
 pub async fn read_error_body(response: Response, surface: &str) -> String {
@@ -76,10 +76,10 @@ pub async fn read_error_body(response: Response, surface: &str) -> String {
 }
 
 /// Builds a full Kagi API URL from a path, using the `KAGI_BASE_URL` env override or the default.
-/// 
+///
 /// # Arguments
 /// * `path` - API path (e.g. `"/api/v0/search"`). Absolute URLs are returned unchanged.
-/// 
+///
 /// # Returns
 /// The complete URL string.
 pub fn kagi_url(path: &str) -> String {
@@ -90,10 +90,10 @@ pub fn kagi_url(path: &str) -> String {
 }
 
 /// Builds a full Kagi News API URL from a path, using the `KAGI_NEWS_BASE_URL` env override or the default.
-/// 
+///
 /// # Arguments
 /// * `path` - API path (e.g. `"/api/batches/latest"`). Absolute URLs are returned unchanged.
-/// 
+///
 /// # Returns
 /// The complete URL string.
 pub fn kagi_news_url(path: &str) -> String {
@@ -104,10 +104,10 @@ pub fn kagi_news_url(path: &str) -> String {
 }
 
 /// Builds a full Kagi Translate API URL from a path, using the `KAGI_TRANSLATE_BASE_URL` env override or the default.
-/// 
+///
 /// # Arguments
 /// * `path` - API path. Absolute URLs are returned unchanged.
-/// 
+///
 /// # Returns
 /// The complete URL string.
 pub fn kagi_translate_url(path: &str) -> String {

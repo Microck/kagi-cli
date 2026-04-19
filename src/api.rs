@@ -101,14 +101,14 @@ pub struct NewsFilterRequest {
 }
 
 /// Summarizes a URL or text using the Kagi public Summarizer API with API-token auth.
-/// 
+///
 /// # Arguments
 /// * `request` - The summarize request (must have exactly one of `url` or `text`).
 /// * `token` - The Kagi API token.
-/// 
+///
 /// # Returns
 /// A `SummarizeResponse` with the summarization output.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing, `KagiError::Config` if both or neither
 /// URL and text are provided, and network/parse errors on failure.
@@ -142,14 +142,14 @@ pub async fn execute_summarize(
 }
 
 /// Summarizes a URL or text using the subscriber web Summarizer with session-token auth.
-/// 
+///
 /// # Arguments
 /// * `request` - The subscriber summarize request.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `SubscriberSummarizeResponse` with the streamed summarization result.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing or expired,
 /// `KagiError::Config` for invalid parameters,
@@ -168,10 +168,7 @@ pub async fn execute_subscriber_summarize(
     let (field_name, source_value) = normalize_subscriber_summary_input(request)?;
     let summary_type = normalize_subscriber_summary_type(request.summary_type.as_deref())?;
     let summary_length = normalize_subscriber_summary_length(request.length.as_deref())?;
-    let target_language = request
-        .target_language
-        .as_deref()
-        .map_or("", str::trim);
+    let target_language = request.target_language.as_deref().map_or("", str::trim);
 
     let client = build_client()?;
     let response = client
@@ -219,16 +216,16 @@ pub async fn execute_subscriber_summarize(
 }
 
 /// Fetches Kagi News stories for a given category with optional content filtering.
-/// 
+///
 /// # Arguments
 /// * `category` - The category slug (e.g. `"world"`, `"tech"`).
 /// * `limit` - Maximum number of stories to return (must be > 0).
 /// * `lang` - Language code.
 /// * `filter_request` - Optional content filter configuration.
-/// 
+///
 /// # Returns
 /// A `NewsStoriesResponse` with the latest batch, category, and filtered stories.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if `limit` is 0, or network/parse errors on failure.
 pub async fn execute_news(
@@ -318,13 +315,13 @@ pub async fn execute_news(
 }
 
 /// Returns the built-in news filter presets for a given language.
-/// 
+///
 /// # Arguments
 /// * `lang` - Language code (e.g. `"en"`, `"default"`).
-/// 
+///
 /// # Returns
 /// A `NewsFilterPresetListResponse` with available presets and their keywords.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Parse` if the embedded preset data cannot be loaded.
 pub fn execute_news_filter_presets(lang: &str) -> Result<NewsFilterPresetListResponse, KagiError> {
@@ -348,13 +345,13 @@ pub fn execute_news_filter_presets(lang: &str) -> Result<NewsFilterPresetListRes
 }
 
 /// Fetches the list of available Kagi News categories with metadata.
-/// 
+///
 /// # Arguments
 /// * `lang` - Language code.
-/// 
+///
 /// # Returns
 /// A `NewsCategoriesResponse` with the latest batch and resolved categories.
-/// 
+///
 /// # Errors
 /// Returns network/parse errors on failure.
 pub async fn execute_news_categories(lang: &str) -> Result<NewsCategoriesResponse, KagiError> {
@@ -414,13 +411,13 @@ pub async fn execute_news_categories(lang: &str) -> Result<NewsCategoriesRespons
 }
 
 /// Fetches the current Kagi News chaos index.
-/// 
+///
 /// # Arguments
 /// * `lang` - Language code.
-/// 
+///
 /// # Returns
 /// A `NewsChaosResponse` with the latest batch and chaos data.
-/// 
+///
 /// # Errors
 /// Returns network/parse errors on failure.
 pub async fn execute_news_chaos(lang: &str) -> Result<NewsChaosResponse, KagiError> {
@@ -458,14 +455,14 @@ pub async fn execute_news_chaos(lang: &str) -> Result<NewsChaosResponse, KagiErr
 }
 
 /// Sends a prompt to Kagi Assistant and returns the response.
-/// 
+///
 /// # Arguments
 /// * `request` - The assistant prompt request with query and optional thread/profile settings.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AssistantPromptResponse` with the thread and generated message.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the query is empty, or auth/network/parse errors on failure.
 pub async fn execute_assistant_prompt(
@@ -495,13 +492,13 @@ pub async fn execute_assistant_prompt(
 }
 
 /// Lists all Kagi Assistant threads for the authenticated user.
-/// 
+///
 /// # Arguments
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AssistantThreadListResponse` with threads and pagination info.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_assistant_thread_list(
@@ -519,14 +516,14 @@ pub async fn execute_assistant_thread_list(
 }
 
 /// Opens a specific Kagi Assistant thread and returns its messages.
-/// 
+///
 /// # Arguments
 /// * `thread_id` - The thread identifier.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AssistantThreadOpenResponse` with the thread and its messages.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the thread ID is empty, or auth/network/parse errors on failure.
 pub async fn execute_assistant_thread_get(
@@ -552,14 +549,14 @@ pub async fn execute_assistant_thread_get(
 }
 
 /// Deletes a Kagi Assistant thread.
-/// 
+///
 /// # Arguments
 /// * `thread_id` - The thread identifier.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AssistantThreadDeleteResponse` confirming deletion.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_assistant_thread_delete(
@@ -587,14 +584,14 @@ pub async fn execute_assistant_thread_delete(
 }
 
 /// Exports a Kagi Assistant thread as Markdown.
-/// 
+///
 /// # Arguments
 /// * `thread_id` - The thread identifier.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AssistantThreadExportResponse` with the exported markdown and optional filename.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is expired, or network/parse errors on failure.
 pub async fn execute_assistant_thread_export(
@@ -652,13 +649,13 @@ pub async fn execute_assistant_thread_export(
 }
 
 /// Lists all custom assistant profiles for the authenticated user.
-/// 
+///
 /// # Arguments
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A vector of `AssistantProfileSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_custom_assistant_list(
@@ -674,14 +671,14 @@ pub async fn execute_custom_assistant_list(
 }
 
 /// Gets the details of a specific custom assistant profile.
-/// 
+///
 /// # Arguments
 /// * `target` - The assistant name or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `AssistantProfileDetails` for the resolved assistant.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the assistant is not found or not editable.
 pub async fn execute_custom_assistant_get(
@@ -706,14 +703,14 @@ pub async fn execute_custom_assistant_get(
 }
 
 /// Creates a new custom assistant profile.
-/// 
+///
 /// # Arguments
 /// * `request` - The creation request with profile settings.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `AssistantProfileDetails` of the newly created assistant.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` for invalid names or settings, or auth/network/parse errors.
 pub async fn execute_custom_assistant_create(
@@ -763,14 +760,14 @@ pub async fn execute_custom_assistant_create(
 }
 
 /// Updates an existing custom assistant profile.
-/// 
+///
 /// # Arguments
 /// * `request` - The update request with target identifier and fields to change.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The updated `AssistantProfileDetails`.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_custom_assistant_update(
@@ -813,14 +810,14 @@ pub async fn execute_custom_assistant_update(
 }
 
 /// Deletes a custom assistant profile.
-/// 
+///
 /// # Arguments
 /// * `target` - The assistant name or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `DeletedResourceResponse` confirming deletion.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found or is built-in.
 pub async fn execute_custom_assistant_delete(
@@ -842,13 +839,13 @@ pub async fn execute_custom_assistant_delete(
 }
 
 /// Lists all Kagi search lenses for the authenticated user.
-/// 
+///
 /// # Arguments
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A vector of `LensSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_lens_list(token: &str) -> Result<Vec<LensSummary>, KagiError> {
@@ -862,14 +859,14 @@ pub async fn execute_lens_list(token: &str) -> Result<Vec<LensSummary>, KagiErro
 }
 
 /// Gets the details of a specific lens.
-/// 
+///
 /// # Arguments
 /// * `target` - The lens name or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `LensDetails` for the resolved lens.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the lens is not found, or auth/network/parse errors.
 pub async fn execute_lens_get(target: &str, token: &str) -> Result<LensDetails, KagiError> {
@@ -881,14 +878,14 @@ pub async fn execute_lens_get(target: &str, token: &str) -> Result<LensDetails, 
 }
 
 /// Creates a new Kagi search lens.
-/// 
+///
 /// # Arguments
 /// * `request` - The creation request with lens settings.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `LensDetails` of the newly created lens.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` for invalid settings, or auth/network/parse errors.
 pub async fn execute_lens_create(
@@ -920,14 +917,14 @@ pub async fn execute_lens_create(
 }
 
 /// Updates an existing Kagi search lens.
-/// 
+///
 /// # Arguments
 /// * `request` - The update request with target identifier and fields to change.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The updated `LensDetails`.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_lens_update(
@@ -950,14 +947,14 @@ pub async fn execute_lens_update(
 }
 
 /// Deletes a Kagi search lens.
-/// 
+///
 /// # Arguments
 /// * `target` - The lens name or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `DeletedResourceResponse` confirming deletion.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the lens is not found, or auth/network/parse errors.
 pub async fn execute_lens_delete(
@@ -979,15 +976,15 @@ pub async fn execute_lens_delete(
 }
 
 /// Enables or disables a Kagi search lens.
-/// 
+///
 /// # Arguments
 /// * `target` - The lens name or ID.
 /// * `enabled` - Whether to enable (`true`) or disable (`false`) the lens.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `ToggleResourceResponse` with the final enabled state.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the lens is not found, or auth/network/parse errors.
 pub async fn execute_lens_set_enabled(
@@ -1028,13 +1025,13 @@ pub async fn execute_lens_set_enabled(
 }
 
 /// Lists all custom bangs for the authenticated user.
-/// 
+///
 /// # Arguments
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A vector of `CustomBangSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_custom_bang_list(token: &str) -> Result<Vec<CustomBangSummary>, KagiError> {
@@ -1048,14 +1045,14 @@ pub async fn execute_custom_bang_list(token: &str) -> Result<Vec<CustomBangSumma
 }
 
 /// Gets the details of a specific custom bang.
-/// 
+///
 /// # Arguments
 /// * `target` - The bang trigger or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `CustomBangDetails` for the resolved bang.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the bang is not found, or auth/network/parse errors.
 pub async fn execute_custom_bang_get(
@@ -1074,14 +1071,14 @@ pub async fn execute_custom_bang_get(
 }
 
 /// Creates a new custom bang.
-/// 
+///
 /// # Arguments
 /// * `request` - The creation request with bang settings.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `CustomBangDetails` of the newly created bang.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` for invalid settings, or auth/network/parse errors.
 pub async fn execute_custom_bang_create(
@@ -1113,14 +1110,14 @@ pub async fn execute_custom_bang_create(
 }
 
 /// Updates an existing custom bang.
-/// 
+///
 /// # Arguments
 /// * `request` - The update request with target identifier and fields to change.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The updated `CustomBangDetails`.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_custom_bang_update(
@@ -1143,14 +1140,14 @@ pub async fn execute_custom_bang_update(
 }
 
 /// Deletes a custom bang.
-/// 
+///
 /// # Arguments
 /// * `target` - The bang trigger or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `DeletedResourceResponse` confirming deletion.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_custom_bang_delete(
@@ -1174,13 +1171,13 @@ pub async fn execute_custom_bang_delete(
 }
 
 /// Lists all search redirect rules for the authenticated user.
-/// 
+///
 /// # Arguments
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A vector of `RedirectRuleSummary` entries.
-/// 
+///
 /// # Errors
 /// Returns auth/network/parse errors on failure.
 pub async fn execute_redirect_list(token: &str) -> Result<Vec<RedirectRuleSummary>, KagiError> {
@@ -1194,14 +1191,14 @@ pub async fn execute_redirect_list(token: &str) -> Result<Vec<RedirectRuleSummar
 }
 
 /// Gets the details of a specific redirect rule.
-/// 
+///
 /// # Arguments
 /// * `target` - The redirect rule text or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `RedirectRuleDetails` for the resolved rule.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the rule is not found, or auth/network/parse errors.
 pub async fn execute_redirect_get(
@@ -1222,14 +1219,14 @@ pub async fn execute_redirect_get(
 }
 
 /// Creates a new search redirect rule.
-/// 
+///
 /// # Arguments
 /// * `request` - The creation request with the rule pattern.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The `RedirectRuleDetails` of the newly created rule.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the rule is empty, or auth/network/parse errors.
 pub async fn execute_redirect_create(
@@ -1251,14 +1248,14 @@ pub async fn execute_redirect_create(
 }
 
 /// Updates an existing search redirect rule.
-/// 
+///
 /// # Arguments
 /// * `request` - The update request with target identifier and new rule pattern.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// The updated `RedirectRuleDetails`.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_redirect_update(
@@ -1282,14 +1279,14 @@ pub async fn execute_redirect_update(
 }
 
 /// Deletes a search redirect rule.
-/// 
+///
 /// # Arguments
 /// * `target` - The redirect rule text or ID.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `DeletedResourceResponse` confirming deletion.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the target is not found, or auth/network/parse errors.
 pub async fn execute_redirect_delete(
@@ -1311,15 +1308,15 @@ pub async fn execute_redirect_delete(
 }
 
 /// Enables or disables a search redirect rule.
-/// 
+///
 /// # Arguments
 /// * `target` - The redirect rule text or ID.
 /// * `enabled` - Whether to enable (`true`) or disable (`false`) the rule.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `ToggleResourceResponse` with the final enabled state.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the rule is not found, or auth/network/parse errors.
 pub async fn execute_redirect_set_enabled(
@@ -1357,14 +1354,14 @@ pub async fn execute_redirect_set_enabled(
 }
 
 /// Asks Kagi Assistant a question about a specific web page.
-/// 
+///
 /// # Arguments
 /// * `request` - The ask-page request with URL and question.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// An `AskPageResponse` with the source, thread, and assistant message.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` if the URL or question is empty, or auth/network/parse errors.
 pub async fn execute_ask_page(
@@ -1399,17 +1396,17 @@ pub async fn execute_ask_page(
 }
 
 /// Translates text using Kagi Translate with session-token authentication.
-/// 
+///
 /// Handles language detection, translation, and optional fetching of alternatives,
 /// alignments, suggestions, and word insights.
-/// 
+///
 /// # Arguments
 /// * `request` - The translate command request with text, source/target languages, and options.
 /// * `session_token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A `TranslateResponse` with detection, translation, and optional supplementary data.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing, `KagiError::Config` for invalid parameters,
 /// or network/parse errors on failure.
@@ -1538,14 +1535,14 @@ pub async fn execute_translate(
 }
 
 /// Answers a query using Kagi's FastGPT API with API-token authentication.
-/// 
+///
 /// # Arguments
 /// * `request` - The FastGPT request with query and optional parameters.
 /// * `token` - The Kagi API token.
-/// 
+///
 /// # Returns
 /// A `FastGptResponse` with the answer.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing, or network/parse errors on failure.
 pub async fn execute_fastgpt(
@@ -1572,14 +1569,14 @@ pub async fn execute_fastgpt(
 }
 
 /// Queries Kagi's web enrichment API.
-/// 
+///
 /// # Arguments
 /// * `query` - The enrichment query.
 /// * `token` - The Kagi API token.
-/// 
+///
 /// # Returns
 /// An `EnrichResponse` with enrichment data.
-/// 
+///
 /// # Errors
 /// Returns network/parse errors on failure.
 pub async fn execute_enrich_web(query: &str, token: &str) -> Result<EnrichResponse, KagiError> {
@@ -1593,14 +1590,14 @@ pub async fn execute_enrich_web(query: &str, token: &str) -> Result<EnrichRespon
 }
 
 /// Queries Kagi's news enrichment API.
-/// 
+///
 /// # Arguments
 /// * `query` - The enrichment query.
 /// * `token` - The Kagi API token.
-/// 
+///
 /// # Returns
 /// An `EnrichResponse` with enrichment data.
-/// 
+///
 /// # Errors
 /// Returns network/parse errors on failure.
 pub async fn execute_enrich_news(query: &str, token: &str) -> Result<EnrichResponse, KagiError> {
@@ -1614,13 +1611,13 @@ pub async fn execute_enrich_news(query: &str, token: &str) -> Result<EnrichRespo
 }
 
 /// Fetches the Kagi Small Web feed.
-/// 
+///
 /// # Arguments
 /// * `limit` - Optional maximum number of entries to return.
-/// 
+///
 /// # Returns
 /// A `SmallWebFeed` with the feed entries.
-/// 
+///
 /// # Errors
 /// Returns network/parse errors on failure.
 pub async fn execute_smallweb(limit: Option<u32>) -> Result<SmallWebFeed, KagiError> {

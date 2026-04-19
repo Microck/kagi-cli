@@ -353,7 +353,7 @@ pub struct BatchSearchArgs {
 
 impl BatchSearchArgs {
     /// Validates batch search arguments.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if concurrency or rate-limit is zero.
     pub fn validate(&self) -> Result<(), String> {
@@ -503,7 +503,7 @@ pub struct NewsArgs {
 
 impl NewsArgs {
     /// Validates news arguments.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if filter options conflict with list/chaos modes,
     /// or if filter mode/scope are used without filter inputs.

@@ -86,7 +86,7 @@ impl Theme for KagiAuthTheme {
 }
 
 /// Checks whether the current terminal environment supports interactive authentication.
-/// 
+///
 /// # Returns
 /// `true` if stdin, stdout, and stderr are all connected to a terminal.
 pub fn supports_interactive_auth() -> bool {
@@ -94,14 +94,14 @@ pub fn supports_interactive_auth() -> bool {
 }
 
 /// Runs the interactive authentication wizard.
-/// 
+///
 /// Guides the user through selecting an auth method (API token or session link),
 /// entering credentials, validating them against the Kagi API, and saving to the
 /// local config file.
-/// 
+///
 /// # Returns
 /// `Ok(())` on successful completion, or an error if the wizard fails.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Config` for I/O or configuration errors,
 /// and `KagiError::Auth` or `KagiError::Network` if credential validation fails.
@@ -305,13 +305,13 @@ fn auth_ascii_width() -> u16 {
 }
 
 /// Validates a credential by executing a test search against the Kagi API.
-/// 
+///
 /// # Arguments
 /// * `credential` - The credential to validate.
-/// 
+///
 /// # Returns
 /// `Ok(())` if the credential is valid.
-/// 
+///
 /// # Errors
 /// Returns an error if the validation request fails (auth, network, or parse error).
 pub async fn validate_credential(credential: &Credential) -> Result<(), KagiError> {
@@ -386,14 +386,16 @@ fn format_inventory_summary(inventory: &crate::auth::CredentialInventory) -> Str
     [
         wizard_status_line(
             "Selected",
-            &inventory
-                .preferred_for_status().map_or_else(|| "none".to_string(), |credential| {
+            &inventory.preferred_for_status().map_or_else(
+                || "none".to_string(),
+                |credential| {
                     format!(
                         "{} ({})",
                         credential.kind.as_str(),
                         credential.source.as_str()
                     )
-                }),
+                },
+            ),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
         wizard_status_line(
@@ -413,14 +415,16 @@ fn format_saved_summary(inventory: &crate::auth::CredentialInventory) -> String 
     [
         wizard_status_line(
             "Selected",
-            &inventory
-                .preferred_for_status().map_or_else(|| "none".to_string(), |credential| {
+            &inventory.preferred_for_status().map_or_else(
+                || "none".to_string(),
+                |credential| {
                     format!(
                         "{} ({})",
                         credential.kind.as_str(),
                         credential.source.as_str()
                     )
-                }),
+                },
+            ),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
         wizard_status_line(

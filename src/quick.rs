@@ -13,14 +13,14 @@ use crate::types::{
 const KAGI_QUICK_ANSWER_URL: &str = "https://kagi.com/mother/context";
 
 /// Executes a Kagi Quick Answer request using session-token authentication.
-/// 
+///
 /// # Arguments
 /// * `request` - The search request containing the query and optional lens.
 /// * `token` - The Kagi session token.
-/// 
+///
 /// # Returns
 /// A parsed `QuickResponse` with the answer, references, and follow-up questions.
-/// 
+///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing or invalid,
 /// `KagiError::Config` for invalid query parameters,
@@ -112,11 +112,11 @@ pub async fn execute_quick(
 }
 
 /// Formats a `QuickResponse` as a human-readable pretty-printed string with optional ANSI colors.
-/// 
+///
 /// # Arguments
 /// * `response` - The quick answer response to format.
 /// * `use_color` - Whether to include ANSI color codes.
-/// 
+///
 /// # Returns
 /// A formatted string with sections for the answer, references, and follow-up questions.
 pub fn format_quick_pretty(response: &QuickResponse, use_color: bool) -> String {
@@ -175,10 +175,10 @@ pub fn format_quick_pretty(response: &QuickResponse, use_color: bool) -> String 
 }
 
 /// Formats a `QuickResponse` as Markdown.
-/// 
+///
 /// # Arguments
 /// * `response` - The quick answer response to format.
-/// 
+///
 /// # Returns
 /// A Markdown string with the answer body, references, and follow-up questions.
 pub fn format_quick_markdown(response: &QuickResponse) -> String {
