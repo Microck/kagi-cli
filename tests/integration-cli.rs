@@ -54,6 +54,13 @@ fn env_refs(values: &[(impl AsRef<str>, impl AsRef<str>)]) -> Vec<(&str, &str)> 
         .collect()
 }
 
+fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
+    vec![
+        ("KAGI_SESSION_TOKEN", "test-session".to_string()),
+        ("KAGI_BASE_URL", server.base_url()),
+    ]
+}
+
 fn api_meta() -> Value {
     json!({
         "id": "req-1",
@@ -419,4 +426,57 @@ fn news_command_resolves_category_and_prints_json() {
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["category"]["category_name"], "Tech");
     assert_eq!(body["stories"][0]["title"], "Rust ships new release");
+}
+
+#[test]
+fn assistant_thread_list_paginates_with_cursor_id() {
+    let server = MockServer::start();
+    let _first_page = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/thread_list")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json")
+            .json_body(json!({ "limit": 100 }));
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(concat!(
+                "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
+                "tags.json:[]\0\n",
+                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
+            ));
+    });
+    let _second_page = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/thread_list")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "limit": 100,
+                "cursor": {
+                    "ack": "2026-02-11T16:22:13Z",
+                    "created_at": "2026-02-11T16:22:13Z",
+                    "id": "cursor-123"
+                }
+            }));
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(concat!(
+                "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
+                "tags.json:[]\0\n",
+                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(&["assistant", "thread", "list"], &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["meta"]["trace"], "trace-list");
+    assert_eq!(body["threads"][0]["id"], "thread-1");
+    assert_eq!(body["threads"][1]["id"], "thread-2");
+    assert_eq!(body["pagination"]["count"], 2);
 }
