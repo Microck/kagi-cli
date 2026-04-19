@@ -7,18 +7,26 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.4.4]
+
 ### Added
 
 - Rust doc comments on all previously undocumented public functions across the crate
-- `timeout-minutes` guards on CI, release, coverage, and security workflows to prevent hung runs
-- Dependabot configuration for the npm wrapper package
 
 ### Fixed
 
+- Patched `rustls-webpki` to `0.103.12` to pick up the current TLS validation fixes
+- `kagi summarize` now fails fast when neither `--url` nor `--text` is provided
+- Parse-failure debug logging now emits bounded body previews and body lengths instead of full raw response bodies
+- Batch worker task failures now log at error level with query context
+- Auth/config tests now isolate environment mutation safely and use tempfile-backed cleanup
+- Rate limiter tests now use less timing-sensitive assertions during release verification
 - Replaced `map_or` with `is_none_or` to resolve `clippy::unnecessary_map_or` lint
 - Corrected stale README badges, broken links, and missing documentation sections
 - Applied Clippy pedantic and nursery lint auto-fixes across the codebase
+- `timeout-minutes` guards on CI, release, coverage, and security workflows to prevent hung runs
 - `persist-credentials: false` on all checkout steps to avoid stale token leakage
+- Dependabot configuration for the npm wrapper package
 
 ## [0.4.3]
 

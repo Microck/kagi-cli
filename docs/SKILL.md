@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Kagi subscription for most features. Works on macOS, Linux, and Windows. Install via Homebrew, Scoop, npm, or direct script.
 metadata:
   author: Microck
-  version: "0.4.3"
+  version: "0.4.4"
   repository: https://github.com/Microck/kagi-cli
   npm: https://www.npmjs.com/package/kagi-cli
   docs: https://kagi.micr.dev
