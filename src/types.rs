@@ -556,6 +556,7 @@ pub struct LensDetails {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for creating a new Kagi lens.
 pub struct LensCreateRequest {
     pub name: String,
     pub included_sites: Option<String>,
@@ -575,6 +576,7 @@ pub struct LensCreateRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for updating an existing Kagi lens.
 pub struct LensUpdateRequest {
     pub target: String,
     pub name: Option<String>,
@@ -595,6 +597,7 @@ pub struct LensUpdateRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Summary view of a custom bang shortcut.
 pub struct CustomBangSummary {
     pub id: String,
     pub name: String,
@@ -604,6 +607,7 @@ pub struct CustomBangSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Detailed view of a custom bang shortcut.
 pub struct CustomBangDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bang_id: Option<String>,
@@ -620,6 +624,7 @@ pub struct CustomBangDetails {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for creating a new custom bang.
 pub struct CustomBangCreateRequest {
     pub name: String,
     pub trigger: String,
@@ -634,6 +639,7 @@ pub struct CustomBangCreateRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for updating an existing custom bang.
 pub struct CustomBangUpdateRequest {
     pub target: String,
     pub name: Option<String>,
@@ -649,6 +655,7 @@ pub struct CustomBangUpdateRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Summary view of a URL redirect rule.
 pub struct RedirectRuleSummary {
     pub id: String,
     pub rule: String,
@@ -657,6 +664,7 @@ pub struct RedirectRuleSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Detailed view of a URL redirect rule.
 pub struct RedirectRuleDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule_id: Option<String>,
@@ -666,28 +674,33 @@ pub struct RedirectRuleDetails {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for creating a new redirect rule.
 pub struct RedirectRuleCreateRequest {
     pub rule: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for updating an existing redirect rule.
 pub struct RedirectRuleUpdateRequest {
     pub target: String,
     pub rule: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response confirming resource deletion.
 pub struct DeletedResourceResponse {
     pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response confirming a resource state toggle.
 pub struct ToggleResourceResponse {
     pub id: String,
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Request body for the FastGPT quick-answer endpoint.
 pub struct FastGptRequest {
     pub query: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -697,6 +710,7 @@ pub struct FastGptRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A web reference cited in a FastGPT answer.
 pub struct Reference {
     pub title: String,
     pub snippet: String,
@@ -704,6 +718,7 @@ pub struct Reference {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single FastGPT answer with references.
 pub struct FastGptAnswer {
     pub output: String,
     pub tokens: u64,
@@ -712,23 +727,27 @@ pub struct FastGptAnswer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response from the FastGPT endpoint.
 pub struct FastGptResponse {
     pub meta: ApiMeta,
     pub data: FastGptAnswer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response from the web/news enrichment endpoint.
 pub struct EnrichResponse {
     pub meta: ApiMeta,
     pub data: Vec<SearchResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single entry from the Small Web feed.
 pub struct SmallWebFeed {
     pub xml: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// Metadata for a quick-answer response.
 pub struct QuickMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -737,6 +756,7 @@ pub struct QuickMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A message in a quick-answer conversation.
 pub struct QuickMessage {
     pub id: String,
     pub thread_id: String,
@@ -748,6 +768,7 @@ pub struct QuickMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single reference item in a quick answer.
 pub struct QuickReferenceItem {
     pub index: usize,
     pub title: String,
@@ -759,6 +780,7 @@ pub struct QuickReferenceItem {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// Collection of reference items for a quick answer.
 pub struct QuickReferenceCollection {
     #[serde(default)]
     pub markdown: String,
@@ -767,6 +789,7 @@ pub struct QuickReferenceCollection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response from the quick-answer endpoint.
 pub struct QuickResponse {
     pub meta: QuickMeta,
     pub query: String,
@@ -779,6 +802,7 @@ pub struct QuickResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Request body for the translate endpoint.
 pub struct TranslateCommandRequest {
     pub text: String,
     pub from: String,
@@ -806,6 +830,7 @@ pub struct TranslateCommandRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// State of a translation option (enabled/disabled).
 pub struct TranslateOptionState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub formality: Option<String>,
@@ -822,18 +847,21 @@ pub struct TranslateOptionState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Bootstrap metadata for translation initialization.
 pub struct TranslateBootstrapMetadata {
     pub method: String,
     pub authenticated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A warning returned during translation.
 pub struct TranslateWarning {
     pub section: String,
     pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// An alternative detected language candidate.
 pub struct TranslateDetectedLanguageAlternative {
     pub iso: String,
     pub label: String,
@@ -844,6 +872,7 @@ pub struct TranslateDetectedLanguageAlternative {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Detected source language with confidence info.
 pub struct TranslateDetectedLanguage {
     pub iso: String,
     pub label: String,
@@ -856,6 +885,7 @@ pub struct TranslateDetectedLanguage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response containing the translated text.
 pub struct TranslateTextResponse {
     pub translation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -869,6 +899,7 @@ pub struct TranslateTextResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single alternative translation variant.
 pub struct AlternativeTranslationElement {
     pub translation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -876,6 +907,7 @@ pub struct AlternativeTranslationElement {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response containing alternative translations.
 pub struct AlternativeTranslationsResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_description: Option<String>,
@@ -884,6 +916,7 @@ pub struct AlternativeTranslationsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response containing word-level alignment data.
 pub struct TextAlignmentsResponse {
     #[serde(default)]
     pub source_blocks: Vec<Value>,
@@ -898,6 +931,7 @@ pub struct TextAlignmentsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A translation suggestion for a word or phrase.
 pub struct TranslationSuggestion {
     pub id: String,
     pub label: String,
@@ -913,12 +947,14 @@ pub struct TranslationSuggestion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Response containing translation suggestions.
 pub struct TranslationSuggestionsResponse {
     #[serde(default)]
     pub suggestions: Vec<TranslationSuggestion>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A variation of a word insight entry.
 pub struct WordInsightVariation {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -926,6 +962,7 @@ pub struct WordInsightVariation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Detailed insight about a translated word.
 pub struct WordInsight {
     pub id: String,
     pub original_text: String,
@@ -935,6 +972,7 @@ pub struct WordInsight {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response containing word insights.
 pub struct WordInsightsResponse {
     #[serde(default)]
     pub insights: Vec<WordInsight>,
@@ -943,6 +981,7 @@ pub struct WordInsightsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Full response from the translate endpoint.
 pub struct TranslateResponse {
     pub bootstrap: TranslateBootstrapMetadata,
     pub detected_language: TranslateDetectedLanguage,

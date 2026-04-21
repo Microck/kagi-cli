@@ -11,6 +11,7 @@ use thiserror::Error;
 /// upstream errors (e.g. `serde_json::Error`) into the appropriate variant
 /// using the provided `From` implementations.
 #[derive(Debug, Error)]
+/// Top-level error type for kagi-cli operations.
 pub enum KagiError {
     /// A network-related failure (connection, timeout, DNS, HTTP status).
     #[error("network error: {0}")]

@@ -7,6 +7,7 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Supported shell types for tab-completion generation.
 pub enum CompletionShell {
     Bash,
     Zsh,
@@ -16,6 +17,7 @@ pub enum CompletionShell {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Output format for assistant thread exports.
 pub enum AssistantThreadExportFormat {
     Markdown,
     Json,
@@ -23,6 +25,7 @@ pub enum AssistantThreadExportFormat {
 
 /// Output format options for search results
 #[derive(Debug, Clone, ValueEnum)]
+/// Output format for search results.
 pub enum OutputFormat {
     /// JSON output (default) - structured data for scripts and APIs
     Json,
@@ -49,6 +52,7 @@ impl std::fmt::Display for OutputFormat {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Output format for quick answers.
 pub enum QuickOutputFormat {
     /// JSON output (default) - structured data for scripts and APIs
     Json,
@@ -72,6 +76,7 @@ impl std::fmt::Display for QuickOutputFormat {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Output format for assistant responses.
 pub enum AssistantOutputFormat {
     Json,
     Pretty,
@@ -91,6 +96,7 @@ impl std::fmt::Display for AssistantOutputFormat {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Sort order for search results.
 pub enum SearchOrder {
     Default,
     Recency,
@@ -99,6 +105,7 @@ pub enum SearchOrder {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Time range filter for search results.
 pub enum SearchTime {
     Day,
     Week,
@@ -107,6 +114,7 @@ pub enum SearchTime {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Predefined lens templates for common search scopes.
 pub enum LensTemplate {
     Default,
     News,
@@ -123,6 +131,7 @@ impl LensTemplate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// News filtering mode (top stories vs. all).
 pub enum NewsFilterMode {
     Hide,
     Blur,
@@ -139,6 +148,7 @@ impl NewsFilterMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// Scope for news filtering (global, regional, etc.).
 pub enum NewsFilterScope {
     Title,
     Summary,
@@ -173,6 +183,7 @@ Features:
 )]
 #[command(disable_help_subcommand = true)]
 #[command(arg_required_else_help = true)]
+/// Top-level CLI definition with global flags and subcommands.
 pub struct Cli {
     /// Generate shell completion script and print to stdout
     #[arg(long, value_name = "SHELL", value_enum)]
@@ -183,6 +194,7 @@ pub struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+/// All available CLI subcommands.
 pub enum Commands {
     /// Search Kagi and emit structured JSON
     ///
@@ -235,6 +247,7 @@ pub enum Commands {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `search` subcommand.
 pub struct SearchArgs {
     /// Search query to send to Kagi
     #[arg(value_name = "QUERY", required = true)]
@@ -295,6 +308,7 @@ pub struct SearchArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `batch` subcommand (parallel search).
 pub struct BatchSearchArgs {
     /// List of search queries to execute in parallel
     #[arg(value_name = "QUERIES", required = true)]
@@ -374,12 +388,14 @@ impl BatchSearchArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `auth` command group.
 pub struct AuthCommand {
     #[command(subcommand)]
     pub command: AuthSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for authentication management.
 pub enum AuthSubcommand {
     /// Show which credential types are configured and where they come from
     Status,
@@ -390,6 +406,7 @@ pub enum AuthSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for `auth set` (store a credential).
 pub struct AuthSetArgs {
     /// Kagi API token to save into .kagi.toml
     #[arg(long, value_name = "TOKEN")]
@@ -401,6 +418,7 @@ pub struct AuthSetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `summarize` subcommand.
 pub struct SummarizeArgs {
     /// URL to summarize
     #[arg(long, value_name = "URL", conflicts_with = "text")]
@@ -450,6 +468,7 @@ impl SummarizeArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `fastgpt` subcommand.
 pub struct FastGptArgs {
     /// Query to answer
     #[arg(value_name = "QUERY")]
@@ -465,6 +484,7 @@ pub struct FastGptArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `news` subcommand.
 pub struct NewsArgs {
     /// News category slug (for example world, usa, tech, science)
     #[arg(long, value_name = "CATEGORY", default_value = "world")]
@@ -545,6 +565,7 @@ impl NewsArgs {
 
 #[derive(Debug, Args)]
 #[command(arg_required_else_help = true, args_conflicts_with_subcommands = true)]
+/// Arguments for the `assistant` subcommand.
 pub struct AssistantArgs {
     #[command(subcommand)]
     pub command: Option<AssistantSubcommand>,
@@ -595,6 +616,7 @@ pub struct AssistantArgs {
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for the assistant feature.
 pub enum AssistantSubcommand {
     /// Manage Assistant threads
     Thread(AssistantThreadArgs),
@@ -603,12 +625,14 @@ pub enum AssistantSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for `assistant thread` management.
 pub struct AssistantThreadArgs {
     #[command(subcommand)]
     pub command: AssistantThreadSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for assistant thread operations.
 pub enum AssistantThreadSubcommand {
     /// List Assistant threads for the current account
     List,
@@ -621,6 +645,7 @@ pub enum AssistantThreadSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for thread-specific operations (by ID).
 pub struct AssistantThreadIdArgs {
     /// Assistant thread id
     #[arg(value_name = "THREAD_ID")]
@@ -628,6 +653,7 @@ pub struct AssistantThreadIdArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for exporting an assistant thread.
 pub struct AssistantThreadExportArgs {
     /// Assistant thread id
     #[arg(value_name = "THREAD_ID")]
@@ -639,12 +665,14 @@ pub struct AssistantThreadExportArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for `assistant custom` (custom assistants).
 pub struct AssistantCustomArgs {
     #[command(subcommand)]
     pub command: AssistantCustomSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for custom assistant management.
 pub enum AssistantCustomSubcommand {
     /// List custom and built-in assistants visible to the account
     List,
@@ -659,6 +687,7 @@ pub enum AssistantCustomSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments targeting a specific custom assistant.
 pub struct AssistantCustomTargetArgs {
     /// Custom assistant id or exact assistant name
     #[arg(value_name = "ID_OR_NAME")]
@@ -666,6 +695,7 @@ pub struct AssistantCustomTargetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for creating a new custom assistant.
 pub struct AssistantCustomCreateArgs {
     /// Assistant name
     #[arg(value_name = "NAME")]
@@ -705,6 +735,7 @@ pub struct AssistantCustomCreateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for updating an existing custom assistant.
 pub struct AssistantCustomUpdateArgs {
     /// Custom assistant id or exact assistant name
     #[arg(value_name = "ID_OR_NAME")]
@@ -748,6 +779,7 @@ pub struct AssistantCustomUpdateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `ask-page` subcommand.
 pub struct AskPageArgs {
     /// Absolute page URL to discuss with Assistant
     #[arg(value_name = "URL")]
@@ -759,6 +791,7 @@ pub struct AskPageArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `translate` subcommand.
 pub struct TranslateArgs {
     /// Text to translate
     #[arg(value_name = "TEXT")]
@@ -854,6 +887,7 @@ pub struct TranslateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `quick` subcommand (quick answers).
 pub struct QuickArgs {
     /// Query to answer with Kagi Quick Answer
     #[arg(value_name = "QUERY")]
@@ -873,12 +907,14 @@ pub struct QuickArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `enrich` command group.
 pub struct EnrichCommand {
     #[command(subcommand)]
     pub command: EnrichSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for web/news enrichment.
 pub enum EnrichSubcommand {
     /// Query Kagi's Teclis web enrichment index
     Web(EnrichArgs),
@@ -887,6 +923,7 @@ pub enum EnrichSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for enrichment operations.
 pub struct EnrichArgs {
     /// Query to enrich
     #[arg(value_name = "QUERY")]
@@ -894,6 +931,7 @@ pub struct EnrichArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `smallweb` feed subcommand.
 pub struct SmallWebArgs {
     /// Limit number of feed entries returned by the Small Web feed
     #[arg(long, value_name = "COUNT")]
@@ -901,12 +939,14 @@ pub struct SmallWebArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `lens` command group.
 pub struct LensCommand {
     #[command(subcommand)]
     pub command: LensSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for lens management.
 pub enum LensSubcommand {
     /// List available lenses and whether they are enabled
     List,
@@ -925,6 +965,7 @@ pub enum LensSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments targeting a specific lens.
 pub struct LensTargetArgs {
     /// Lens id or exact lens name
     #[arg(value_name = "ID_OR_NAME")]
@@ -932,6 +973,7 @@ pub struct LensTargetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for creating a new lens.
 pub struct LensCreateArgs {
     /// Lens display name
     #[arg(value_name = "NAME")]
@@ -990,6 +1032,7 @@ pub struct LensCreateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for updating an existing lens.
 pub struct LensUpdateArgs {
     /// Lens id or exact lens name
     #[arg(value_name = "ID_OR_NAME")]
@@ -1051,24 +1094,28 @@ pub struct LensUpdateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `bang` command group.
 pub struct BangCommand {
     #[command(subcommand)]
     pub command: BangSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for bang shortcuts.
 pub enum BangSubcommand {
     /// Manage custom bangs
     Custom(CustomBangCommand),
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `bang custom` command group.
 pub struct CustomBangCommand {
     #[command(subcommand)]
     pub command: CustomBangSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for custom bang management.
 pub enum CustomBangSubcommand {
     /// List custom bangs
     List,
@@ -1083,6 +1130,7 @@ pub enum CustomBangSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments targeting a specific custom bang.
 pub struct CustomBangTargetArgs {
     /// Bang id, exact name, or trigger (with or without leading '!')
     #[arg(value_name = "ID_OR_NAME")]
@@ -1090,6 +1138,7 @@ pub struct CustomBangTargetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for creating a new custom bang.
 pub struct CustomBangCreateArgs {
     /// Bang display name
     #[arg(value_name = "NAME")]
@@ -1140,6 +1189,7 @@ pub struct CustomBangCreateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for updating an existing custom bang.
 pub struct CustomBangUpdateArgs {
     /// Bang id, exact name, or trigger (with or without leading '!')
     #[arg(value_name = "ID_OR_NAME")]
@@ -1192,12 +1242,14 @@ pub struct CustomBangUpdateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `redirect` command group.
 pub struct RedirectCommand {
     #[command(subcommand)]
     pub command: RedirectSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
+/// Subcommands for redirect rule management.
 pub enum RedirectSubcommand {
     /// List redirect rules
     List,
@@ -1216,6 +1268,7 @@ pub enum RedirectSubcommand {
 }
 
 #[derive(Debug, Args)]
+/// Arguments targeting a specific redirect rule.
 pub struct RedirectTargetArgs {
     /// Redirect id or exact rule text
     #[arg(value_name = "ID_OR_RULE")]
@@ -1223,6 +1276,7 @@ pub struct RedirectTargetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for creating a new redirect rule.
 pub struct RedirectCreateArgs {
     /// Full regex|replacement rule
     #[arg(value_name = "RULE")]
@@ -1230,6 +1284,7 @@ pub struct RedirectCreateArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for updating an existing redirect rule.
 pub struct RedirectUpdateArgs {
     /// Redirect id or exact rule text
     #[arg(value_name = "ID_OR_RULE")]
