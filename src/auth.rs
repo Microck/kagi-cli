@@ -19,6 +19,7 @@ pub const API_TOKEN_ENV: &str = "KAGI_API_TOKEN";
 pub const SESSION_TOKEN_ENV: &str = "KAGI_SESSION_TOKEN";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The type of authentication credential.
 pub enum CredentialKind {
     ApiToken,
     SessionToken,
@@ -38,6 +39,7 @@ impl CredentialKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Where a credential was loaded from.
 pub enum CredentialSource {
     Env,
     Config,
@@ -57,6 +59,7 @@ impl CredentialSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Preferred authentication method for search operations.
 pub enum SearchAuthPreference {
     Session,
     Api,
@@ -86,6 +89,7 @@ impl SearchAuthPreference {
 }
 
 #[derive(Clone, PartialEq, Eq)]
+/// A resolved authentication credential with its kind and source.
 pub struct Credential {
     pub kind: CredentialKind,
     pub source: CredentialSource,
@@ -103,12 +107,14 @@ impl std::fmt::Debug for Credential {
 }
 
 #[derive(Debug, Clone)]
+/// Credentials resolved for a specific search request, with optional fallback.
 pub struct SearchCredentials {
     pub primary: Credential,
     pub fallback_session: Option<Credential>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Authentication requirement level for different search types.
 pub enum SearchAuthRequirement {
     Base,
     Lens,
@@ -116,6 +122,7 @@ pub enum SearchAuthRequirement {
 }
 
 #[derive(Debug, Clone)]
+/// All available credentials and preferences loaded from config and environment.
 pub struct CredentialInventory {
     pub api_token: Option<Credential>,
     pub session_token: Option<Credential>,
@@ -227,6 +234,7 @@ struct AuthConfig {
 }
 
 #[derive(Debug, Clone)]
+/// Snapshot of the current authentication configuration for display purposes.
 pub struct ConfigAuthSnapshot {
     pub config_path: PathBuf,
     pub api_token: Option<String>,

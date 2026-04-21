@@ -23,6 +23,7 @@ const UNAUTHENTICATED_MARKERS: [&str; 3] = [
 ];
 
 #[derive(Debug, Clone)]
+/// Parameters for a Kagi search API request.
 pub struct SearchRequest {
     pub query: String,
     pub lens: Option<String>,

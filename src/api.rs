@@ -93,6 +93,7 @@ const KAGI_LOGGED_OUT_MARKERS: [&str; 3] = [
 ];
 
 #[derive(Debug, Clone)]
+/// Filter parameters for the Kagi News API.
 pub struct NewsFilterRequest {
     pub preset_ids: Vec<String>,
     pub keywords: Vec<String>,
@@ -4085,6 +4086,7 @@ fn build_client() -> Result<Client, KagiError> {
 
 #[cfg(test)]
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+/// Generic wrapper for Kagi API responses containing a data payload.
 pub struct KagiEnvelope<T> {
     pub meta: ApiMeta,
     pub data: T,
