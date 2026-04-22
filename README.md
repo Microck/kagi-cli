@@ -33,6 +33,25 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 - use one CLI for search, quick answers, assistant, translate, summarization, `news`, and `smallweb`
 - add `KAGI_API_TOKEN` only when you want the paid public API commands
 
+
+## features
+
+| area | highlights |
+| --- | --- |
+| **search** | JSON-first output, lenses, snaps, region/time/order filters, personalized search toggle, date bounds |
+| **batch** | parallel searches with shared filters and format control |
+| **quick answers** | instant factual answers with source references |
+| **assistant** | thread management, custom assistants, per-request model/lens/web-access config |
+| **ask-page** | ask questions about any URL |
+| **translate** | auto-detect source, word insights, alignment data, alternative translations |
+| **summarize** | subscriber summarizer or paid API (cecil/gemini/daisy), key-points/digest/summary modes |
+| **fastgpt** | fast factual answers through the paid API |
+| **enrich** | web and news enrichment indexes |
+| **feeds** | kagi news categories + small web feed |
+| **account settings** | lenses, custom bangs, redirect rules — full CRUD from the CLI |
+| **auth wizard** | interactive session-link/API-token setup with inline instructions and validation |
+| **shell completion** | bash, zsh, fish, powershell |
+
 ## quickstart
 
 ### Linux or macOS
@@ -150,6 +169,29 @@ notes:
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.
+
+
+## configuration
+
+the CLI reads credentials from `./.kagi.toml` by default. environment variables override the file.
+
+### credential priority
+
+1. `KAGI_SESSION_TOKEN` / `KAGI_API_TOKEN` environment variables (highest priority)
+2. `[auth]` section in `.kagi.toml`
+3. interactive wizard via `kagi auth`
+
+### config file location
+
+the CLI looks for `.kagi.toml` in the current directory. to use a global config, symlink or copy it to your project root.
+
+### search preferences
+
+set `[auth] preferred_auth = "api"` in `.kagi.toml` to make `kagi search` prefer the API path when both credentials are present. the default is `"session"`.
+
+### format defaults
+
+all commands output JSON to stdout by default. use `--format pretty` for human-readable output, or `--format compact` / `--format markdown` / `--format csv` depending on the command.
 
 ## command surface
 
