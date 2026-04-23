@@ -7,6 +7,19 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.4.5]
+
+### Changed
+
+- Updated the backlog dependency and workflow set: `actions/setup-node v6`, `actions/upload-artifact v7.0.1`, `rand 0.10.0`, `cliclack 0.5.4`, `tokio 1.51.1`, `clap_complete 4.6.2`, `toml 1.1.2`, and `rustls-webpki 0.103.13`
+
+### Fixed
+
+- Credentials now save `.kagi.toml` via an atomic same-directory write so interrupted writes do not leave behind truncated config files
+- Shared HTTP client initialization now retries after transient setup failures instead of permanently caching the first error for the rest of the process
+- Error-body reads now preserve a diagnostic placeholder when the response body itself cannot be read
+- Redirect parsing no longer uses a production `unwrap()` on rule splitting
+
 ## [0.4.4]
 
 ### Added
