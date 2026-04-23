@@ -489,7 +489,9 @@ pub fn parse_redirect_list(html: &str) -> Result<Vec<RedirectRuleSummary>, KagiE
             continue;
         }
 
-        let edit_url = edit_url.unwrap().to_string();
+        let edit_url = edit_url
+            .ok_or_else(|| KagiError::Parse("redirect row missing edit URL".to_string()))?
+            .to_string();
         let id = parse_query_value(&edit_url, "rule_id")
             .or_else(|| toggle_form.and_then(|form| extract_input_value_from(&form, "rule_id")))
             .ok_or_else(|| KagiError::Parse("redirect row missing rule_id".to_string()))?;

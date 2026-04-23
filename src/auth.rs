@@ -500,13 +500,7 @@ fn save_credentials_with_preference_to_path(
             config_path.display()
         ))
     })?;
-    fs::write(config_path, raw).map_err(|error| {
-        KagiError::Config(format!(
-            "failed to write config file {}: {error}",
-            config_path.display()
-        ))
-    })?;
-    secure_config_permissions(config_path)?;
+    write_config_file_atomically(config_path, &raw)?;
 
     load_credential_inventory_from_path(config_path)
 }
@@ -581,6 +575,37 @@ fn read_config_file(path: &Path) -> Result<ConfigFile, KagiError> {
             path.display()
         ))
     })
+}
+
+fn write_config_file_atomically(path: &Path, raw: &str) -> Result<(), KagiError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "kagi-config".to_string());
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temp_path = parent.join(format!(".{file_name}.tmp-{}-{nonce}", std::process::id()));
+
+    fs::write(&temp_path, raw).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to write temporary config file {}: {error}",
+            temp_path.display()
+        ))
+    })?;
+    secure_config_permissions(&temp_path)?;
+
+    if let Err(error) = fs::rename(&temp_path, path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(KagiError::Config(format!(
+            "failed to replace config file {}: {error}",
+            path.display()
+        )));
+    }
+
+    secure_config_permissions(path)
 }
 
 #[cfg(unix)]

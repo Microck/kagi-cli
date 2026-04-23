@@ -19,8 +19,8 @@ pub const KAGI_BASE_URL_ENV: &str = "KAGI_BASE_URL";
 pub const KAGI_NEWS_BASE_URL_ENV: &str = "KAGI_NEWS_BASE_URL";
 pub const KAGI_TRANSLATE_BASE_URL_ENV: &str = "KAGI_TRANSLATE_BASE_URL";
 
-static CLIENT_20S: OnceLock<Result<Client, String>> = OnceLock::new();
-static CLIENT_30S: OnceLock<Result<Client, String>> = OnceLock::new();
+static CLIENT_20S: OnceLock<Client> = OnceLock::new();
+static CLIENT_30S: OnceLock<Client> = OnceLock::new();
 
 /// Returns a shared HTTP client with a 20-second timeout.
 ///
@@ -57,20 +57,20 @@ pub fn map_transport_error(error: reqwest::Error) -> KagiError {
     KagiError::Network(format!("request to Kagi failed: {error}"))
 }
 
-/// Reads the response body text, returning an empty string on failure.
+/// Reads the response body text, returning a diagnostic placeholder on failure.
 ///
 /// # Arguments
 /// * `response` - The HTTP response to consume.
 /// * `surface` - A label used in debug logging on read failure.
 ///
 /// # Returns
-/// The response body as a string, or an empty string if the body could not be read.
+/// The response body as a string, or a diagnostic placeholder if the body could not be read.
 pub async fn read_error_body(response: Response, surface: &str) -> String {
     match response.text().await {
         Ok(body) => body,
         Err(error) => {
             debug!(surface, error = %error, "failed to read error response body");
-            String::new()
+            format!("<failed to read error body: {error}>")
         }
     }
 }
@@ -117,22 +117,19 @@ pub fn kagi_translate_url(path: &str) -> String {
     )
 }
 
-fn cached_client(
-    slot: &OnceLock<Result<Client, String>>,
-    timeout: Duration,
-) -> Result<Client, KagiError> {
-    let result = slot.get_or_init(|| {
-        Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(timeout)
-            .build()
-            .map_err(|error| format!("failed to build HTTP client: {error}"))
-    });
+fn cached_client(slot: &OnceLock<Client>, timeout: Duration) -> Result<Client, KagiError> {
+    if let Some(client) = slot.get() {
+        return Ok(client.clone());
+    }
 
-    result
-        .as_ref()
-        .cloned()
-        .map_err(|error| KagiError::Network(error.clone()))
+    let client = Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(timeout)
+        .build()
+        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))?;
+
+    let _ = slot.set(client.clone());
+    Ok(client)
 }
 
 fn base_url_from_env(key: &str, default: &str) -> String {
