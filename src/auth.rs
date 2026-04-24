@@ -629,10 +629,8 @@ fn secure_config_permissions(_path: &Path) -> Result<(), KagiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
+    use crate::test_support::lock_env;
     use tempfile::NamedTempFile;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct ScopedEnvVar {
         key: &'static str,
@@ -655,10 +653,6 @@ mod tests {
                 None => unsafe { env::remove_var(self.key) },
             }
         }
-    }
-
-    fn lock_env() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().expect("env lock should not be poisoned")
     }
 
     fn temp_config_file() -> NamedTempFile {

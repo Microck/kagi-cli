@@ -655,6 +655,7 @@ mod tests {
         parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
         parse_redirect_form, parse_redirect_list, parse_search_results,
     };
+    use crate::error::KagiError;
 
     #[test]
     fn parses_primary_and_grouped_results() {
@@ -725,6 +726,32 @@ mod tests {
         assert!(threads[0].saved);
         assert!(!threads[0].shared);
         assert_eq!(threads[0].tag_ids, vec!["tag-1".to_string()]);
+    }
+
+    #[test]
+    fn rejects_assistant_thread_list_items_missing_required_attributes() {
+        let html = r#"
+        <div class="hide-if-no-threads">
+          <ul class="thread-list">
+            <li class="thread"
+                data-saved="true"
+                data-public="false"
+                data-tags='["tag-1"]'
+                data-snippet="First snippet">
+              <a href="/assistant/thread-1">
+                <div class="title">First Thread</div>
+                <div class="excerpt">First snippet</div>
+              </a>
+            </li>
+          </ul>
+        </div>
+        "#;
+
+        let error = parse_assistant_thread_list(html)
+            .expect_err("missing thread identifier should fail to parse");
+
+        assert!(matches!(error, KagiError::Parse(_)));
+        assert!(error.to_string().contains("missing data-code"));
     }
 
     #[test]

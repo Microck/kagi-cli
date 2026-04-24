@@ -4199,6 +4199,7 @@ mod tests {
     use crate::auth::{SESSION_TOKEN_ENV, load_credential_inventory, normalize_session_token};
     use crate::cli::{NewsFilterMode, NewsFilterScope};
     use crate::error::KagiError;
+    use crate::test_support::lock_env;
     use crate::types::{AskPageRequest, SubscriberSummarizeRequest};
     use crate::types::{
         AssistantProfileCreateRequest, AssistantProfileSummary, AssistantProfileUpdateRequest,
@@ -4656,6 +4657,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn assistant_thread_list_follows_cursor_pagination() {
         use httpmock::Method::POST;
         use httpmock::MockServer;
@@ -4699,6 +4701,7 @@ mod tests {
                 ));
         });
 
+        let _env_guard = lock_env();
         let _base_url_env = set_env_var("KAGI_BASE_URL", &server.base_url());
         let response = execute_assistant_thread_list("test-session")
             .await

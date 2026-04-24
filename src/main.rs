@@ -7,6 +7,9 @@ mod http;
 mod parser;
 mod quick;
 mod search;
+#[cfg(test)]
+#[path = "test-support.rs"]
+mod test_support;
 mod types;
 
 use clap::{CommandFactory, Parser};

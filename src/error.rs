@@ -39,3 +39,19 @@ impl From<serde_json::Error> for KagiError {
         Self::Parse(format!("JSON serialization error: {err}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::KagiError;
+
+    #[test]
+    fn converts_serde_json_errors_to_parse_errors() {
+        let serde_error = serde_json::from_str::<serde_json::Value>("{invalid json")
+            .expect_err("invalid JSON should fail to deserialize");
+
+        let error = KagiError::from(serde_error);
+
+        assert!(matches!(error, KagiError::Parse(_)));
+        assert!(error.to_string().contains("JSON serialization error"));
+    }
+}
