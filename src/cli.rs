@@ -5,6 +5,7 @@
 //! and per-subcommand options.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, ValueEnum)]
 /// Supported shell types for tab-completion generation.
@@ -577,6 +578,10 @@ pub struct AssistantArgs {
     /// Continue an existing assistant thread by id
     #[arg(long, value_name = "THREAD_ID")]
     pub thread_id: Option<String>,
+
+    /// Attach a local file to the assistant prompt (repeat for multiple files)
+    #[arg(long, value_name = "PATH")]
+    pub attach: Vec<PathBuf>,
 
     /// Use a saved assistant by name, id, or invoke profile slug
     #[arg(long, value_name = "ASSISTANT")]
@@ -1406,6 +1411,33 @@ mod tests {
                 },
                 other => panic!("unexpected assistant subcommand: {other:?}"),
             },
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_assistant_attach_flags() {
+        let cli = Cli::try_parse_from([
+            "kagi",
+            "assistant",
+            "--attach",
+            "./a.jpg",
+            "--attach",
+            "./b.pdf",
+            "tell me everything about this pdf",
+        ])
+        .expect("assistant attach command should parse");
+
+        match cli.command.expect("command") {
+            Commands::Assistant(args) => {
+                assert_eq!(
+                    args.query.as_deref(),
+                    Some("tell me everything about this pdf")
+                );
+                assert_eq!(args.attach.len(), 2);
+                assert_eq!(args.attach[0].to_string_lossy(), "./a.jpg");
+                assert_eq!(args.attach[1].to_string_lossy(), "./b.pdf");
+            }
             other => panic!("unexpected command: {other:?}"),
         }
     }

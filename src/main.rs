@@ -328,6 +328,7 @@ async fn run() -> Result<(), KagiError> {
                 let request = AssistantPromptRequest {
                     query,
                     thread_id: args.thread_id,
+                    attachments: args.attach,
                     profile_id: normalize_optional_string(args.assistant),
                     model: args.model,
                     lens_id: args.lens,

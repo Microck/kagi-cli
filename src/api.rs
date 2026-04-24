@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::fs;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use reqwest::multipart;
 use reqwest::{Client, StatusCode, Url, header};
 use scraper::Html;
 use serde::Deserialize;
@@ -471,24 +474,27 @@ pub async fn execute_assistant_prompt(
     request: &AssistantPromptRequest,
     token: &str,
 ) -> Result<AssistantPromptResponse, KagiError> {
-    let query = normalize_assistant_query(&request.query)?;
-    let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
-    let profile = assistant_profile_payload(request);
-    let body = execute_assistant_stream(
-        &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
-        &json!({
-            "focus": {
-                "thread_id": thread_id,
-                "branch_id": ASSISTANT_ZERO_BRANCH_UUID,
-                "prompt": query,
-                "message_id": Value::Null,
-            },
-            "profile": profile,
-        }),
-        token,
-        "Assistant prompt",
-    )
-    .await?;
+    let body = match build_assistant_prompt_payload(request)? {
+        AssistantPromptPayload::Json(state) => {
+            execute_assistant_stream(
+                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
+                &state,
+                token,
+                "Assistant prompt",
+            )
+            .await?
+        }
+        AssistantPromptPayload::Multipart { state, attachments } => {
+            execute_assistant_multipart_stream(
+                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
+                &state,
+                &attachments,
+                token,
+                "Assistant prompt",
+            )
+            .await?
+        }
+    };
 
     parse_assistant_prompt_stream(&body)
 }
@@ -1414,6 +1420,7 @@ pub async fn execute_ask_page(
         &AssistantPromptRequest {
             query: build_ask_page_prompt(&source_url, &question),
             thread_id: None,
+            attachments: Vec::new(),
             profile_id: None,
             model: None,
             lens_id: None,
@@ -3019,6 +3026,97 @@ fn assistant_profile_payload(request: &AssistantPromptRequest) -> Value {
     Value::Object(payload)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AssistantAttachmentPayload {
+    path: PathBuf,
+    filename: String,
+    content_type: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AssistantPromptPayload {
+    Json(Value),
+    Multipart {
+        state: Value,
+        attachments: Vec<AssistantAttachmentPayload>,
+    },
+}
+
+fn assistant_prompt_state(
+    request: &AssistantPromptRequest,
+    query: String,
+    thread_id: Option<String>,
+) -> Value {
+    json!({
+        "focus": {
+            "thread_id": thread_id,
+            "branch_id": ASSISTANT_ZERO_BRANCH_UUID,
+            "prompt": query,
+            "message_id": Value::Null,
+        },
+        "profile": assistant_profile_payload(request),
+    })
+}
+
+fn build_assistant_prompt_payload(
+    request: &AssistantPromptRequest,
+) -> Result<AssistantPromptPayload, KagiError> {
+    let query = normalize_assistant_query(&request.query)?;
+    let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
+    let state = assistant_prompt_state(request, query, thread_id);
+
+    if request.attachments.is_empty() {
+        return Ok(AssistantPromptPayload::Json(state));
+    }
+
+    Ok(AssistantPromptPayload::Multipart {
+        state,
+        attachments: load_assistant_attachments(&request.attachments)?,
+    })
+}
+
+fn load_assistant_attachments(
+    paths: &[PathBuf],
+) -> Result<Vec<AssistantAttachmentPayload>, KagiError> {
+    paths
+        .iter()
+        .map(|path| load_assistant_attachment(path))
+        .collect()
+}
+
+fn load_assistant_attachment(path: &Path) -> Result<AssistantAttachmentPayload, KagiError> {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            KagiError::Config(format!(
+                "assistant attachment '{}' must include a file name",
+                path.display()
+            ))
+        })?
+        .to_string();
+
+    let bytes = fs::read(path).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to read assistant attachment '{}': {error}",
+            path.display()
+        ))
+    })?;
+
+    Ok(AssistantAttachmentPayload {
+        path: path.to_path_buf(),
+        filename,
+        content_type: mime_guess::from_path(path)
+            .first_or_octet_stream()
+            .essence_str()
+            .to_string(),
+        bytes,
+    })
+}
+
 async fn execute_assistant_stream(
     url: &str,
     payload: &Value,
@@ -3042,6 +3140,66 @@ async fn execute_assistant_stream(
         .await
         .map_err(map_transport_error)?;
 
+    handle_assistant_stream_response(response, surface).await
+}
+
+async fn execute_assistant_multipart_stream(
+    url: &str,
+    state: &Value,
+    attachments: &[AssistantAttachmentPayload],
+    token: &str,
+    surface: &str,
+) -> Result<String, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    let client = build_client()?;
+    let state_json = serde_json::to_vec(state).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to serialize Assistant prompt upload state: {error}"
+        ))
+    })?;
+    let state_part = multipart::Part::bytes(state_json)
+        .mime_str("application/json")
+        .map_err(|error| {
+            KagiError::Config(format!(
+                "failed to set Assistant upload state MIME type: {error}"
+            ))
+        })?;
+    let mut form = multipart::Form::new().part("state", state_part);
+
+    for attachment in attachments {
+        let file_part = multipart::Part::bytes(attachment.bytes.clone())
+            .file_name(attachment.filename.clone())
+            .mime_str(&attachment.content_type)
+            .map_err(|error| {
+                KagiError::Config(format!(
+                    "failed to set Assistant attachment MIME type for '{}': {error}",
+                    attachment.path.display()
+                ))
+            })?;
+        form = form.part("file", file_part);
+    }
+
+    let response = client
+        .post(url)
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "application/vnd.kagi.stream")
+        .multipart(form)
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    handle_assistant_stream_response(response, surface).await
+}
+
+async fn handle_assistant_stream_response(
+    response: reqwest::Response,
+    surface: &str,
+) -> Result<String, KagiError> {
     match response.status() {
         StatusCode::OK => {
             let body = response.text().await.map_err(|error| {
@@ -4167,8 +4325,9 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, KagiEnvelope, NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR,
-        TranslateSuggestionContext, apply_news_content_filters, build_ask_page_prompt,
+        ApiErrorBody, AssistantPromptPayload, KagiEnvelope, NewsFilterRequest,
+        TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR, TranslateSuggestionContext,
+        apply_news_content_filters, build_ask_page_prompt, build_assistant_prompt_payload,
         build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
@@ -4211,11 +4370,14 @@ mod tests {
     };
     use reqwest::StatusCode;
     use serde_json::{Value, json};
+    use std::fs;
+    use std::path::PathBuf;
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     };
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tempfile::TempDir;
 
     struct ScopedEnvVar {
         key: &'static str,
@@ -4750,6 +4912,147 @@ mod tests {
     }
 
     #[test]
+    fn builds_json_assistant_prompt_payload_without_attachments() {
+        let request = AssistantPromptRequest {
+            query: "  hello  ".to_string(),
+            thread_id: Some("  thread-1  ".to_string()),
+            attachments: Vec::new(),
+            profile_id: Some("research".to_string()),
+            model: Some("gpt-5-mini".to_string()),
+            lens_id: Some(2),
+            internet_access: Some(true),
+            personalizations: Some(false),
+        };
+
+        match build_assistant_prompt_payload(&request).expect("payload should build") {
+            AssistantPromptPayload::Json(state) => {
+                assert_eq!(state["focus"]["prompt"], "hello");
+                assert_eq!(state["focus"]["thread_id"], "thread-1");
+                assert_eq!(
+                    state["focus"]["branch_id"],
+                    "00000000-0000-4000-0000-000000000000"
+                );
+                assert_eq!(state["profile"]["id"], "research");
+                assert_eq!(state["profile"]["model"], "gpt-5-mini");
+                assert_eq!(state["profile"]["lens_id"], 2);
+                assert_eq!(state["profile"]["internet_access"], true);
+                assert_eq!(state["profile"]["personalizations"], false);
+            }
+            other => panic!("expected json assistant payload, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn builds_multipart_assistant_prompt_payload_with_attachments() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let attachment_path = tempdir.path().join("note.txt");
+        fs::write(&attachment_path, "attached-note").expect("attachment should write");
+
+        let request = AssistantPromptRequest {
+            query: "Reply with exactly: attached-note".to_string(),
+            thread_id: None,
+            attachments: vec![attachment_path.clone()],
+            profile_id: None,
+            model: Some("gpt-5-mini".to_string()),
+            lens_id: None,
+            internet_access: Some(false),
+            personalizations: Some(false),
+        };
+
+        match build_assistant_prompt_payload(&request).expect("payload should build") {
+            AssistantPromptPayload::Multipart { state, attachments } => {
+                assert_eq!(
+                    state["focus"]["prompt"],
+                    "Reply with exactly: attached-note"
+                );
+                assert_eq!(state["profile"]["model"], "gpt-5-mini");
+                assert_eq!(state["profile"]["internet_access"], false);
+                assert_eq!(attachments.len(), 1);
+                assert_eq!(attachments[0].path, attachment_path);
+                assert_eq!(attachments[0].filename, "note.txt");
+                assert_eq!(attachments[0].content_type, "text/plain");
+                assert_eq!(attachments[0].bytes, b"attached-note");
+            }
+            other => panic!("expected multipart assistant payload, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_missing_assistant_attachment() {
+        let missing = PathBuf::from("/tmp/definitely-missing-kagi-assistant-attachment.txt");
+        let request = AssistantPromptRequest {
+            query: "hello".to_string(),
+            thread_id: None,
+            attachments: vec![missing.clone()],
+            profile_id: None,
+            model: None,
+            lens_id: None,
+            internet_access: None,
+            personalizations: None,
+        };
+
+        let error =
+            build_assistant_prompt_payload(&request).expect_err("missing attachment should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("failed to read assistant attachment")
+        );
+        assert!(error.to_string().contains(&missing.display().to_string()));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn assistant_prompt_uses_multipart_when_attachments_are_present() {
+        use httpmock::Method::POST;
+        use httpmock::MockServer;
+
+        let server = MockServer::start();
+        let _prompt = server.mock(|when, then| {
+            when.method(POST)
+                .path("/assistant/prompt")
+                .header("cookie", "kagi_session=test-session")
+                .header("accept", "application/vnd.kagi.stream")
+                .body_includes("name=\"state\"")
+                .body_includes("name=\"file\"; filename=\"note.txt\"")
+                .body_includes("\"prompt\":\"Reply with exactly: attached-note\"")
+                .body_includes("attached-note");
+            then.status(200)
+                .header("content-type", "application/vnd.kagi.stream")
+                .body(concat!(
+                    "hi:{\"v\":\"test\",\"trace\":\"trace-upload\"}\0\n",
+                    "thread.json:{\"id\":\"thread-1\",\"title\":\"Upload test\",\"ack\":\"2026-04-24T00:00:00Z\",\"created_at\":\"2026-04-24T00:00:00Z\",\"expires_at\":\"2026-04-24T01:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                    "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-04-24T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Reply with exactly: attached-note\",\"reply_html\":\"attached-note\",\"md\":\"attached-note\",\"references_html\":\"\",\"references_markdown\":\"\",\"metadata_html\":\"\",\"documents\":[],\"profile\":null}\0\n"
+                ));
+        });
+
+        let tempdir = TempDir::new().expect("tempdir");
+        let attachment_path = tempdir.path().join("note.txt");
+        fs::write(&attachment_path, "attached-note").expect("attachment should write");
+
+        let _env_guard = lock_env();
+        let _base_url_env = set_env_var("KAGI_BASE_URL", &server.base_url());
+        let response = execute_assistant_prompt(
+            &AssistantPromptRequest {
+                query: "Reply with exactly: attached-note".to_string(),
+                thread_id: None,
+                attachments: vec![attachment_path],
+                profile_id: None,
+                model: Some("gpt-5-mini".to_string()),
+                lens_id: None,
+                internet_access: Some(false),
+                personalizations: Some(false),
+            },
+            "test-session",
+        )
+        .await
+        .expect("assistant prompt should succeed");
+
+        assert_eq!(response.meta.trace.as_deref(), Some("trace-upload"));
+        assert_eq!(response.message.markdown.as_deref(), Some("attached-note"));
+    }
+
+    #[test]
     fn normalizes_custom_bang_trigger_and_redirect_rule() {
         assert_eq!(
             normalize_custom_bang_trigger(" !gh ").expect("trigger should normalize"),
@@ -4942,6 +5245,7 @@ mod tests {
         let request = AssistantPromptRequest {
             query: format!("Reply with exactly: assistant-v2-smoke-{}", live_nonce()),
             thread_id: None,
+            attachments: Vec::new(),
             profile_id: None,
             model: Some("gpt-5-mini".to_string()),
             lens_id: None,
@@ -5037,6 +5341,7 @@ mod tests {
             &AssistantPromptRequest {
                 query: "Reply with exactly: custom-assistant-smoke".to_string(),
                 thread_id: None,
+                attachments: Vec::new(),
                 profile_id: Some(created_id.clone()),
                 model: None,
                 lens_id: None,

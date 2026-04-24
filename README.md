@@ -262,6 +262,12 @@ run assistant with a saved assistant profile and markdown output:
 kagi assistant --assistant research --format markdown "summarize the latest rust release"
 ```
 
+attach local files to an assistant prompt:
+
+```bash
+kagi assistant --attach ./a.jpg --attach ./b.pdf "tell me everything about this pdf"
+```
+
 ask assistant about a page directly:
 
 ```bash
