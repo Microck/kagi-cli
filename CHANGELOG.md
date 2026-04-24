@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.4.7]
+
+### Added
+
+- `kagi assistant` now accepts repeated `--attach <PATH>` flags and uploads local files through Kagi Assistant's multipart prompt flow so prompts can include PDFs, images, and other supported documents
+
 ## [0.4.6]
 
 ### Fixed
