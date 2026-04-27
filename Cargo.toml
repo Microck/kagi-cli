@@ -23,7 +23,7 @@ exclude = [
 ]
 
 [dependencies]
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = "4.6.2"
 cliclack = "0.5.4"
 console = "0.16.3"
