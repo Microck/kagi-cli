@@ -163,7 +163,7 @@ pub fn read_history(limit: usize) -> Result<Vec<HistoryEntry>, KagiError> {
     let mut entries = raw
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<HistoryEntry>(line))
+        .map(serde_json::from_str::<HistoryEntry>)
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|entry| entry.timestamp);
     entries.reverse();

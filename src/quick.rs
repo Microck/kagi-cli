@@ -95,11 +95,13 @@ pub async fn execute_quick(
 
             parse_quick_answer_stream(&body, query, lens)
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
             debug!(status = %response.status(), "Kagi Quick Answer rejected the session token");
-            Err(KagiError::Auth(
-                "invalid or expired Kagi session token".to_string(),
-            ))
+            let body = http::read_error_body(response, "quick answer").await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for Quick Answer: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
         }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, "quick answer").await;
@@ -108,12 +110,20 @@ pub async fn execute_quick(
                 format_client_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi Quick Answer server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi Quick Answer response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "quick answer").await;
+            Err(KagiError::Network(format!(
+                "Kagi Quick Answer server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "quick answer").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi Quick Answer response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 

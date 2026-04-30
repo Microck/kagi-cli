@@ -19,6 +19,18 @@ Examples:
 - `Error: missing credentials - this command requires KAGI_SESSION_TOKEN`
 - `Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden`
 
+HTTP errors may include a short diagnostic suffix copied from Kagi's response body:
+
+```text
+Error: Auth error: invalid Kagi API token or access is not enabled for search API: HTTP 403 Forbidden; Insufficient credit
+```
+
+Transport errors include the request URL when the HTTP client exposes it:
+
+```text
+Error: Network error: request to https://kagi.com/api/v0/search timed out after the configured timeout
+```
+
 ## Authentication Errors
 
 ### "missing credentials"
@@ -370,11 +382,35 @@ Config error: ask-page question cannot be empty
 kagi ask-page https://example.com "Give me the main argument in one sentence"
 ```
 
+### "batch query failed"
+
+**Message:**
+```text
+Batch error: 1 batch query failed (2 succeeded): rust: authentication error: invalid or expired Kagi session token for search: HTTP 401 Unauthorized; response body: session expired
+```
+
+**Meaning:** At least one query in `kagi batch` failed. The error lists how many queries succeeded and includes each failed query with its underlying error.
+
+**Solution:**
+1. Retry the failed query by itself to reduce noise:
+   ```bash
+   kagi search "rust"
+   ```
+2. If the error includes `401` or `403`, refresh the relevant credential:
+   ```bash
+   kagi auth
+   kagi auth check
+   ```
+3. If only some queries failed due to rate limits or transient server errors, lower concurrency:
+   ```bash
+   kagi batch --concurrency 1 < queries.txt
+   ```
+
 ## Network Errors
 
-### "Network error: request to Kagi timed out"
+### "Network error: request to {url} timed out"
 
-**Meaning:** Request took too long to complete.
+**Meaning:** Request to the shown URL took too long to complete.
 
 **Causes:**
 - Slow internet connection

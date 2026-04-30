@@ -706,13 +706,13 @@ async fn run() -> Result<(), KagiError> {
                 cli::OutputFormat::Markdown => "markdown",
                 cli::OutputFormat::Csv => "csv",
             };
-            run_batch_search(
-                args.queries,
-                args.concurrency,
-                args.rate_limit,
-                format_str.to_string(),
-                !args.no_color,
-                SearchRequestOptions {
+            run_batch_search(BatchSearchConfig {
+                queries: args.queries,
+                concurrency: args.concurrency,
+                rate_limit: args.rate_limit,
+                format: format_str.to_string(),
+                use_color: !args.no_color,
+                options: SearchRequestOptions {
                     snap: args.snap,
                     lens: args.lens,
                     region: args.region,
@@ -724,9 +724,9 @@ async fn run() -> Result<(), KagiError> {
                     personalized: args.personalized,
                     no_personalized: args.no_personalized,
                 },
-                args.template,
-                profile.as_deref(),
-            )
+                template: args.template,
+                profile: profile.as_deref(),
+            })
             .await
         }
     }
@@ -1397,7 +1397,7 @@ impl RateLimiter {
     }
 }
 
-async fn run_batch_search(
+struct BatchSearchConfig<'a> {
     queries: Vec<String>,
     concurrency: usize,
     rate_limit: u32,
@@ -1405,8 +1405,21 @@ async fn run_batch_search(
     use_color: bool,
     options: SearchRequestOptions,
     template: Option<String>,
-    profile: Option<&str>,
-) -> Result<(), KagiError> {
+    profile: Option<&'a str>,
+}
+
+async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError> {
+    let BatchSearchConfig {
+        queries,
+        concurrency,
+        rate_limit,
+        format,
+        use_color,
+        options,
+        template,
+        profile,
+    } = config;
+
     let inventory = load_credential_inventory_for_profile(profile)?;
     let auth_probe_request = build_search_request("auth probe".to_string(), &options);
     let credentials = inventory.resolve_for_search(search_auth_requirement(&auth_probe_request))?;
@@ -1443,28 +1456,31 @@ async fn run_batch_search(
     }
 
     let mut results = vec![];
-    let mut had_errors = false;
+    let mut failures = vec![];
 
     for (query, handle) in handles {
         match handle.await {
             Ok((completed_query, Ok(output))) => results.push((completed_query, output)),
             Ok((completed_query, Err(e))) => {
                 error!(query = %completed_query, error = %e, "batch query failed");
-                had_errors = true;
+                failures.push(format!("{completed_query}: {e}"));
             }
             Err(e) => {
                 error!(query = %query, error = %e, "batch worker task failed");
-                had_errors = true;
+                failures.push(format!("{query}: worker task failed: {e}"));
             }
         }
     }
 
-    if had_errors && (format == "json" || format == "compact") {
+    if !failures.is_empty() && (format == "json" || format == "compact") {
         // For machine-readable formats, exit with error code if any queries failed
-        return Err(KagiError::Batch(
-            "One or more batch queries failed".to_string(),
-        ));
+        return Err(KagiError::Batch(format_batch_failure_message(
+            results.len(),
+            &failures,
+        )));
     }
+
+    let success_count = results.len();
 
     // Output results in order
     if format == "json" || format == "compact" {
@@ -1509,13 +1525,27 @@ async fn run_batch_search(
         }
     }
 
-    if had_errors {
-        Err(KagiError::Batch(
-            "One or more batch queries failed".to_string(),
-        ))
+    if !failures.is_empty() {
+        Err(KagiError::Batch(format_batch_failure_message(
+            success_count,
+            &failures,
+        )))
     } else {
         Ok(())
     }
+}
+
+fn format_batch_failure_message(success_count: usize, failures: &[String]) -> String {
+    let failure_count = failures.len();
+    let query_word = if failure_count == 1 {
+        "query"
+    } else {
+        "queries"
+    };
+    format!(
+        "{failure_count} batch {query_word} failed ({success_count} succeeded): {}",
+        failures.join("; ")
+    )
 }
 
 async fn run_search_follow(
@@ -1901,9 +1931,10 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
 mod tests {
     use super::{
         RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
-        format_assistant_markdown, format_assistant_pretty, format_csv_response,
-        format_markdown_response, format_pretty_response, is_bare_auth_invocation_from,
-        parse_context_memory_json, print_assistant_response, should_fallback_to_session,
+        format_assistant_markdown, format_assistant_pretty, format_batch_failure_message,
+        format_csv_response, format_markdown_response, format_pretty_response,
+        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
+        should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -1946,6 +1977,22 @@ mod tests {
             output,
             "1. Rust Programming Language\n   https://www.rust-lang.org\n\n   A language empowering everyone to build reliable and efficient software.\n\n2. The Rust Book\n   https://doc.rust-lang.org/book/\n\n   Learn Rust with the official book."
         );
+    }
+
+    #[test]
+    fn formats_batch_failures_with_queries_and_success_count() {
+        let message = format_batch_failure_message(
+            2,
+            &[
+                "rust: authentication error: invalid token".to_string(),
+                "zig: network error: timeout".to_string(),
+            ],
+        );
+
+        assert!(message.contains("2 batch queries failed"));
+        assert!(message.contains("2 succeeded"));
+        assert!(message.contains("rust: authentication error"));
+        assert!(message.contains("zig: network error"));
     }
 
     #[test]

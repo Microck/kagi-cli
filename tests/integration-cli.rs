@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
@@ -18,6 +19,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
+        "KAGI_CACHE_DIR",
     ] {
         command.env_remove(key);
     }
@@ -27,6 +29,40 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
     }
 
     command.output().expect("command should run")
+}
+
+fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &Path) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kagi"));
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    for key in [
+        "KAGI_API_TOKEN",
+        "KAGI_SESSION_TOKEN",
+        "KAGI_BASE_URL",
+        "KAGI_NEWS_BASE_URL",
+        "KAGI_TRANSLATE_BASE_URL",
+        "KAGI_CACHE_DIR",
+    ] {
+        command.env_remove(key);
+    }
+
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+
+    let mut child = command.spawn().expect("command should spawn");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be piped")
+        .write_all(stdin.as_bytes())
+        .expect("stdin should write");
+    child.wait_with_output().expect("command should run")
 }
 
 fn assert_success(output: &Output) {
@@ -319,7 +355,10 @@ fn batch_command_reports_partial_failures_in_json_mode() {
 
     assert!(!output.status.success(), "batch command should fail");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("One or more batch queries failed"));
+    assert!(stderr.contains("1 batch query failed"));
+    assert!(stderr.contains("1 succeeded"));
+    assert!(stderr.contains("broken: authentication error"));
+    assert!(stderr.contains("Insufficient credit"));
 }
 
 #[test]
@@ -484,4 +523,121 @@ fn assistant_thread_list_paginates_with_cursor_id() {
     assert_eq!(body["threads"][1]["id"], "thread-2");
     assert_eq!(body["pagination"]["count"], 2);
     assert_eq!(body["pagination"]["total_counts"]["all"], 2);
+}
+
+#[test]
+fn batch_command_reads_queries_from_stdin() {
+    let server = MockServer::start();
+    let _rust = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v0/search")
+            .query_param("q", "rust")
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust",
+                "https://www.rust-lang.org",
+                "Rust homepage.",
+            ));
+    });
+    let _zig = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v0/search")
+            .query_param("q", "zig")
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Zig",
+                "https://ziglang.org",
+                "Zig homepage.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi_with_stdin(
+        &["batch", "--format", "json", "--concurrency", "2"],
+        "rust\nzig\n",
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["queries"], json!(["rust", "zig"]));
+}
+
+#[test]
+fn search_template_renders_result_fields() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v0/search")
+            .query_param("q", "rust")
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust",
+                "https://www.rust-lang.org",
+                "Rust homepage.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["search", "rust", "--template", "{{rank}} {{title}} {{url}}"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "1 Rust https://www.rust-lang.org"
+    );
+}
+
+#[test]
+fn site_pref_and_history_use_local_cache_dir() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let cache_dir_value = cache_dir.to_string_lossy().to_string();
+    let env = [("KAGI_CACHE_DIR", cache_dir_value.as_str())];
+
+    let set_output = run_kagi(
+        &["site-pref", "set", "Example.COM/path", "--mode", "pin"],
+        &env,
+        tempdir.path(),
+    );
+    assert_success(&set_output);
+
+    let list_output = run_kagi(&["site-pref", "list"], &env, tempdir.path());
+    assert_success(&list_output);
+    let prefs: Value = serde_json::from_slice(&list_output.stdout).expect("prefs json parses");
+    assert_eq!(prefs["domains"]["example.com"], "pin");
+
+    let history_output = run_kagi(&["history", "stats"], &env, tempdir.path());
+    assert_success(&history_output);
+    let stats: Value = serde_json::from_slice(&history_output.stdout).expect("history json parses");
+    assert_eq!(stats["total"], 0);
+}
+
+#[test]
+fn mcp_initialize_returns_server_info() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n",
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["id"], 1);
+    assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
 }
