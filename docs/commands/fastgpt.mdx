@@ -66,6 +66,14 @@ Enable web search augmentation.
 
 **Note:** Kagi's documentation notes that values other than `true` for `--web-search` are currently unsupported in practice.
 
+### `--local-cache`
+
+Store and reuse the response in the local cache under `~/.cache/kagi-cli` or `KAGI_CACHE_DIR`.
+
+### `--cache-ttl <SECONDS>`
+
+Override the local cache TTL. FastGPT defaults to 3600 seconds when `--local-cache` is enabled.
+
 ## Output Format
 
 ```json

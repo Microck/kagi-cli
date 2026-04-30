@@ -1,0 +1,24 @@
+---
+title: "batch"
+description: "Run multiple Kagi searches in parallel, including stdin-fed query batches."
+---
+
+# `kagi batch`
+
+Run multiple searches in parallel with shared filters and rate limiting.
+
+## Synopsis
+
+```bash
+kagi batch [OPTIONS] [QUERIES]...
+```
+
+If no query arguments are provided, `batch` reads one query per stdin line.
+
+## Examples
+
+```bash
+kagi batch "rust" "python" "go" --concurrency 3 --rate-limit 60
+printf 'rust\npython\ngo\n' | kagi batch --format compact
+kagi batch "rust" "zig" --template '{{rank}} {{title}} {{url}}'
+```

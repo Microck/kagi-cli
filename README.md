@@ -138,11 +138,17 @@ api_token = "kagi_api_demo_abcdef1234567890"
 
 # Base `kagi search` auth preference: "session" or "api".
 preferred_auth = "api"
+
+[profiles.work.auth]
+session_token = "https://kagi.com/search?token=work_session_demo"
+api_token = "kagi_api_work_demo"
+preferred_auth = "session"
 ```
 notes:
 
 - `kagi auth` is interactive on TTYs and becomes the default onboarding path
 - `kagi auth set --session-token` accepts either the raw token or the full session-link URL
+- `kagi --profile work ...` reads `[profiles.work.auth]` from `.kagi.toml`
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
@@ -159,6 +165,9 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
+| `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
+| `kagi notify` | send search or news output to a webhook |
+| `kagi history` | inspect local command history and aggregate query stats |
 | `kagi news` | read Kagi News from public JSON endpoints |
 | `kagi quick` | get a Quick Answer with references |
 | `kagi assistant` | prompt Kagi Assistant, continue threads, manage thread list/export/delete, and manage custom assistants |
@@ -167,6 +176,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
+| `kagi mcp` | run a stdio MCP server exposing search, summarize, and quick-answer tools |
+| `kagi site-pref` | manage local domain preferences that filter/reorder CLI search output |
 | `kagi lens` | list, inspect, create, update, enable, disable, and delete search lenses |
 | `kagi bang custom` | list, inspect, create, update, and delete custom bangs |
 | `kagi redirect` | list, inspect, create, update, enable, disable, and delete redirect rules |
@@ -238,10 +249,34 @@ kagi search --personalized "best cafes nearby"
 kagi search --no-personalized "best cafes nearby"
 ```
 
+render search results without `jq`:
+
+```bash
+kagi search "rust crates" --template '{{rank}}. {{title}} - {{url}}'
+```
+
+summarize the top search results in one command:
+
+```bash
+kagi search "rust async runtime tradeoffs" --follow 3
+```
+
+watch for search result changes:
+
+```bash
+kagi watch "kagi-cli release" --interval 600 --count 6
+```
+
 run a few searches in parallel:
 
 ```bash
 kagi batch "rust programming" "python tutorial" "go language"
+```
+
+read batch queries from stdin:
+
+```bash
+printf 'rust\npython\ngo\n' | kagi batch --format compact
 ```
 
 change batch output format for shell pipelines:
@@ -266,6 +301,12 @@ attach local files to an assistant prompt:
 
 ```bash
 kagi assistant --attach ./a.jpg --attach ./b.pdf "tell me everything about this pdf"
+```
+
+use assistant as a terminal chat client:
+
+```bash
+kagi assistant repl --model gpt-5-mini --export ./assistant-transcript.json
 ```
 
 ask assistant about a page directly:
@@ -306,6 +347,12 @@ kagi translate "Bonjour tout le monde"
 
 plain `kagi translate "..."` means `--from auto --to en`.
 
+translate from stdin:
+
+```bash
+echo "Bonjour tout le monde" | kagi translate --to ja
+```
+
 translate to a specific target language:
 
 ```bash
@@ -322,6 +369,12 @@ use the subscriber summarizer:
 
 ```bash
 kagi summarize --subscriber --url https://kagi.com --summary-type keypoints --length digest
+```
+
+summarize a stream of URLs:
+
+```bash
+cat urls.txt | kagi summarize --filter --subscriber --length digest
 ```
 
 use the paid api summarizer:

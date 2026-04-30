@@ -1,0 +1,39 @@
+---
+title: "notify"
+description: "Send Kagi search or news output to a webhook."
+---
+
+# `kagi notify`
+
+Run a search or fetch Kagi News and POST the structured JSON payload to a webhook endpoint.
+
+## Synopsis
+
+```bash
+kagi notify --query <QUERY> --webhook-url <URL>
+kagi notify --news-category <CATEGORY> --webhook-url <URL>
+```
+
+## Options
+
+### `--query <QUERY>`
+
+Search query to run before sending the webhook.
+
+### `--news-category <CATEGORY>`
+
+Kagi News category to fetch before sending the webhook. Defaults to public news behavior.
+
+### `--webhook-url <URL>`
+
+Webhook endpoint that receives the JSON payload.
+
+### `--change-only`
+
+For search notifications, only send when the result payload differs from the last sent payload for the same query.
+
+## Example
+
+```bash
+kagi notify --query "kagi-cli release" --webhook-url https://example.com/webhook --change-only
+```

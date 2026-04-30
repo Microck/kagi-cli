@@ -1,6 +1,6 @@
 # TODO
 
-Last reviewed against the shipped CLI surface: 2026-04-11 (`v0.4.2`).
+Last reviewed against the shipped CLI surface: 2026-04-30 (`v0.4.7` + issue #65 branch).
 
 This backlog is based on:
 
@@ -28,7 +28,7 @@ The main conclusion is simple:
 | 1 | Preserve richer search result schema in JSON output | `useful: high` `hard: medium` `risk: low-medium` `scope: m` | The current search output shape is intentionally minimal, but the help docs for the Search API show richer objects and metadata than `kagi-cli` exposes now. This is one of the best value-for-effort upgrades because it improves every automation use case without inventing a new product seam. Help pages: `/kagi/api/search.html`, `/kagi/api/intro/response-format.html` |
 | 2 | Parse search widgets and special result cards into structured output | `useful: high` `hard: high` `risk: medium-high` `scope: l` | `src/parser.rs` only extracts regular result blocks. The help docs describe answer boxes, inline maps, discussions, images, videos, quick peeks, summary boxes, podcasts, public records, and more. Right now the CLI drops most of that product value on the floor. Help pages: `/kagi/features/widgets.html`, `/kagi/settings/widgets.html`, `/kagi/features/search-operators.html` |
 | 3 | Tighten lens-management docs and coverage | `useful: medium` `hard: low-medium` `risk: low` `scope: s` | Lens CRUD already shipped in v0.4.1. The remaining work is keeping docs, demos, and tests aligned with the existing `kagi lens list|get|enable|disable|create|update|delete` surface. |
-| 4 | Add personalized-results management for domains/sites | `useful: high` `hard: high` `risk: high` `scope: l` | Kagi lets users block, demote, boost, normalize, or pin domains. That is highly relevant to power users and agents, and today the CLI has no way to inspect or manage those preferences. Candidate surface: `kagi site-pref list`, `kagi site-pref set example.com --mode pin`. Help pages: `/kagi/features/website-info-personalized-results.html`, `/kagi/settings/personalized-results.html` |
+| 4 | Add account-synced personalized-results management for domains/sites | `useful: high` `hard: high` `risk: high` `scope: l` | `kagi site-pref` now provides local CLI-side block/lower/normal/higher/pin preferences for search output. The remaining gap is syncing those preferences to Kagi's account-level Personalized Results page if Kagi exposes a documented write API. Help pages: `/kagi/features/website-info-personalized-results.html`, `/kagi/settings/personalized-results.html` |
 | 5 | Add search-shortcut management beyond shipped snaps/bangs/redirects | `useful: medium-high` `hard: medium-high` `risk: high` `scope: l` | `kagi redirect`, `kagi bang custom`, and `search --snap` already shipped in v0.4.1. The remaining gap is broader shortcut/search-shortcut management if Kagi exposes a stable surface for it. Help pages: `/kagi/features/search-shortcuts.html`, `/kagi/features/snaps.html`, `/kagi/settings/advanced.html`, `/kagi/settings/search.html` |
 | 6 | Add Assistant file/document context support | `useful: high` `hard: high` `risk: high` `scope: l` | The docs explicitly describe asking questions about a document or page and uploading files into Assistant context. The current CLI has `ask-page` and prompt/thread flows, but nothing for file upload or document-backed conversations. Candidate surface: `kagi ask-file <path> <question>` or `kagi assistant prompt --file foo.pdf`. Help pages: `/kagi/ai/ask-questions.html`, `/kagi/ai/assistant.html` |
 | 7 | Add Translate website/document/dictionary/proofread modes | `useful: high` `hard: high` `risk: high` `scope: xl` | Current CLI support is deep for text translation, but the help docs describe website translation, document translation, proofreading, dictionary mode, presets, and history. This is a large but real product gap. Candidate surface: `kagi translate url`, `kagi translate file`, `kagi translate proofread`, `kagi translate define`. Help pages: `/kagi/translate/`, `/kagi/translate/url-parameters.html` |
@@ -48,7 +48,7 @@ If the goal is to maximize value without overcommitting to brittle reverse-engin
 
 1. richer search schema
 2. search widgets / special-card parsing
-3. personalized-results management for domains/sites
+3. account-synced personalized-results management for domains/sites
 4. Assistant file/document context
 5. settings snapshot/export
 

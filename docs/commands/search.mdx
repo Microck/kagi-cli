@@ -174,6 +174,32 @@ Force personalized search off for this request.
 kagi search --no-personalized "rust web framework"
 ```
 
+### `--template <TEMPLATE>`
+
+Render each result with a lightweight template instead of a built-in format. Supported placeholders are `{{rank}}`, `{{title}}`, `{{url}}`, and `{{snippet}}`.
+
+```bash
+kagi search "rust crates" --template '{{rank}}. {{title}} - {{url}}'
+```
+
+### `--local-cache`
+
+Store and reuse the response in the local cache under `~/.cache/kagi-cli` or `KAGI_CACHE_DIR`.
+
+### `--cache-ttl <SECONDS>`
+
+Override the local cache TTL. Search defaults to 900 seconds when `--local-cache` is enabled.
+
+### `--follow <N>`
+
+Summarize the top `N` result URLs with the subscriber summarizer and print a JSON envelope containing the original search response plus per-result summaries.
+
+```bash
+kagi search "rust async runtime tradeoffs" --follow 3
+```
+
+`--follow` requires `KAGI_SESSION_TOKEN` because it uses the subscriber summarizer.
+
 ## Not Supported as Runtime Flags
 
 `safe_search` is currently an account setting, not a search-time flag in this CLI. Configure it in the Kagi web settings instead of expecting `kagi search` to override it per request.
@@ -215,6 +241,12 @@ kagi search --snap reddit "rust async runtime"
 
 ```bash
 kagi search --format pretty "rust programming language"
+```
+
+### Custom template output
+
+```bash
+kagi search "rust cli" --template '{{rank}} {{title}} {{url}}'
 ```
 
 ### Region-aware search

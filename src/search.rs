@@ -5,7 +5,7 @@
 //! pagination, lenses, region selection, and time filtering.
 
 use reqwest::{Client, StatusCode, header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::error::KagiError;
@@ -22,7 +22,7 @@ const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "paid search engine that gives power back to the user",
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 /// Parameters for a Kagi search API request.
 pub struct SearchRequest {
     pub query: String,

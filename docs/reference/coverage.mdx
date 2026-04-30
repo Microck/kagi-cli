@@ -33,13 +33,16 @@ These features use the subscriber web product with `KAGI_SESSION_TOKEN`:
 | Filtered search | `kagi search --region/--time/...` | ✅ Implemented |
 | Quick Answer | `kagi quick` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
+| Search result summarize pipeline | `kagi search --follow` | ✅ Implemented |
 | Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
+| Assistant terminal REPL | `kagi assistant repl` | ✅ Implemented |
 | Custom assistant management | `kagi assistant custom` | ✅ Implemented |
 | Ask questions about a page | `kagi ask-page` | ✅ Implemented |
 | Translate (text mode) | `kagi translate` | ✅ Implemented |
 | Lens settings | `kagi lens` | ✅ Implemented |
 | Custom bang settings | `kagi bang custom` | ✅ Implemented |
 | Redirect rule settings | `kagi redirect` | ✅ Implemented |
+| Local domain preferences | `kagi site-pref` | ✅ Implemented locally |
 
 ### Public Product Endpoints
 
@@ -60,13 +63,22 @@ These require no authentication:
 | `search --snap` | Snap-prefixed search | API or Session | ✅ |
 | `search --lens` | Lens-aware search | Session | ✅ |
 | `search` with filters | Region, time, date, order, verbatim, personalization filters | Session | ✅ |
+| `search --template` | Lightweight result templates | API or Session | ✅ |
+| `search --follow` | Search plus subscriber summaries for top results | Session | ✅ |
 | `batch` | Parallel search with shared search options | API or Session | ✅ |
+| `batch` via stdin | Parallel search from stdin lines | API or Session | ✅ |
 | `auth` | Credential management | None | ✅ |
+| `--profile` | Named auth profiles from `.kagi.toml` | None | ✅ |
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
+| `summarize --filter` | Summarize stdin items as URLs or text | API or Session | ✅ |
+| `watch` | Search diff monitoring | API or Session | ✅ |
+| `notify` | Webhook notifications for search/news | API, Session, or None | ✅ |
+| `history` | Local history and stats | None | ✅ |
 | `news` | News feed and metadata | None | ✅ |
 | `quick` | Quick Answer | Session | ✅ |
 | `assistant` | AI assistant prompt + thread management | Session | ✅ |
+| `assistant repl` | Continuous Assistant conversation | Session | ✅ |
 | `assistant custom` | Saved assistant CRUD | Session | ✅ |
 | `ask-page` | Page-focused Assistant question | Session | ✅ |
 | `translate` | Kagi Translate text mode | Session | ✅ |
@@ -74,6 +86,8 @@ These require no authentication:
 | `enrich web` | Web enrichment | API | ✅ |
 | `enrich news` | News enrichment | API | ✅ |
 | `smallweb` | Small Web feed | None | ✅ |
+| `mcp` | Stdio MCP server for search/summarize/quick | API or Session | ✅ |
+| `site-pref` | Local domain preference list/set/remove | None | ✅ |
 | `lens` | Lens CRUD + enable/disable | Session | ✅ |
 | `bang custom` | Custom bang CRUD | Session | ✅ |
 | `redirect` | Redirect CRUD + enable/disable | Session | ✅ |
@@ -102,6 +116,8 @@ These require no authentication:
 | `--order` | search, batch | ✅ |
 | `--verbatim` | search, batch | ✅ |
 | `--personalized` / `--no-personalized` | search, batch, assistant | ✅ |
+| `--template` | search, batch | ✅ |
+| `--local-cache` / `--cache-ttl` | search, summarize, quick, fastgpt | ✅ |
 
 ### Assistant and Settings Options
 
@@ -114,6 +130,7 @@ These require no authentication:
 | `--web-access` / `--no-web-access` | assistant, assistant custom | ✅ |
 | `thread list/get/delete/export` | assistant | ✅ |
 | `custom list/get/create/update/delete` | assistant | ✅ |
+| `repl` | assistant | ✅ |
 | `list/get/create/update/delete` | lens | ✅ |
 | `enable` / `disable` | lens, redirect | ✅ |
 | `custom list/get/create/update/delete` | bang | ✅ |
@@ -134,7 +151,7 @@ After those tests, the account-level settings pages were checked directly to con
 
 ### Intentionally Excluded
 
-- File-upload Assistant workflows are not exposed.
+- Account-synced domain preference writes are not exposed because Kagi does not document a stable public write API for Personalized Results.
 - Kagi Translate document, image, website, proofread, dictionary, and voice modes are not exposed.
 - Search-time safe-search overrides are not exposed. Safe-search remains an account setting.
 

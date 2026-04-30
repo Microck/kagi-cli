@@ -1,0 +1,26 @@
+---
+title: "mcp"
+description: "Run kagi-cli as a stdio Model Context Protocol server."
+---
+
+# `kagi mcp`
+
+Run a stdio JSON-RPC server that exposes Kagi tools for agents.
+
+## Synopsis
+
+```bash
+kagi mcp
+```
+
+## Tools
+
+- `kagi_search` - search Kagi
+- `kagi_summarize` - summarize a URL or text through the public API
+- `kagi_quick` - get a Kagi Quick Answer
+
+The server reads one JSON-RPC request per stdin line and writes one JSON-RPC response per stdout line. This keeps the implementation dependency-light and easy to supervise from agent runners.
+
+## Authentication
+
+The server uses the same credentials as the CLI. Use `--profile <NAME>` to select a profile before `mcp`.

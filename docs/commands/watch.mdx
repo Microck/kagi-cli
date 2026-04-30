@@ -1,0 +1,40 @@
+---
+title: "watch"
+description: "Monitor a Kagi search query and emit result diffs."
+---
+
+# `kagi watch`
+
+Periodically rerun a search query and emit a diff of added and removed result URLs.
+
+## Synopsis
+
+```bash
+kagi watch [OPTIONS] <QUERY>
+```
+
+## Options
+
+### `<QUERY>`
+
+Search query to monitor.
+
+### `--interval <SECONDS>`
+
+Polling interval. Default: `300`.
+
+### `--count <COUNT>`
+
+Number of polls to run. `0` means run until interrupted.
+
+### `--format <FORMAT>`
+
+Output format for each event: `json`, `compact`, or `pretty`.
+
+## Example
+
+```bash
+kagi watch "kagi-cli release" --interval 600 --count 6
+```
+
+The first event reports the initial result set as added. Later events compare URLs against the previous poll.

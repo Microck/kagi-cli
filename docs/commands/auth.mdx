@@ -92,11 +92,12 @@ Example:
 
 ```text
 selected: session-token (config)
+profile: default
 preferred auth for base search: session
 api token: not configured
 session token: configured via config
 config path: .kagi.toml
-precedence: env > config; base search defaults to session unless [auth.preferred_auth] = "api"; lens search requires session token
+precedence: env > selected profile config > default config; base search defaults to session unless preferred_auth = "api"; lens search requires session token
 ```
 
 ## `kagi auth check`
@@ -125,6 +126,7 @@ Use this when you want scripting or explicit non-interactive config writes.
 kagi auth set --session-token 'https://kagi.com/search?token=...'
 kagi auth set --api-token '...'
 kagi auth set --session-token 'https://kagi.com/search?token=...' --api-token '...'
+kagi --profile work auth set --session-token 'https://kagi.com/search?token=...'
 ```
 
 Options:
@@ -144,9 +146,17 @@ Behavior:
 The CLI resolves credentials in this order:
 
 1. `KAGI_API_TOKEN` / `KAGI_SESSION_TOKEN`
-2. `./.kagi.toml`
+2. selected profile config, such as `[profiles.work.auth]`
+3. default `./.kagi.toml` `[auth]`
 
-Environment variables override the config file. The wizard calls this out after save when it detects that the matching env var is already set.
+Environment variables override the config file. Use `--profile <NAME>` to select a named profile from `.kagi.toml`:
+
+```toml
+[profiles.work.auth]
+session_token = "work-session"
+api_token = "work-api"
+preferred_auth = "session"
+```
 
 ## Preferred Auth
 
