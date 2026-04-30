@@ -1,6 +1,6 @@
 # TODO
 
-Last reviewed against the shipped CLI surface: 2026-04-30 (`v0.4.7` + issue #65 branch).
+Last reviewed against the shipped CLI surface: 2026-04-30 (`v0.5.0`).
 
 This backlog is based on:
 

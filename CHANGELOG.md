@@ -7,6 +7,25 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Added
+
+- Added product workflow commands for local profiles, search follow/watch, result templates, stdin batch input, local history, local site preferences, assistant REPL sessions, MCP stdio integration, and webhook notifications
+- Added local cache and history storage for automation-friendly workflows without requiring account-level state changes
+- Added documentation for the new command surfaces across the README, command reference, auth guide, and coverage reference
+
+### Changed
+
+- Expanded batch, search, summarize, translate, assistant, quick-answer, and FastGPT workflows with more shell-friendly input and output paths
+- Updated TODO/backlog coverage to distinguish shipped local site preferences from remaining account-synced personalized-results work
+
+### Fixed
+
+- Error diagnostics now include request URLs, HTTP status codes, bounded response-body details, and operation-specific context where available
+- Batch partial failures now report the failed query names and the number of successful queries
+- Auth wizard validation warnings now point users to the relevant API or session-token recovery steps
+
 ## [0.4.7]
 
 ### Added
