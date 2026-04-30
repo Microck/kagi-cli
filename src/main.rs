@@ -4,6 +4,7 @@ mod auth_wizard;
 mod cli;
 mod error;
 mod http;
+mod local;
 mod parser;
 mod quick;
 mod search;
@@ -31,14 +32,15 @@ use crate::api::{
 };
 use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
-    load_credential_inventory, save_credentials,
+    load_credential_inventory_for_profile, save_credentials_for_profile,
 };
 use crate::auth_wizard::{run_auth_wizard, supports_interactive_auth, validate_credential};
 use crate::cli::{
-    AssistantCustomSubcommand, AssistantOutputFormat, AssistantSubcommand,
+    AssistantCustomSubcommand, AssistantOutputFormat, AssistantReplArgs, AssistantSubcommand,
     AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs, AuthSubcommand,
     BangSubcommand, Cli, Commands, CompletionShell, CustomBangSubcommand, EnrichSubcommand,
-    SearchOrder, SearchTime, TranslateArgs,
+    HistorySubcommand, McpArgs, NotifyArgs, SearchOrder, SearchTime, SitePrefMode,
+    SitePrefSubcommand, TranslateArgs, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -49,8 +51,14 @@ use crate::types::{
     RedirectRuleUpdateRequest, SearchResponse, SubscriberSummarizeRequest, SummarizeRequest,
     TranslateCommandRequest,
 };
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
+use std::fs;
+use std::future::Future;
+use std::io::{self, BufRead, Read, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
@@ -115,6 +123,7 @@ async fn run() -> Result<(), KagiError> {
         print_completion(shell);
         return Ok(());
     }
+    let profile = cli.profile;
 
     match cli
         .command
@@ -141,15 +150,32 @@ async fn run() -> Result<(), KagiError> {
                 cli::OutputFormat::Markdown => "markdown",
                 cli::OutputFormat::Csv => "csv",
             };
-            run_search(request, format_str.to_string(), !args.no_color).await
+            if let Some(follow_count) = args.follow {
+                run_search_follow(request, follow_count, profile.as_deref()).await
+            } else {
+                run_search(
+                    request,
+                    format_str.to_string(),
+                    !args.no_color,
+                    args.template,
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(900),
+                    profile.as_deref(),
+                )
+                .await
+            }
         }
         Commands::Auth(auth) => match auth.command {
-            AuthSubcommand::Status => run_auth_status(),
-            AuthSubcommand::Check => run_auth_check().await,
-            AuthSubcommand::Set(args) => run_auth_set(args),
+            AuthSubcommand::Status => run_auth_status(profile.as_deref()),
+            AuthSubcommand::Check => run_auth_check(profile.as_deref()).await,
+            AuthSubcommand::Set(args) => run_auth_set(args, profile.as_deref()),
         },
         Commands::Summarize(args) => {
             args.validate().map_err(KagiError::Config)?;
+
+            if args.filter {
+                return run_summarize_filter(args, profile.as_deref()).await;
+            }
 
             if args.subscriber {
                 if args.engine.is_some() {
@@ -170,8 +196,15 @@ async fn run() -> Result<(), KagiError> {
                     target_language: args.target_language,
                     length: args.length,
                 };
-                let token = resolve_session_token()?;
-                let response = execute_subscriber_summarize(&request, &token).await?;
+                let token = resolve_session_token(profile.as_deref())?;
+                let response = cached_json(
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(3600),
+                    "subscriber-summarize",
+                    &request,
+                    || async { execute_subscriber_summarize(&request, &token).await },
+                )
+                .await?;
                 print_json(&response)
             } else {
                 if args.length.is_some() {
@@ -188,8 +221,15 @@ async fn run() -> Result<(), KagiError> {
                     target_language: args.target_language,
                     cache: args.cache,
                 };
-                let token = resolve_api_token()?;
-                let response = execute_summarize(&request, &token).await?;
+                let token = resolve_api_token(profile.as_deref())?;
+                let response = cached_json(
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(3600),
+                    "summarize",
+                    &request,
+                    || async { execute_summarize(&request, &token).await },
+                )
+                .await?;
                 print_json(&response)
             }
         }
@@ -223,7 +263,7 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::Assistant(args) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             if let Some(subcommand) = args.command {
                 match subcommand {
                     AssistantSubcommand::Thread(thread_args) => match thread_args.command {
@@ -256,6 +296,9 @@ async fn run() -> Result<(), KagiError> {
                             }
                         },
                     },
+                    AssistantSubcommand::Repl(repl_args) => {
+                        run_assistant_repl(repl_args, &token).await
+                    }
                     AssistantSubcommand::Custom(custom_args) => match custom_args.command {
                         AssistantCustomSubcommand::List => {
                             let response = execute_custom_assistant_list(&token).await?;
@@ -348,7 +391,7 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::AskPage(args) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             let request = AskPageRequest {
                 url: args.url,
                 question: args.question,
@@ -357,7 +400,7 @@ async fn run() -> Result<(), KagiError> {
             print_json(&response)
         }
         Commands::Quick(args) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             let request = search::SearchRequest::new(args.query.trim().to_string());
             let request = if let Some(lens) = args.lens {
                 request.with_lens(lens)
@@ -370,11 +413,18 @@ async fn run() -> Result<(), KagiError> {
                 cli::QuickOutputFormat::Compact => "compact",
                 cli::QuickOutputFormat::Markdown => "markdown",
             };
-            let response = execute_quick(&request, &token).await?;
+            let response = cached_json(
+                args.local_cache,
+                args.cache_ttl.unwrap_or(900),
+                "quick",
+                &request,
+                || async { execute_quick(&request, &token).await },
+            )
+            .await?;
             print_quick_response(&response, format_str, !args.no_color)
         }
         Commands::Translate(args) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             let request = build_translate_request(*args)?;
             let response = execute_translate(&request, &token).await?;
             print_json(&response)
@@ -385,12 +435,19 @@ async fn run() -> Result<(), KagiError> {
                 cache: args.cache,
                 web_search: args.web_search,
             };
-            let token = resolve_api_token()?;
-            let response = execute_fastgpt(&request, &token).await?;
+            let token = resolve_api_token(profile.as_deref())?;
+            let response = cached_json(
+                args.local_cache,
+                args.cache_ttl.unwrap_or(3600),
+                "fastgpt",
+                &request,
+                || async { execute_fastgpt(&request, &token).await },
+            )
+            .await?;
             print_json(&response)
         }
         Commands::Enrich(enrich) => {
-            let token = resolve_api_token()?;
+            let token = resolve_api_token(profile.as_deref())?;
             let response = match enrich.command {
                 EnrichSubcommand::Web(args) => execute_enrich_web(&args.query, &token).await?,
                 EnrichSubcommand::News(args) => execute_enrich_news(&args.query, &token).await?,
@@ -401,8 +458,13 @@ async fn run() -> Result<(), KagiError> {
             let response = execute_smallweb(args.limit).await?;
             print_json(&response)
         }
+        Commands::Watch(args) => run_watch(args, profile.as_deref()).await,
+        Commands::Mcp(args) => run_mcp(args, profile.as_deref()).await,
+        Commands::Notify(args) => run_notify(args, profile.as_deref()).await,
+        Commands::History(command) => run_history(command.command),
+        Commands::SitePref(command) => run_site_pref(command.command),
         Commands::Lens(command) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             match command.command {
                 cli::LensSubcommand::List => {
                     let response = execute_lens_list(&token).await?;
@@ -498,7 +560,7 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::Bang(command) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             match command.command {
                 BangSubcommand::Custom(custom) => match custom.command {
                     CustomBangSubcommand::List => {
@@ -586,7 +648,7 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::Redirect(command) => {
-            let token = resolve_session_token()?;
+            let token = resolve_session_token(profile.as_deref())?;
             match command.command {
                 cli::RedirectSubcommand::List => {
                     let response = execute_redirect_list(&token).await?;
@@ -631,7 +693,10 @@ async fn run() -> Result<(), KagiError> {
                 }
             }
         }
-        Commands::Batch(args) => {
+        Commands::Batch(mut args) => {
+            if args.queries.is_empty() {
+                args.queries = read_stdin_lines()?;
+            }
             args.validate().map_err(KagiError::Config)?;
 
             let format_str = match args.format {
@@ -641,13 +706,13 @@ async fn run() -> Result<(), KagiError> {
                 cli::OutputFormat::Markdown => "markdown",
                 cli::OutputFormat::Csv => "csv",
             };
-            run_batch_search(
-                args.queries,
-                args.concurrency,
-                args.rate_limit,
-                format_str.to_string(),
-                !args.no_color,
-                SearchRequestOptions {
+            run_batch_search(BatchSearchConfig {
+                queries: args.queries,
+                concurrency: args.concurrency,
+                rate_limit: args.rate_limit,
+                format: format_str.to_string(),
+                use_color: !args.no_color,
+                options: SearchRequestOptions {
                     snap: args.snap,
                     lens: args.lens,
                     region: args.region,
@@ -659,7 +724,9 @@ async fn run() -> Result<(), KagiError> {
                     personalized: args.personalized,
                     no_personalized: args.no_personalized,
                 },
-            )
+                template: args.template,
+                profile: profile.as_deref(),
+            })
             .await
         }
     }
@@ -688,21 +755,25 @@ fn print_completion(shell: CompletionShell) {
     }
 }
 
-fn run_auth_status() -> Result<(), KagiError> {
-    let inventory = load_credential_inventory()?;
+fn run_auth_status(profile: Option<&str>) -> Result<(), KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
     println!("{}", format_status(&inventory));
     Ok(())
 }
 
-fn run_auth_set(args: AuthSetArgs) -> Result<(), KagiError> {
-    let inventory = save_credentials(args.api_token.as_deref(), args.session_token.as_deref())?;
+fn run_auth_set(args: AuthSetArgs, profile: Option<&str>) -> Result<(), KagiError> {
+    let inventory = save_credentials_for_profile(
+        profile,
+        args.api_token.as_deref(),
+        args.session_token.as_deref(),
+    )?;
     println!("saved credentials to {}", inventory.config_path.display());
     println!("{}", format_status(&inventory));
     Ok(())
 }
 
-async fn run_auth_check() -> Result<(), KagiError> {
-    let inventory = load_credential_inventory()?;
+async fn run_auth_check(profile: Option<&str>) -> Result<(), KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
     let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
 
     let selected_kind = credentials.primary.kind;
@@ -748,8 +819,8 @@ const fn should_fallback_to_session(error: &KagiError) -> bool {
     matches!(error, KagiError::Auth(_))
 }
 
-fn resolve_api_token() -> Result<String, KagiError> {
-    let inventory = load_credential_inventory()?;
+fn resolve_api_token(profile: Option<&str>) -> Result<String, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
     inventory
         .api_token
         .map(|credential| credential.value)
@@ -761,8 +832,8 @@ fn resolve_api_token() -> Result<String, KagiError> {
         })
 }
 
-fn resolve_session_token() -> Result<String, KagiError> {
-    let inventory = load_credential_inventory()?;
+fn resolve_session_token(profile: Option<&str>) -> Result<String, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
     inventory
         .session_token
         .map(|credential| credential.value)
@@ -775,8 +846,18 @@ fn resolve_session_token() -> Result<String, KagiError> {
 }
 
 fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandRequest, KagiError> {
+    let text = match args.text {
+        Some(text) => text,
+        None => read_stdin_to_string()?.trim().to_string(),
+    };
+    if text.trim().is_empty() {
+        return Err(KagiError::Config(
+            "translate requires TEXT or non-empty stdin".to_string(),
+        ));
+    }
+
     Ok(TranslateCommandRequest {
-        text: args.text.trim().to_string(),
+        text: text.trim().to_string(),
         from: args.from.trim().to_string(),
         to: args.to.trim().to_string(),
         quality: normalize_optional_string(args.quality),
@@ -915,6 +996,81 @@ fn print_compact_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
     Ok(())
 }
 
+async fn cached_json<T, K, Fut, F>(
+    enabled: bool,
+    ttl_seconds: u64,
+    namespace: &str,
+    key_source: &K,
+    fetch: F,
+) -> Result<T, KagiError>
+where
+    T: Serialize + DeserializeOwned,
+    K: Serialize,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, KagiError>>,
+{
+    if !enabled {
+        return fetch().await;
+    }
+
+    let key_json = serde_json::to_string(key_source)?;
+    let key = local::cache_key(&[namespace, &key_json]);
+    if let Some(value) = local::cache_get(&key)? {
+        return serde_json::from_value(value).map_err(KagiError::from);
+    }
+
+    let fetched = fetch().await?;
+    let value = serde_json::to_value(&fetched)?;
+    local::cache_put(&key, ttl_seconds, &value)?;
+    Ok(fetched)
+}
+
+fn record_history(
+    command: &str,
+    query: Option<&str>,
+    result_count: Option<usize>,
+) -> Result<(), KagiError> {
+    local::append_history(&local::HistoryEntry {
+        timestamp: local::now_unix_seconds()?,
+        command: command.to_string(),
+        query: query.map(str::to_string),
+        result_count,
+    })
+}
+
+fn read_stdin_to_string() -> Result<String, KagiError> {
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|error| KagiError::Config(format!("failed to read stdin: {error}")))?;
+    if input.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut rest = String::new();
+    io::stdin()
+        .read_to_string(&mut rest)
+        .map_err(|error| KagiError::Config(format!("failed to read stdin: {error}")))?;
+    input.push_str(&rest);
+    Ok(input)
+}
+
+fn read_stdin_lines() -> Result<Vec<String>, KagiError> {
+    let stdin = io::stdin();
+    stdin
+        .lock()
+        .lines()
+        .map(|line| {
+            line.map(|value| value.trim().to_string())
+                .map_err(|error| KagiError::Config(format!("failed to read stdin: {error}")))
+        })
+        .filter_map(|line| match line {
+            Ok(value) if value.is_empty() => None,
+            other => Some(other),
+        })
+        .collect()
+}
+
 fn print_quick_response(
     response: &QuickResponse,
     format: &str,
@@ -1015,12 +1171,25 @@ async fn run_search(
     request: search::SearchRequest,
     format: String,
     use_color: bool,
+    template: Option<String>,
+    local_cache: bool,
+    cache_ttl: u64,
+    profile: Option<&str>,
 ) -> Result<(), KagiError> {
-    let inventory = load_credential_inventory()?;
+    let inventory = load_credential_inventory_for_profile(profile)?;
     let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
 
-    let response = execute_search_request(&request, credentials).await?;
+    let response = cached_json(local_cache, cache_ttl, "search", &request, || async {
+        execute_search_request(&request, credentials).await
+    })
+    .await?;
+    record_history("search", Some(&request.query), Some(response.data.len()))?;
+    let response = apply_local_site_preferences(response)?;
+
     let output = match format.as_str() {
+        _ if template.is_some() => {
+            format_template_response(&response, template.as_deref().unwrap())
+        }
         "pretty" => format_pretty_response(&response, use_color),
         "compact" => serde_json::to_string(&response).map_err(|error| {
             KagiError::Parse(format!("failed to serialize search response: {error}"))
@@ -1034,6 +1203,65 @@ async fn run_search(
 
     println!("{output}");
     Ok(())
+}
+
+fn format_template_response(response: &SearchResponse, template: &str) -> String {
+    response
+        .data
+        .iter()
+        .enumerate()
+        .map(|(index, result)| {
+            template
+                .replace("{{rank}}", &(index + 1).to_string())
+                .replace("{{title}}", &result.title)
+                .replace("{{url}}", &result.url)
+                .replace("{{snippet}}", &result.snippet)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn apply_local_site_preferences(mut response: SearchResponse) -> Result<SearchResponse, KagiError> {
+    let preferences = local::load_site_preferences()?;
+    if preferences.domains.is_empty() {
+        return Ok(response);
+    }
+
+    response.data.retain(|result| {
+        result_domain(&result.url).and_then(|domain| preferences.domains.get(&domain).copied())
+            != Some(local::SitePreferenceMode::Block)
+    });
+    response.data.sort_by_key(|result| {
+        site_preference_sort_rank(
+            result_domain(&result.url)
+                .and_then(|domain| preferences.domains.get(&domain).copied())
+                .unwrap_or(local::SitePreferenceMode::Normal),
+        )
+    });
+    Ok(response)
+}
+
+const fn site_preference_sort_rank(mode: local::SitePreferenceMode) -> u8 {
+    match mode {
+        local::SitePreferenceMode::Pin => 0,
+        local::SitePreferenceMode::Higher => 1,
+        local::SitePreferenceMode::Normal => 2,
+        local::SitePreferenceMode::Lower => 3,
+        local::SitePreferenceMode::Block => 4,
+    }
+}
+
+fn result_domain(url: &str) -> Option<String> {
+    let without_scheme = url
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    without_scheme
+        .split('/')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
 }
 
 fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String {
@@ -1169,15 +1397,30 @@ impl RateLimiter {
     }
 }
 
-async fn run_batch_search(
+struct BatchSearchConfig<'a> {
     queries: Vec<String>,
     concurrency: usize,
     rate_limit: u32,
     format: String,
     use_color: bool,
     options: SearchRequestOptions,
-) -> Result<(), KagiError> {
-    let inventory = load_credential_inventory()?;
+    template: Option<String>,
+    profile: Option<&'a str>,
+}
+
+async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError> {
+    let BatchSearchConfig {
+        queries,
+        concurrency,
+        rate_limit,
+        format,
+        use_color,
+        options,
+        template,
+        profile,
+    } = config;
+
+    let inventory = load_credential_inventory_for_profile(profile)?;
     let auth_probe_request = build_search_request("auth probe".to_string(), &options);
     let credentials = inventory.resolve_for_search(search_auth_requirement(&auth_probe_request))?;
 
@@ -1213,28 +1456,31 @@ async fn run_batch_search(
     }
 
     let mut results = vec![];
-    let mut had_errors = false;
+    let mut failures = vec![];
 
     for (query, handle) in handles {
         match handle.await {
             Ok((completed_query, Ok(output))) => results.push((completed_query, output)),
             Ok((completed_query, Err(e))) => {
                 error!(query = %completed_query, error = %e, "batch query failed");
-                had_errors = true;
+                failures.push(format!("{completed_query}: {e}"));
             }
             Err(e) => {
                 error!(query = %query, error = %e, "batch worker task failed");
-                had_errors = true;
+                failures.push(format!("{query}: worker task failed: {e}"));
             }
         }
     }
 
-    if had_errors && (format == "json" || format == "compact") {
+    if !failures.is_empty() && (format == "json" || format == "compact") {
         // For machine-readable formats, exit with error code if any queries failed
-        return Err(KagiError::Batch(
-            "One or more batch queries failed".to_string(),
-        ));
+        return Err(KagiError::Batch(format_batch_failure_message(
+            results.len(),
+            &failures,
+        )));
     }
+
+    let success_count = results.len();
 
     // Output results in order
     if format == "json" || format == "compact" {
@@ -1263,6 +1509,9 @@ async fn run_batch_search(
         // For human-readable formats, output with headers
         for (query, response) in results {
             let output = match format.as_str() {
+                _ if template.is_some() => {
+                    format_template_response(&response, template.as_deref().unwrap())
+                }
                 "pretty" => format_pretty_response(&response, use_color),
                 "markdown" => format_markdown_response(&response),
                 "csv" => format_csv_response(&response),
@@ -1276,22 +1525,416 @@ async fn run_batch_search(
         }
     }
 
-    if had_errors {
-        Err(KagiError::Batch(
-            "One or more batch queries failed".to_string(),
-        ))
+    if !failures.is_empty() {
+        Err(KagiError::Batch(format_batch_failure_message(
+            success_count,
+            &failures,
+        )))
     } else {
         Ok(())
     }
+}
+
+fn format_batch_failure_message(success_count: usize, failures: &[String]) -> String {
+    let failure_count = failures.len();
+    let query_word = if failure_count == 1 {
+        "query"
+    } else {
+        "queries"
+    };
+    format!(
+        "{failure_count} batch {query_word} failed ({success_count} succeeded): {}",
+        failures.join("; ")
+    )
+}
+
+async fn run_search_follow(
+    request: search::SearchRequest,
+    follow_count: usize,
+    profile: Option<&str>,
+) -> Result<(), KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
+    let response =
+        apply_local_site_preferences(execute_search_request(&request, credentials).await?)?;
+    let token = resolve_session_token(profile)?;
+    let mut summaries = Vec::new();
+
+    for result in response.data.iter().take(follow_count) {
+        let summarize_request = SubscriberSummarizeRequest {
+            url: Some(result.url.clone()),
+            text: None,
+            summary_type: None,
+            target_language: None,
+            length: None,
+        };
+        let summary = execute_subscriber_summarize(&summarize_request, &token).await?;
+        summaries.push(serde_json::json!({
+            "title": result.title,
+            "url": result.url,
+            "summary": summary,
+        }));
+    }
+
+    record_history(
+        "search-follow",
+        Some(&request.query),
+        Some(response.data.len()),
+    )?;
+    print_json(&serde_json::json!({
+        "query": request.query,
+        "search": response,
+        "summaries": summaries,
+    }))
+}
+
+async fn run_summarize_filter(
+    args: cli::SummarizeArgs,
+    profile: Option<&str>,
+) -> Result<(), KagiError> {
+    let lines = read_stdin_lines()?;
+    if lines.is_empty() {
+        return Err(KagiError::Config(
+            "summarize --filter requires at least one stdin line".to_string(),
+        ));
+    }
+
+    let mut results = Vec::new();
+    if args.subscriber {
+        let token = resolve_session_token(profile)?;
+        for item in lines {
+            let request = summarize_item_request_subscriber(&item, &args);
+            let response = execute_subscriber_summarize(&request, &token).await?;
+            results.push(serde_json::json!({ "input": item, "response": response }));
+        }
+    } else {
+        let token = resolve_api_token(profile)?;
+        for item in lines {
+            let request = summarize_item_request_public(&item, &args);
+            let response = execute_summarize(&request, &token).await?;
+            results.push(serde_json::json!({ "input": item, "response": response }));
+        }
+    }
+
+    print_json(&serde_json::json!({ "results": results }))
+}
+
+fn summarize_item_request_subscriber(
+    item: &str,
+    args: &cli::SummarizeArgs,
+) -> SubscriberSummarizeRequest {
+    let is_url = item.starts_with("http://") || item.starts_with("https://");
+    SubscriberSummarizeRequest {
+        url: is_url.then(|| item.to_string()),
+        text: (!is_url).then(|| item.to_string()),
+        summary_type: args.summary_type.clone(),
+        target_language: args.target_language.clone(),
+        length: args.length.clone(),
+    }
+}
+
+fn summarize_item_request_public(item: &str, args: &cli::SummarizeArgs) -> SummarizeRequest {
+    let is_url = item.starts_with("http://") || item.starts_with("https://");
+    SummarizeRequest {
+        url: is_url.then(|| item.to_string()),
+        text: (!is_url).then(|| item.to_string()),
+        engine: args.engine.clone(),
+        summary_type: args.summary_type.clone(),
+        target_language: args.target_language.clone(),
+        cache: args.cache,
+    }
+}
+
+async fn run_watch(args: WatchArgs, profile: Option<&str>) -> Result<(), KagiError> {
+    if args.interval == 0 {
+        return Err(KagiError::Config(
+            "watch --interval must be at least 1 second".to_string(),
+        ));
+    }
+
+    let format = args.format.to_string();
+    let mut previous_urls = BTreeSet::new();
+    let mut iteration = 0_u32;
+
+    loop {
+        iteration += 1;
+        let request = search::SearchRequest::new(args.query.trim().to_string());
+        let inventory = load_credential_inventory_for_profile(profile)?;
+        let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
+        let response =
+            apply_local_site_preferences(execute_search_request(&request, credentials).await?)?;
+        let current_urls = response
+            .data
+            .iter()
+            .map(|result| result.url.clone())
+            .collect::<BTreeSet<_>>();
+        let added = current_urls
+            .difference(&previous_urls)
+            .cloned()
+            .collect::<Vec<_>>();
+        let removed = previous_urls
+            .difference(&current_urls)
+            .cloned()
+            .collect::<Vec<_>>();
+        let event = serde_json::json!({
+            "iteration": iteration,
+            "query": args.query,
+            "changed": iteration == 1 || !added.is_empty() || !removed.is_empty(),
+            "added": added,
+            "removed": removed,
+            "result_count": response.data.len(),
+        });
+
+        match format.as_str() {
+            "compact" => print_compact_json(&event)?,
+            "pretty" => println!(
+                "watch #{iteration}: {} added, {} removed",
+                event["added"].as_array().map_or(0, Vec::len),
+                event["removed"].as_array().map_or(0, Vec::len)
+            ),
+            _ => print_json(&event)?,
+        }
+
+        record_history("watch", Some(&args.query), Some(response.data.len()))?;
+        previous_urls = current_urls;
+        if args.count > 0 && iteration >= args.count {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(args.interval)).await;
+    }
+    Ok(())
+}
+
+async fn run_notify(args: NotifyArgs, profile: Option<&str>) -> Result<(), KagiError> {
+    let payload = if let Some(query) = args.query.as_ref() {
+        let request = search::SearchRequest::new(query.trim().to_string());
+        let inventory = load_credential_inventory_for_profile(profile)?;
+        let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
+        let response = execute_search_request(&request, credentials).await?;
+        if args.change_only {
+            let key = local::cache_key(&["notify", query]);
+            let current = serde_json::to_value(&response)?;
+            if local::cache_get(&key)? == Some(current.clone()) {
+                return Ok(());
+            }
+            local::cache_put(&key, u64::MAX / 2, &current)?;
+        }
+        serde_json::json!({ "kind": "search", "query": query, "response": response })
+    } else {
+        let category = args.news_category.unwrap_or_else(|| "world".to_string());
+        let response = execute_news(&category, 12, "default", None).await?;
+        serde_json::json!({ "kind": "news", "category": category, "response": response })
+    };
+
+    let client = http::client_20s()?;
+    let response = client
+        .post(&args.webhook_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(http::map_transport_error)?;
+    if !response.status().is_success() {
+        return Err(KagiError::Network(format!(
+            "webhook rejected notification: HTTP {}",
+            response.status()
+        )));
+    }
+    print_json(&serde_json::json!({ "sent": true }))
+}
+
+fn run_history(command: HistorySubcommand) -> Result<(), KagiError> {
+    match command {
+        HistorySubcommand::List(args) => print_json(&local::read_history(args.limit)?),
+        HistorySubcommand::Stats => print_json(&local::history_stats()?),
+    }
+}
+
+fn run_site_pref(command: SitePrefSubcommand) -> Result<(), KagiError> {
+    match command {
+        SitePrefSubcommand::List => print_json(&local::load_site_preferences()?),
+        SitePrefSubcommand::Set(args) => {
+            let mut preferences = local::load_site_preferences()?;
+            let domain = local::normalize_domain(&args.domain)?;
+            preferences
+                .domains
+                .insert(domain.clone(), site_pref_mode(args.mode));
+            local::save_site_preferences(&preferences)?;
+            print_json(
+                &serde_json::json!({ "domain": domain, "mode": site_pref_mode(args.mode).as_str() }),
+            )
+        }
+        SitePrefSubcommand::Remove(args) => {
+            let mut preferences = local::load_site_preferences()?;
+            let domain = local::normalize_domain(&args.domain)?;
+            preferences.domains.remove(&domain);
+            local::save_site_preferences(&preferences)?;
+            print_json(&serde_json::json!({ "domain": domain, "removed": true }))
+        }
+    }
+}
+
+const fn site_pref_mode(mode: SitePrefMode) -> local::SitePreferenceMode {
+    match mode {
+        SitePrefMode::Block => local::SitePreferenceMode::Block,
+        SitePrefMode::Lower => local::SitePreferenceMode::Lower,
+        SitePrefMode::Normal => local::SitePreferenceMode::Normal,
+        SitePrefMode::Higher => local::SitePreferenceMode::Higher,
+        SitePrefMode::Pin => local::SitePreferenceMode::Pin,
+    }
+}
+
+async fn run_assistant_repl(args: AssistantReplArgs, token: &str) -> Result<(), KagiError> {
+    let mut thread_id = args.thread_id;
+    let mut transcript = Vec::new();
+    let stdin = io::stdin();
+
+    eprintln!("kagi assistant repl. Type /exit to quit, /thread to print current thread.");
+    loop {
+        eprint!("kagi> ");
+        io::stderr().flush().ok();
+        let mut line = String::new();
+        stdin
+            .read_line(&mut line)
+            .map_err(|error| KagiError::Config(format!("failed to read stdin: {error}")))?;
+        let prompt = line.trim();
+        if prompt.is_empty() {
+            continue;
+        }
+        if prompt == "/exit" || prompt == "/quit" {
+            break;
+        }
+        if prompt == "/thread" {
+            println!("{}", thread_id.as_deref().unwrap_or("<new>"));
+            continue;
+        }
+        if let Some(model) = prompt.strip_prefix("/model ").map(str::trim) {
+            eprintln!("model switching is per prompt in this REPL; restart with --model {model}");
+            continue;
+        }
+
+        let request = AssistantPromptRequest {
+            query: prompt.to_string(),
+            thread_id: thread_id.clone(),
+            attachments: vec![],
+            profile_id: normalize_optional_string(args.assistant.clone()),
+            model: args.model.clone(),
+            lens_id: None,
+            internet_access: None,
+            personalizations: None,
+        };
+        let response = execute_assistant_prompt(&request, token).await?;
+        thread_id = Some(response.thread.id.clone());
+        print_assistant_response(&response, args.format.clone(), !args.no_color)?;
+        transcript.push(serde_json::json!({ "prompt": prompt, "response": response }));
+    }
+
+    if let Some(path) = args.export {
+        let raw = serde_json::to_string_pretty(&transcript)?;
+        fs::write(&path, raw).map_err(|error| {
+            KagiError::Config(format!(
+                "failed to write transcript {}: {error}",
+                path.display()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
+    let _json_lines = args.json_lines;
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line =
+            line.map_err(|error| KagiError::Config(format!("failed to read stdin: {error}")))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: Value = serde_json::from_str(&line)?;
+        let id = request.get("id").cloned().unwrap_or(Value::Null);
+        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+        let result = match method {
+            "initialize" => serde_json::json!({
+                "protocolVersion": "2024-11-05",
+                "serverInfo": {"name": "kagi-cli", "version": env!("CARGO_PKG_VERSION")},
+                "capabilities": {"tools": {}}
+            }),
+            "tools/list" => serde_json::json!({
+                "tools": [
+                    {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
+                    {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
+                    {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}}
+                ]
+            }),
+            "tools/call" => run_mcp_tool_call(&request, profile).await?,
+            _ => serde_json::json!({"error": format!("unsupported method `{method}`")}),
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result,
+            }))?
+        );
+    }
+    Ok(())
+}
+
+async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Value, KagiError> {
+    let params = request
+        .get("params")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let text = match name {
+        "kagi_search" => {
+            let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+            let inventory = load_credential_inventory_for_profile(profile)?;
+            let request = search::SearchRequest::new(query.to_string());
+            let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
+            serde_json::to_string_pretty(&execute_search_request(&request, credentials).await?)?
+        }
+        "kagi_summarize" => {
+            let token = resolve_api_token(profile)?;
+            let request = SummarizeRequest {
+                url: arguments
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                text: arguments
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                engine: None,
+                summary_type: None,
+                target_language: None,
+                cache: None,
+            };
+            serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
+        }
+        "kagi_quick" => {
+            let token = resolve_session_token(profile)?;
+            let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+            let request = search::SearchRequest::new(query.to_string());
+            serde_json::to_string_pretty(&execute_quick(&request, &token).await?)?
+        }
+        _ => format!("unsupported tool `{name}`"),
+    };
+    Ok(serde_json::json!({ "content": [{ "type": "text", "text": text }] }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
-        format_assistant_markdown, format_assistant_pretty, format_csv_response,
-        format_markdown_response, format_pretty_response, is_bare_auth_invocation_from,
-        parse_context_memory_json, print_assistant_response, should_fallback_to_session,
+        format_assistant_markdown, format_assistant_pretty, format_batch_failure_message,
+        format_csv_response, format_markdown_response, format_pretty_response,
+        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
+        should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -1334,6 +1977,22 @@ mod tests {
             output,
             "1. Rust Programming Language\n   https://www.rust-lang.org\n\n   A language empowering everyone to build reliable and efficient software.\n\n2. The Rust Book\n   https://doc.rust-lang.org/book/\n\n   Learn Rust with the official book."
         );
+    }
+
+    #[test]
+    fn formats_batch_failures_with_queries_and_success_count() {
+        let message = format_batch_failure_message(
+            2,
+            &[
+                "rust: authentication error: invalid token".to_string(),
+                "zig: network error: timeout".to_string(),
+            ],
+        );
+
+        assert!(message.contains("2 batch queries failed"));
+        assert!(message.contains("2 succeeded"));
+        assert!(message.contains("rust: authentication error"));
+        assert!(message.contains("zig: network error"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ Translate text through Kagi Translate and return one JSON envelope with the core
 ## Synopsis
 
 ```bash
-kagi translate [OPTIONS] <TEXT>
+kagi translate [OPTIONS] [TEXT]
 ```
 
 ## Description
@@ -48,12 +48,13 @@ The CLI uses your existing `KAGI_SESSION_TOKEN` to fetch `https://translate.kagi
 
 ## Arguments
 
-### `<TEXT>` (Required)
+### `<TEXT>`
 
-The text to translate.
+The text to translate. If omitted, the command reads text from stdin.
 
 ```bash
 kagi translate "Bonjour tout le monde"
+echo "Bonjour tout le monde" | kagi translate --to ja
 ```
 
 ## Core Options

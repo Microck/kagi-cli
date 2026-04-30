@@ -70,8 +70,13 @@
             "group": "Core Commands",
             "pages": [
               "commands/search",
+              "commands/batch",
               "commands/auth",
-              "commands/summarize"
+              "commands/summarize",
+              "commands/watch",
+              "commands/notify",
+              "commands/history",
+              "commands/mcp"
             ]
           },
           {
@@ -97,7 +102,8 @@
             "pages": [
               "commands/lens",
               "commands/bang",
-              "commands/redirect"
+              "commands/redirect",
+              "commands/site-pref"
             ]
           }
         ]

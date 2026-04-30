@@ -472,10 +472,35 @@ fn method_instructions(kind: CredentialKind) -> String {
 
 fn validation_warning(kind: CredentialKind, error: &KagiError) -> String {
     let mut message = format!("Validation Error:\n{error}");
-    if kind == CredentialKind::ApiToken {
-        message.push_str(
-            "\n\nThis CLI validates API tokens through the Search API path. Some accounts may still want to save the token and test FastGPT or enrich directly.",
-        );
+
+    match kind {
+        CredentialKind::ApiToken => {
+            message.push_str(
+                "\n\nAPI token validation uses Kagi's Search API path. Verify the token at https://kagi.com/settings/api and confirm your account has API access enabled.",
+            );
+            if error.to_string().contains("401") {
+                message.push_str(
+                    "\nKagi rejected the token as unauthorized. Generate a fresh API token and paste the complete value.",
+                );
+            } else if error.to_string().contains("403") {
+                message.push_str(
+                    "\nKagi returned forbidden. The token may be valid, but this account may not have Search API access.",
+                );
+            }
+            message.push_str(
+                "\nYou may still save the token and test FastGPT or enrich directly if those API endpoints are available to your account.",
+            );
+        }
+        CredentialKind::SessionToken => {
+            message.push_str(
+                "\n\nSession validation uses the subscriber search path. Copy a fresh Session Link from https://kagi.com/settings/user_details if this token is expired.",
+            );
+            if error.to_string().contains("401") || error.to_string().contains("403") {
+                message.push_str(
+                    "\nKagi rejected the session. Sign in again in the browser, then copy the current Session Link.",
+                );
+            }
+        }
     }
     message
 }
@@ -640,15 +665,19 @@ mod tests {
             &KagiError::Auth("403 Forbidden".to_string()),
         );
         assert!(warning.contains("Search API"));
+        assert!(warning.contains("https://kagi.com/settings/api"));
+        assert!(warning.contains("forbidden"));
     }
 
     #[test]
-    fn session_validation_warning_stays_generic() {
+    fn session_validation_warning_mentions_session_recovery() {
         let warning = validation_warning(
             CredentialKind::SessionToken,
             &KagiError::Auth("401 Unauthorized".to_string()),
         );
         assert!(!warning.contains("Search API"));
+        assert!(warning.contains("https://kagi.com/settings/user_details"));
+        assert!(warning.contains("fresh Session Link"));
     }
 
     #[test]

@@ -78,6 +78,14 @@ kagi summarize --text "Long text content to summarize..."
 
 **Note:** Choose either `--url` or `--text`, not both.
 
+#### `--filter`
+
+Read URLs or text items from stdin, one item per line, and summarize each item. Lines starting with `http://` or `https://` are sent as URLs; all other lines are sent as text.
+
+```bash
+cat urls.txt | kagi summarize --filter --subscriber --length digest
+```
+
 ### Mode Selection
 
 #### `--subscriber`
@@ -161,6 +169,14 @@ Target language for summary output.
 ```bash
 kagi summarize --url https://example.com --target-language es
 ```
+
+#### `--local-cache`
+
+Store and reuse the response in the local cache under `~/.cache/kagi-cli` or `KAGI_CACHE_DIR`.
+
+#### `--cache-ttl <SECONDS>`
+
+Override the local cache TTL. Summarize defaults to 3600 seconds when `--local-cache` is enabled.
 
 ## Output Format
 

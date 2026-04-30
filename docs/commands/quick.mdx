@@ -69,6 +69,14 @@ Disable ANSI colors in `--format pretty`.
 kagi quick --format pretty --no-color "what is rust"
 ```
 
+### `--local-cache`
+
+Store and reuse the response in the local cache under `~/.cache/kagi-cli` or `KAGI_CACHE_DIR`.
+
+### `--cache-ttl <SECONDS>`
+
+Override the local cache TTL. Quick answers default to 900 seconds when `--local-cache` is enabled.
+
 ### `--lens <INDEX>`
 
 Scope the query to one of your Kagi lenses by numeric index.

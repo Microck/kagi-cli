@@ -698,36 +698,24 @@ $env:KAGI_SESSION_TOKEN = [System.Runtime.InteropServices.Marshal]::PtrToStringA
 
 ### Multiple Profiles
 
-For users with multiple Kagi accounts:
+For users with multiple Kagi accounts, prefer named profiles in one `.kagi.toml`:
 
-```bash
-# Create wrapper scripts
-#!/bin/bash
-# kagi-work
-export KAGI_SESSION_TOKEN='work_account_token'
-kagi "$@"
-
-#!/bin/bash
-# kagi-personal
-export KAGI_SESSION_TOKEN='personal_account_token'
-kagi "$@"
-```
-
-Or use environment-specific files:
-
-```bash
-# .kagi-work.toml
-[auth]
-session_token = "work_token"
-
-# .kagi-personal.toml
+```toml
 [auth]
 session_token = "personal_token"
 
-# Switch profiles
-alias kagi-work='KAGI_SESSION_TOKEN=work_token kagi'
-alias kagi-personal='KAGI_SESSION_TOKEN=personal_token kagi'
+[profiles.work.auth]
+session_token = "work_token"
+api_token = "work_api_token"
+preferred_auth = "session"
 ```
+
+```bash
+kagi --profile work search "release notes"
+kagi --profile work auth status
+```
+
+Environment variables still take precedence when you need a process-level override.
 
 ## Summary
 

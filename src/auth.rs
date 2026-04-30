@@ -4,6 +4,7 @@
 //! and the interactive authentication wizard. Provides session persistence
 //! via the filesystem.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -128,6 +129,7 @@ pub struct CredentialInventory {
     pub session_token: Option<Credential>,
     pub search_preference: SearchAuthPreference,
     pub config_path: PathBuf,
+    pub profile: Option<String>,
 }
 
 impl CredentialInventory {
@@ -224,6 +226,7 @@ impl CredentialInventory {
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
 struct ConfigFile {
     auth: Option<AuthConfig>,
+    profiles: Option<BTreeMap<String, ProfileConfig>>,
 }
 
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
@@ -231,6 +234,11 @@ struct AuthConfig {
     api_token: Option<String>,
     session_token: Option<String>,
     preferred_auth: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, serde::Serialize)]
+struct ProfileConfig {
+    auth: Option<AuthConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -251,16 +259,28 @@ pub struct ConfigAuthSnapshot {
 /// Returns `KagiError::Config` if the config file cannot be read or parsed,
 /// or if session token normalization fails.
 pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
-    load_credential_inventory_from_path(Path::new(DEFAULT_CONFIG_PATH))
+    load_credential_inventory_for_profile(None)
+}
+
+/// Loads credentials for an optional named profile from the default config path.
+///
+/// Environment variables still take precedence because they are the explicit
+/// process-level override. The profile only selects which config auth block is
+/// used when env credentials are not present.
+pub fn load_credential_inventory_for_profile(
+    profile: Option<&str>,
+) -> Result<CredentialInventory, KagiError> {
+    load_credential_inventory_from_path(Path::new(DEFAULT_CONFIG_PATH), profile)
 }
 
 fn load_credential_inventory_from_path(
     config_path: &Path,
+    profile: Option<&str>,
 ) -> Result<CredentialInventory, KagiError> {
     let config = read_config_file(config_path)?;
-    let search_preference = config
-        .auth
-        .as_ref()
+    let profile_name = normalize_profile_name(profile)?;
+    let auth_config = select_auth_config(&config, profile_name.as_deref())?;
+    let search_preference = auth_config
         .and_then(|auth| auth.preferred_auth.as_deref())
         .map(SearchAuthPreference::parse)
         .transpose()?
@@ -275,9 +295,7 @@ fn load_credential_inventory_from_path(
         .map(|value| build_session_credential(&value, CredentialSource::Env))
         .transpose()?;
 
-    let config_api = config
-        .auth
-        .as_ref()
+    let config_api = auth_config
         .and_then(|auth| auth.api_token.as_ref())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -287,9 +305,7 @@ fn load_credential_inventory_from_path(
             value,
         });
 
-    let config_session = config
-        .auth
-        .as_ref()
+    let config_session = auth_config
         .and_then(|auth| auth.session_token.as_ref())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -301,6 +317,7 @@ fn load_credential_inventory_from_path(
         session_token: env_session.or(config_session),
         search_preference,
         config_path: config_path.to_path_buf(),
+        profile: profile_name,
     })
 }
 
@@ -327,7 +344,8 @@ pub fn format_status(inventory: &CredentialInventory) -> String {
     let session_line = format_status_line("session token", inventory.session_token.as_ref());
 
     format!(
-        "{selected_line}\npreferred auth for base search: {}\n{api_line}\n{session_line}\nconfig path: {}\nprecedence: env > config; base search defaults to session unless [auth.preferred_auth] = \"api\"; lens search requires session token",
+        "{selected_line}\nprofile: {}\npreferred auth for base search: {}\n{api_line}\n{session_line}\nconfig path: {}\nprecedence: env > selected profile config > default config; base search defaults to session unless preferred_auth = \"api\"; lens search requires session token",
+        inventory.profile.as_deref().unwrap_or("default"),
         inventory.search_preference.as_str(),
         inventory.config_path.display(),
     )
@@ -379,6 +397,40 @@ fn load_config_auth_snapshot_from_path(
     })
 }
 
+fn normalize_profile_name(profile: Option<&str>) -> Result<Option<String>, KagiError> {
+    profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            if value.contains(char::is_whitespace) {
+                return Err(KagiError::Config(format!(
+                    "profile name `{value}` cannot contain whitespace"
+                )));
+            }
+            Ok(value.to_string())
+        })
+        .transpose()
+}
+
+fn select_auth_config<'a>(
+    config: &'a ConfigFile,
+    profile: Option<&str>,
+) -> Result<Option<&'a AuthConfig>, KagiError> {
+    let Some(profile) = profile else {
+        return Ok(config.auth.as_ref());
+    };
+
+    let profile_config = config
+        .profiles
+        .as_ref()
+        .and_then(|profiles| profiles.get(profile))
+        .ok_or_else(|| {
+            KagiError::Config(format!("profile `{profile}` was not found in .kagi.toml"))
+        })?;
+
+    Ok(profile_config.auth.as_ref())
+}
+
 fn format_status_line(label: &str, credential: Option<&Credential>) -> String {
     match credential {
         Some(credential) => format!("{label}: configured via {}", credential.source.as_str()),
@@ -423,7 +475,7 @@ pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
     Ok(trimmed.to_string())
 }
 
-/// Saves API and/or session credentials to the default config file.
+/// Saves API and/or session credentials to the selected profile or default config block.
 ///
 /// # Arguments
 /// * `api_token` - Optional API token to save.
@@ -434,11 +486,12 @@ pub fn normalize_api_token(input: &str) -> Result<String, KagiError> {
 ///
 /// # Errors
 /// Returns `KagiError::Config` if neither credential is provided, or on I/O or serialization errors.
-pub fn save_credentials(
+pub fn save_credentials_for_profile(
+    profile: Option<&str>,
     api_token: Option<&str>,
     session_input: Option<&str>,
 ) -> Result<CredentialInventory, KagiError> {
-    save_credentials_with_preference(api_token, session_input, None)
+    save_credentials_with_preference_for_profile(profile, api_token, session_input, None)
 }
 
 /// Saves credentials with an optional search auth preference to the default config file.
@@ -458,8 +511,18 @@ pub fn save_credentials_with_preference(
     session_input: Option<&str>,
     preferred_auth: Option<SearchAuthPreference>,
 ) -> Result<CredentialInventory, KagiError> {
+    save_credentials_with_preference_for_profile(None, api_token, session_input, preferred_auth)
+}
+
+fn save_credentials_with_preference_for_profile(
+    profile: Option<&str>,
+    api_token: Option<&str>,
+    session_input: Option<&str>,
+    preferred_auth: Option<SearchAuthPreference>,
+) -> Result<CredentialInventory, KagiError> {
     save_credentials_with_preference_to_path(
         Path::new(DEFAULT_CONFIG_PATH),
+        profile,
         api_token,
         session_input,
         preferred_auth,
@@ -468,6 +531,7 @@ pub fn save_credentials_with_preference(
 
 fn save_credentials_with_preference_to_path(
     config_path: &Path,
+    profile: Option<&str>,
     api_token: Option<&str>,
     session_input: Option<&str>,
     preferred_auth: Option<SearchAuthPreference>,
@@ -479,7 +543,18 @@ fn save_credentials_with_preference_to_path(
     }
 
     let mut config = read_config_file(config_path)?;
-    let auth = config.auth.get_or_insert_with(AuthConfig::default);
+    let profile_name = normalize_profile_name(profile)?;
+    let auth = if let Some(profile_name) = profile_name.as_ref() {
+        config
+            .profiles
+            .get_or_insert_with(BTreeMap::new)
+            .entry(profile_name.clone())
+            .or_insert_with(ProfileConfig::default)
+            .auth
+            .get_or_insert_with(AuthConfig::default)
+    } else {
+        config.auth.get_or_insert_with(AuthConfig::default)
+    };
 
     if let Some(api_token) = api_token {
         auth.api_token = Some(normalize_api_token(api_token)?);
@@ -502,7 +577,7 @@ fn save_credentials_with_preference_to_path(
     })?;
     write_config_file_atomically(config_path, &raw)?;
 
-    load_credential_inventory_from_path(config_path)
+    load_credential_inventory_from_path(config_path, profile_name.as_deref())
 }
 
 #[cfg(test)]
@@ -715,6 +790,7 @@ mod tests {
                 }),
             search_preference: SearchAuthPreference::Session,
             config_path: path.path().to_path_buf(),
+            profile: None,
         };
 
         assert_eq!(inventory.api_token.unwrap().source, CredentialSource::Env);
@@ -741,6 +817,7 @@ mod tests {
             session_token: None,
             search_preference: SearchAuthPreference::Session,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let error = inventory
@@ -761,6 +838,7 @@ mod tests {
             session_token: None,
             search_preference: SearchAuthPreference::Session,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let error = inventory
@@ -785,6 +863,7 @@ mod tests {
             }),
             search_preference: SearchAuthPreference::Session,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let credentials = inventory
@@ -815,6 +894,7 @@ mod tests {
             }),
             search_preference: SearchAuthPreference::Session,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let credentials = inventory
@@ -838,6 +918,7 @@ mod tests {
             }),
             search_preference: SearchAuthPreference::Api,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let credentials = inventory
@@ -875,6 +956,7 @@ mod tests {
             session_token: None,
             search_preference: SearchAuthPreference::Session,
             config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            profile: None,
         };
 
         let status = format_status(&inventory);
@@ -980,6 +1062,7 @@ mod tests {
         save_credentials_with_preference_to_path(
             path.path(),
             None,
+            None,
             Some("https://kagi.com/search?token=new-session"),
             None,
         )
@@ -998,6 +1081,7 @@ mod tests {
 
         let inventory = save_credentials_with_preference_to_path(
             path.path(),
+            None,
             Some("new-api"),
             Some("https://kagi.com/search?token=new-session"),
             Some(SearchAuthPreference::Api),

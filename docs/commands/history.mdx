@@ -1,0 +1,24 @@
+---
+title: "history"
+description: "Inspect local kagi-cli command history and query stats."
+---
+
+# `kagi history`
+
+Inspect local opt-in history entries written by commands such as `search` and `watch`.
+
+History is stored as JSON Lines under `~/.cache/kagi-cli/history.jsonl`, or under `KAGI_CACHE_DIR` when that environment variable is set.
+
+## Synopsis
+
+```bash
+kagi history list [--limit <COUNT>]
+kagi history stats
+```
+
+## Examples
+
+```bash
+kagi history list --limit 10
+kagi history stats
+```

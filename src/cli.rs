@@ -190,6 +190,10 @@ pub struct Cli {
     #[arg(long, value_name = "SHELL", value_enum)]
     pub generate_completion: Option<CompletionShell>,
 
+    /// Use a named profile from .kagi.toml instead of the default auth block
+    #[arg(long, global = true, value_name = "NAME")]
+    pub profile: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -227,6 +231,16 @@ pub enum Commands {
     Enrich(EnrichCommand),
     /// Fetch the Kagi Small Web feed
     Smallweb(SmallWebArgs),
+    /// Watch a search query and emit result diffs over time
+    Watch(WatchArgs),
+    /// Run a stdio Model Context Protocol server exposing Kagi tools
+    Mcp(McpArgs),
+    /// Run a query and post the result to a webhook
+    Notify(NotifyArgs),
+    /// Inspect local command history and analytics
+    History(HistoryCommand),
+    /// Manage local domain preferences used by CLI search output
+    SitePref(SitePrefCommand),
     /// Manage Kagi search lenses
     Lens(LensCommand),
     /// Manage custom bangs
@@ -306,13 +320,29 @@ pub struct SearchArgs {
     /// Force personalized search off for this request
     #[arg(long, conflicts_with = "personalized")]
     pub no_personalized: bool,
+
+    /// Render each search result with a lightweight template
+    #[arg(long, value_name = "TEMPLATE", conflicts_with = "follow")]
+    pub template: Option<String>,
+
+    /// Locally cache this response
+    #[arg(long)]
+    pub local_cache: bool,
+
+    /// Override local cache TTL in seconds
+    #[arg(long, value_name = "SECONDS")]
+    pub cache_ttl: Option<u64>,
+
+    /// Summarize the top N result URLs using subscriber summarizer
+    #[arg(long, value_name = "N")]
+    pub follow: Option<usize>,
 }
 
 #[derive(Debug, Args)]
 /// Arguments for the `batch` subcommand (parallel search).
 pub struct BatchSearchArgs {
     /// List of search queries to execute in parallel
-    #[arg(value_name = "QUERIES", required = true)]
+    #[arg(value_name = "QUERIES")]
     pub queries: Vec<String>,
 
     /// Maximum number of concurrent requests (default: 3)
@@ -370,6 +400,10 @@ pub struct BatchSearchArgs {
     /// Force personalized search off for all batch requests
     #[arg(long, conflicts_with = "personalized")]
     pub no_personalized: bool,
+
+    /// Render each result with a lightweight template
+    #[arg(long, value_name = "TEMPLATE")]
+    pub template: Option<String>,
 }
 
 impl BatchSearchArgs {
@@ -383,6 +417,9 @@ impl BatchSearchArgs {
         }
         if self.rate_limit == 0 {
             return Err("rate-limit must be at least 1".to_string());
+        }
+        if self.queries.is_empty() {
+            return Err("batch requires at least one query argument or stdin line".to_string());
         }
         Ok(())
     }
@@ -452,6 +489,18 @@ pub struct SummarizeArgs {
     /// Allow cached requests/responses
     #[arg(long)]
     pub cache: Option<bool>,
+
+    /// Read URLs or text items from stdin and summarize each line
+    #[arg(long)]
+    pub filter: bool,
+
+    /// Locally cache this response
+    #[arg(long)]
+    pub local_cache: bool,
+
+    /// Override local cache TTL in seconds
+    #[arg(long, value_name = "SECONDS")]
+    pub cache_ttl: Option<u64>,
 }
 
 impl SummarizeArgs {
@@ -460,8 +509,11 @@ impl SummarizeArgs {
     /// # Errors
     /// Returns an error when neither `--url` nor `--text` is provided.
     pub fn validate(&self) -> Result<(), String> {
-        if self.url.is_none() && self.text.is_none() {
+        if !self.filter && self.url.is_none() && self.text.is_none() {
             return Err("summarize requires exactly one of --url or --text".to_string());
+        }
+        if self.filter && (self.url.is_some() || self.text.is_some()) {
+            return Err("summarize --filter reads from stdin; omit --url and --text".to_string());
         }
 
         Ok(())
@@ -482,6 +534,14 @@ pub struct FastGptArgs {
     /// Whether to perform web search. Kagi docs note values other than true are currently unsupported.
     #[arg(long)]
     pub web_search: Option<bool>,
+
+    /// Locally cache this response
+    #[arg(long)]
+    pub local_cache: bool,
+
+    /// Override local cache TTL in seconds
+    #[arg(long, value_name = "SECONDS")]
+    pub cache_ttl: Option<u64>,
 }
 
 #[derive(Debug, Args)]
@@ -618,6 +678,10 @@ pub struct AssistantArgs {
     /// Force personalizations off for this prompt
     #[arg(long, conflicts_with = "personalized")]
     pub no_personalized: bool,
+
+    /// Export the REPL transcript when the session exits
+    #[arg(long, value_name = "PATH")]
+    pub export: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -627,6 +691,36 @@ pub enum AssistantSubcommand {
     Thread(AssistantThreadArgs),
     /// Manage custom assistants
     Custom(AssistantCustomArgs),
+    /// Start an interactive Assistant REPL with automatic thread continuity
+    Repl(AssistantReplArgs),
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `assistant repl`.
+pub struct AssistantReplArgs {
+    /// Continue an existing assistant thread by id
+    #[arg(long, value_name = "THREAD_ID")]
+    pub thread_id: Option<String>,
+
+    /// Use a saved assistant by name, id, or invoke profile slug
+    #[arg(long, value_name = "ASSISTANT")]
+    pub assistant: Option<String>,
+
+    /// Override the Assistant model slug
+    #[arg(long, value_name = "MODEL")]
+    pub model: Option<String>,
+
+    /// Output format for each response
+    #[arg(long, value_name = "FORMAT", default_value_t = AssistantOutputFormat::Markdown)]
+    pub format: AssistantOutputFormat,
+
+    /// Export the REPL transcript when the session exits
+    #[arg(long, value_name = "PATH")]
+    pub export: Option<PathBuf>,
+
+    /// Disable colored terminal output
+    #[arg(long)]
+    pub no_color: bool,
 }
 
 #[derive(Debug, Args)]
@@ -800,7 +894,7 @@ pub struct AskPageArgs {
 pub struct TranslateArgs {
     /// Text to translate
     #[arg(value_name = "TEXT")]
-    pub text: String,
+    pub text: Option<String>,
 
     /// Source language code (default: auto)
     #[arg(long, value_name = "LANG", default_value = "auto")]
@@ -909,6 +1003,14 @@ pub struct QuickArgs {
     /// Scope quick answer to a Kagi lens by numeric index
     #[arg(long, value_name = "INDEX")]
     pub lens: Option<String>,
+
+    /// Locally cache this response
+    #[arg(long)]
+    pub local_cache: bool,
+
+    /// Override local cache TTL in seconds
+    #[arg(long, value_name = "SECONDS")]
+    pub cache_ttl: Option<u64>,
 }
 
 #[derive(Debug, Args)]
@@ -941,6 +1043,126 @@ pub struct SmallWebArgs {
     /// Limit number of feed entries returned by the Small Web feed
     #[arg(long, value_name = "COUNT")]
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `watch` subcommand.
+pub struct WatchArgs {
+    /// Search query to monitor
+    #[arg(value_name = "QUERY")]
+    pub query: String,
+
+    /// Poll interval in seconds
+    #[arg(long, value_name = "SECONDS", default_value_t = 300)]
+    pub interval: u64,
+
+    /// Number of polls to run; 0 means until interrupted
+    #[arg(long, value_name = "COUNT", default_value_t = 0)]
+    pub count: u32,
+
+    /// Output format for each diff event
+    #[arg(long, value_name = "FORMAT", default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `mcp` subcommand.
+pub struct McpArgs {
+    /// Print one JSON-RPC response per line
+    #[arg(long)]
+    pub json_lines: bool,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `notify` subcommand.
+pub struct NotifyArgs {
+    /// Search query to run before notifying
+    #[arg(long, value_name = "QUERY", conflicts_with = "news_category")]
+    pub query: Option<String>,
+
+    /// Kagi News category to fetch before notifying
+    #[arg(long, value_name = "CATEGORY")]
+    pub news_category: Option<String>,
+
+    /// Webhook endpoint that receives the JSON payload
+    #[arg(long, value_name = "URL")]
+    pub webhook_url: String,
+
+    /// Only send when `watch` detects a changed search result set
+    #[arg(long)]
+    pub change_only: bool,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `history` command group.
+pub struct HistoryCommand {
+    #[command(subcommand)]
+    pub command: HistorySubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+/// Subcommands for local history.
+pub enum HistorySubcommand {
+    /// List recent local history entries
+    List(HistoryListArgs),
+    /// Print aggregate local history stats
+    Stats,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `history list`.
+pub struct HistoryListArgs {
+    /// Maximum entries to print
+    #[arg(long, value_name = "COUNT", default_value_t = 25)]
+    pub limit: usize,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `site-pref` command group.
+pub struct SitePrefCommand {
+    #[command(subcommand)]
+    pub command: SitePrefSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+/// Subcommands for local site preferences.
+pub enum SitePrefSubcommand {
+    /// List local domain preferences
+    List,
+    /// Set a local domain preference
+    Set(SitePrefSetArgs),
+    /// Remove a local domain preference
+    Remove(SitePrefDomainArgs),
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `site-pref set`.
+pub struct SitePrefSetArgs {
+    /// Domain to configure
+    #[arg(value_name = "DOMAIN")]
+    pub domain: String,
+
+    /// Preference mode
+    #[arg(long, value_name = "MODE", value_enum)]
+    pub mode: SitePrefMode,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for a site preference domain target.
+pub struct SitePrefDomainArgs {
+    /// Domain to remove
+    #[arg(value_name = "DOMAIN")]
+    pub domain: String,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+/// Local domain preference mode.
+pub enum SitePrefMode {
+    Block,
+    Lower,
+    Normal,
+    Higher,
+    Pin,
 }
 
 #[derive(Debug, Args)]
@@ -1363,12 +1585,58 @@ mod tests {
             summary_type: None,
             target_language: None,
             cache: None,
+            filter: false,
+            local_cache: false,
+            cache_ttl: None,
         };
 
         let error = args
             .validate()
             .expect_err("summarize should require url or text input");
         assert!(error.contains("exactly one of --url or --text"));
+    }
+
+    #[test]
+    fn parses_product_workflow_commands() {
+        let cli = Cli::try_parse_from([
+            "kagi",
+            "--profile",
+            "work",
+            "search",
+            "rust",
+            "--template",
+            "{{title}}",
+            "--local-cache",
+        ])
+        .expect("search workflow command should parse");
+
+        assert_eq!(cli.profile.as_deref(), Some("work"));
+        match cli.command.expect("command") {
+            Commands::Search(args) => {
+                assert_eq!(args.template.as_deref(), Some("{{title}}"));
+                assert!(args.local_cache);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let cli = Cli::try_parse_from(["kagi", "assistant", "repl", "--export", "chat.json"])
+            .expect("assistant repl should parse");
+        assert!(matches!(
+            cli.command.expect("command"),
+            Commands::Assistant(super::AssistantArgs {
+                command: Some(super::AssistantSubcommand::Repl(_)),
+                ..
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["kagi", "site-pref", "set", "example.com", "--mode", "pin"])
+            .expect("site-pref command should parse");
+        assert!(matches!(
+            cli.command.expect("command"),
+            Commands::SitePref(super::SitePrefCommand {
+                command: super::SitePrefSubcommand::Set(_)
+            })
+        ));
     }
 
     #[test]

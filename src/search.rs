@@ -5,7 +5,7 @@
 //! pagination, lenses, region selection, and time filtering.
 
 use reqwest::{Client, StatusCode, header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::error::KagiError;
@@ -22,7 +22,7 @@ const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "paid search engine that gives power back to the user",
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 /// Parameters for a Kagi search API request.
 pub struct SearchRequest {
     pub query: String,
@@ -289,15 +289,27 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
 
             Ok(body)
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi response status: HTTP {status}"
-        ))),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "search").await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for search: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )))
+        }
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "search").await;
+            Err(KagiError::Network(format!(
+                "Kagi search server error: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "search").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi search response status: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -365,12 +377,20 @@ pub async fn execute_api_search(
                 format_api_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi API server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi API response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "search api").await;
+            Err(KagiError::Network(format!(
+                "Kagi API server error: HTTP {status}{}",
+                format_api_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "search api").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi API response status: HTTP {status}{}",
+                format_api_error_suffix(&body)
+            )))
+        }
     }
 }
 

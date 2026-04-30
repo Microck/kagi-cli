@@ -208,15 +208,27 @@ pub async fn execute_subscriber_summarize(
 
             parse_subscriber_summarize_stream(&body)
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi subscriber summarizer server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi subscriber summarizer response status: HTTP {status}"
-        ))),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "subscriber summarizer").await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for subscriber summarizer: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "subscriber summarizer").await;
+            Err(KagiError::Network(format!(
+                "Kagi subscriber summarizer server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "subscriber summarizer").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi subscriber summarizer response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -675,9 +687,13 @@ pub async fn execute_assistant_thread_export(
                 markdown,
             })
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "assistant export").await;
+            Err(KagiError::Auth(format!(
+                "Assistant export (thread {thread_id}): invalid or expired Kagi session token: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, "assistant export").await;
             Err(KagiError::Config(format!(
@@ -685,12 +701,20 @@ pub async fn execute_assistant_thread_export(
                 format_client_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi Assistant export server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi Assistant export response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "assistant export").await;
+            Err(KagiError::Network(format!(
+                "Assistant export (thread {thread_id}): Kagi server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "assistant export").await;
+            Err(KagiError::Network(format!(
+                "Assistant export (thread {thread_id}): unexpected response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -1683,12 +1707,20 @@ pub async fn execute_smallweb(limit: Option<u32>) -> Result<SmallWebFeed, KagiEr
             .map_err(|error| {
                 KagiError::Network(format!("failed to read Small Web feed body: {error}"))
             }),
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi Small Web feed server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi Small Web feed status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "small web feed").await;
+            Err(KagiError::Network(format!(
+                "Kagi Small Web feed server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "small web feed").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi Small Web feed status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -2962,9 +2994,13 @@ async fn read_authenticated_html_response(
             }
             Ok((final_url, body))
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
@@ -2972,12 +3008,20 @@ async fn read_authenticated_html_response(
                 format_client_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi {surface} response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "Kagi {surface} server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi {surface} response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -3214,9 +3258,13 @@ async fn handle_assistant_stream_response(
 
             Ok(body)
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        )),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
@@ -3597,7 +3645,8 @@ fn strip_html_to_text(html: &str) -> String {
     Html::parse_fragment(html)
         .root_element()
         .text()
-        .collect::<String>()
+        .collect::<Vec<_>>()
+        .join(" ")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -3628,10 +3677,27 @@ fn format_client_error_suffix(body: &str) -> String {
     }
 
     if let Ok(payload) = serde_json::from_str::<Value>(trimmed) {
-        return format!("; {payload}");
+        return format!("; {}", truncate_error_detail(&payload.to_string()));
     }
 
-    format!("; {trimmed}")
+    let detail = if looks_like_html_document(trimmed) {
+        strip_html_to_text(trimmed)
+    } else {
+        trimmed.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+
+    if detail.is_empty() {
+        String::new()
+    } else {
+        format!("; {}", truncate_error_detail(&detail))
+    }
+}
+
+fn truncate_error_detail(detail: &str) -> String {
+    match detail.char_indices().nth(500) {
+        Some((idx, _)) => format!("{}...", &detail[..idx]),
+        None => detail.to_string(),
+    }
 }
 
 fn build_translate_cookie_header(session_token: &str, translate_session: &str) -> String {
@@ -4189,9 +4255,13 @@ where
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(format!(
-            "invalid Kagi API token or access is not enabled for {surface}"
-        ))),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "invalid Kagi API token or access is not enabled for {surface}: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
             let parsed_error = serde_json::from_str::<ApiErrorBody>(&body)
@@ -4208,12 +4278,20 @@ where
                 }
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi {surface} response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "Kagi {surface} server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi {surface} response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -4240,9 +4318,13 @@ where
                 KagiError::Parse(format!("failed to parse {surface} response: {error}"))
             })
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(format!(
-            "authentication is not supported for public Kagi {surface} endpoints"
-        ))),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "authentication is not supported for public Kagi {surface} endpoints: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
@@ -4250,12 +4332,20 @@ where
                 format_client_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi {surface} response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "Kagi {surface} server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi {surface} response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -4291,9 +4381,13 @@ where
                 ))
             })
         }
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token for Kagi Translate".to_string(),
-        )),
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for Kagi Translate {surface}: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
             Err(KagiError::Config(format!(
@@ -4301,12 +4395,20 @@ where
                 format_client_error_suffix(&body)
             )))
         }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi Translate {surface} server error: HTTP {status}"
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi Translate {surface} response status: HTTP {status}"
-        ))),
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "Kagi Translate {surface} server error: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi Translate {surface} response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
     }
 }
 
@@ -4331,16 +4433,17 @@ mod tests {
         build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
-        fake_header_map, finalize_translate_text_response, normalize_ask_page_question,
-        normalize_ask_page_url, normalize_assistant_query, normalize_assistant_thread_id,
-        normalize_aux_quality, normalize_custom_bang_trigger, normalize_redirect_rule,
-        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_prompt_stream,
-        parse_assistant_thread_cursor, parse_assistant_thread_delete_stream,
-        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
-        parse_content_disposition_filename, parse_subscriber_summarize_stream,
-        parse_translate_detect_value, resolve_custom_assistant_ref, resolve_custom_bang_ref,
-        resolve_lens_ref, resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
+        fake_header_map, finalize_translate_text_response, format_client_error_suffix,
+        normalize_ask_page_question, normalize_ask_page_url, normalize_assistant_query,
+        normalize_assistant_thread_id, normalize_aux_quality, normalize_custom_bang_trigger,
+        normalize_redirect_rule, normalize_subscriber_summary_input,
+        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
+        parse_assistant_prompt_stream, parse_assistant_thread_cursor,
+        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
+        parse_assistant_thread_open_stream, parse_content_disposition_filename,
+        parse_subscriber_summarize_stream, parse_translate_detect_value,
+        resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
+        resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
         should_retry_translate_bootstrap, text_contains_news_filter_keyword,
         validate_translate_request,
     };
@@ -4501,6 +4604,23 @@ mod tests {
             .expect("first error")
             .msg;
         assert_eq!(message, "Insufficient credit to perform this request.");
+    }
+
+    #[test]
+    fn formats_html_error_body_as_text_suffix() {
+        let suffix = format_client_error_suffix(
+            "<html><body><h1>Rate limited</h1><p>Retry later</p></body></html>",
+        );
+
+        assert_eq!(suffix, "; Rate limited Retry later");
+    }
+
+    #[test]
+    fn truncates_long_error_body_suffixes() {
+        let suffix = format_client_error_suffix(&"x".repeat(600));
+
+        assert_eq!(suffix.len(), 505);
+        assert!(suffix.ends_with("..."));
     }
 
     #[test]

@@ -46,15 +46,19 @@ pub fn client_30s() -> Result<Client, KagiError> {
 /// # Returns
 /// A `KagiError::Network` variant with a descriptive message.
 pub fn map_transport_error(error: reqwest::Error) -> KagiError {
+    let target = error.url().map(|url| url.as_str()).unwrap_or("unknown URL");
+
     if error.is_timeout() {
-        return KagiError::Network("request to Kagi timed out".to_string());
+        return KagiError::Network(format!(
+            "request to {target} timed out after the configured timeout"
+        ));
     }
 
     if error.is_connect() {
-        return KagiError::Network(format!("failed to connect to Kagi: {error}"));
+        return KagiError::Network(format!("failed to connect to {target}: {error}"));
     }
 
-    KagiError::Network(format!("request to Kagi failed: {error}"))
+    KagiError::Network(format!("request to {target} failed: {error}"))
 }
 
 /// Reads the response body text, returning a diagnostic placeholder on failure.
@@ -73,6 +77,24 @@ pub async fn read_error_body(response: Response, surface: &str) -> String {
             format!("<failed to read error body: {error}>")
         }
     }
+}
+
+/// Formats a response-body diagnostic suffix for HTTP status errors.
+///
+/// The suffix is intentionally short so a failed CLI command remains readable,
+/// while still preserving the server's most useful diagnostic text.
+pub fn error_body_suffix(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let normalized = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    let detail = match normalized.char_indices().nth(500) {
+        Some((idx, _)) => format!("{}...", &normalized[..idx]),
+        None => normalized,
+    };
+    format!("; response body: {detail}")
 }
 
 /// Builds a full Kagi API URL from a path, using the `KAGI_BASE_URL` env override or the default.
@@ -211,5 +233,11 @@ mod tests {
         remove_env_var(KAGI_BASE_URL_ENV);
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
+    }
+
+    #[test]
+    fn formats_http_error_body_suffix() {
+        let suffix = super::error_body_suffix("  rate   limit exceeded\nretry later  ");
+        assert_eq!(suffix, "; response body: rate limit exceeded retry later");
     }
 }

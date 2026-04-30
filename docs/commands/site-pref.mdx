@@ -1,0 +1,28 @@
+---
+title: "site-pref"
+description: "Manage local domain preferences applied to CLI search output."
+---
+
+# `kagi site-pref`
+
+Manage local domain preferences used by `kagi search` output.
+
+Kagi's web product supports account-level personalized results. Those settings do not currently have a documented public write API, so this command stores a local CLI preference file and applies it after results are fetched: `block` removes domains, `pin` and `higher` move domains up, and `lower` moves domains down.
+
+## Synopsis
+
+```bash
+kagi site-pref list
+kagi site-pref set <DOMAIN> --mode block|lower|normal|higher|pin
+kagi site-pref remove <DOMAIN>
+```
+
+## Examples
+
+```bash
+kagi site-pref set example.com --mode block
+kagi site-pref set docs.rs --mode pin
+kagi site-pref list
+```
+
+Preferences are stored under `~/.cache/kagi-cli/site-preferences.json`, or under `KAGI_CACHE_DIR` when set.

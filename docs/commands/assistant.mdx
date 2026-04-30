@@ -17,6 +17,7 @@ kagi assistant thread list
 kagi assistant thread get <THREAD_ID>
 kagi assistant thread delete <THREAD_ID>
 kagi assistant thread export <THREAD_ID> [--format markdown|json]
+kagi assistant repl [OPTIONS]
 kagi assistant custom list
 kagi assistant custom get <ID_OR_NAME>
 kagi assistant custom create <NAME> [OPTIONS]
@@ -100,6 +101,27 @@ Force internet access on or off for a single prompt.
 #### `--no-personalized`
 
 Force Kagi personalizations on or off for a single prompt.
+
+## REPL Mode
+
+`kagi assistant repl` starts a terminal chat loop that keeps the latest Assistant thread id and sends each prompt back into the same conversation.
+
+```bash
+kagi assistant repl --model gpt-5-mini --export ./assistant-transcript.json
+```
+
+REPL commands:
+
+- `/thread` - print the active thread id
+- `/exit` or `/quit` - close the REPL
+
+Useful options:
+
+- `--thread-id <THREAD_ID>` - continue an existing thread
+- `--assistant <ASSISTANT>` - use a saved assistant
+- `--model <MODEL>` - set the model for prompts in the session
+- `--format <FORMAT>` - `markdown`, `pretty`, `json`, or `compact`
+- `--export <PATH>` - write a JSON transcript on exit
 
 ## Thread Subcommands
 

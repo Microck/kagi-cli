@@ -18,6 +18,15 @@ When encountering any issue, follow these steps first:
 5. **Check auth status:** `kagi auth status`
 6. **Validate credentials:** `kagi auth check`
 
+## Reading Contextual Errors
+
+Recent *kagi* builds include more context in failed HTTP operations. Use these details before retrying blindly:
+
+- `HTTP 401` or `HTTP 403` usually means the API token or session token was rejected. Run `kagi auth` and paste a fresh token from Kagi settings.
+- `; response body: ...` is a short server diagnostic. It can explain account state, insufficient credit, rate limits, or an expired session.
+- `request to https://...` identifies the Kagi surface that failed. This helps separate Search API issues from subscriber web-product issues.
+- `batch query failed (N succeeded): query: error` means only the listed batch entries failed. Retry those entries directly or lower `--concurrency` if the body mentions rate limits.
+
 ## Installation Issues
 
 ### "command not found" or "*kagi* is not recognized"
