@@ -11,6 +11,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 - `kagi mcp` now exposes a `kagi_news` tool that fetches Kagi News stories without authentication (accepts `category`, `limit`, and `lang`)
 
+### Fixed
+
+- `kagi news` no longer fails to parse live responses; `total_stories` is now an integer in the output (previously typed as a string, which never matched the API's actual integer payload)
+
 ## [0.5.1]
 
 ### Added

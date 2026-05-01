@@ -178,7 +178,7 @@ fn news_stories() -> Value {
                 "url": "https://example.com/rust-release"
             }
         ],
-        "totalStories": "1",
+        "totalStories": 1,
         "domains": [],
         "readCount": 10
     })

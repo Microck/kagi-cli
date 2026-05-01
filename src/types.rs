@@ -225,7 +225,7 @@ pub struct NewsStoriesPayload {
     pub timestamp: u64,
     pub stories: Vec<Value>,
     #[serde(rename = "totalStories")]
-    pub total_stories: String,
+    pub total_stories: u64,
     #[serde(default)]
     pub domains: Vec<Value>,
     #[serde(rename = "readCount")]
@@ -238,7 +238,7 @@ pub struct NewsStoriesResponse {
     pub latest_batch: NewsLatestBatch,
     pub category: NewsResolvedCategory,
     pub stories: Vec<Value>,
-    pub total_stories: String,
+    pub total_stories: u64,
     #[serde(default)]
     pub domains: Vec<Value>,
     pub read_count: u64,
