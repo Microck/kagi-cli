@@ -7,9 +7,15 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.5.1]
+
 ### Added
 
 - `kagi search` and `kagi batch` accept `--limit <N>` to cap the number of results returned (truncated locally; Kagi's search endpoints have no native count parameter)
+
+### Changed
+
+- Updated `clap` to 4.6.1 and `tokio` to 1.52.1
 
 ### Fixed
 
