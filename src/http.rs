@@ -21,6 +21,7 @@ pub const KAGI_TRANSLATE_BASE_URL_ENV: &str = "KAGI_TRANSLATE_BASE_URL";
 
 static CLIENT_20S: OnceLock<Client> = OnceLock::new();
 static CLIENT_30S: OnceLock<Client> = OnceLock::new();
+static CLIENT_ASSISTANT_STREAM: OnceLock<Client> = OnceLock::new();
 
 /// Returns a shared HTTP client with a 20-second timeout.
 ///
@@ -36,6 +37,30 @@ pub fn client_20s() -> Result<Client, KagiError> {
 /// Returns `KagiError::Network` if the client cannot be constructed.
 pub fn client_30s() -> Result<Client, KagiError> {
     cached_client(&CLIENT_30S, Duration::from_secs(30))
+}
+
+/// Returns a shared HTTP client for Kagi Assistant streams.
+///
+/// Assistant responses can legitimately take longer than the short API deadline while the
+/// server continues streaming useful frames. Use connect and per-read timeouts instead of a
+/// total request timeout so long completions are not cut off after 30 seconds.
+///
+/// # Errors
+/// Returns `KagiError::Network` if the client cannot be constructed.
+pub fn client_assistant_stream() -> Result<Client, KagiError> {
+    if let Some(client) = CLIENT_ASSISTANT_STREAM.get() {
+        return Ok(client.clone());
+    }
+
+    let client = Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(20))
+        .read_timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))?;
+
+    let _ = CLIENT_ASSISTANT_STREAM.set(client.clone());
+    Ok(client)
 }
 
 /// Maps a `reqwest::Error` to a domain-specific `KagiError`.

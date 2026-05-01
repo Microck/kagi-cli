@@ -11,6 +11,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 - `kagi search` and `kagi batch` accept `--limit <N>` to cap the number of results returned (truncated locally; Kagi's search endpoints have no native count parameter)
 
+### Fixed
+
+- `kagi assistant` no longer cuts off long streamed prompt responses at the generic 30 second API timeout
+
 ## [0.5.0]
 
 ### Added

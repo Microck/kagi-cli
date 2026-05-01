@@ -3173,7 +3173,7 @@ async fn execute_assistant_stream(
         ));
     }
 
-    let client = build_client()?;
+    let client = http::client_assistant_stream()?;
     let response = client
         .post(url)
         .header(header::COOKIE, format!("kagi_session={token}"))
@@ -3200,7 +3200,7 @@ async fn execute_assistant_multipart_stream(
         ));
     }
 
-    let client = build_client()?;
+    let client = http::client_assistant_stream()?;
     let state_json = serde_json::to_vec(state).map_err(|error| {
         KagiError::Config(format!(
             "failed to serialize Assistant prompt upload state: {error}"
@@ -4479,7 +4479,7 @@ mod tests {
         Arc,
         atomic::{AtomicBool, Ordering},
     };
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tempfile::TempDir;
 
     struct ScopedEnvVar {
@@ -4921,6 +4921,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_assistant_prompt_stream_without_expires_at() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
+            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+            "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
+        );
+
+        let parsed = parse_assistant_prompt_stream(raw).expect("assistant stream parses");
+        assert_eq!(parsed.thread.id, "thread-1");
+        assert!(parsed.thread.expires_at.is_empty());
+    }
+
+    #[test]
     fn parses_assistant_thread_cursor_from_cursor_payload() {
         assert_eq!(
             parse_assistant_thread_cursor(
@@ -5170,6 +5183,50 @@ mod tests {
 
         assert_eq!(response.meta.trace.as_deref(), Some("trace-upload"));
         assert_eq!(response.message.markdown.as_deref(), Some("attached-note"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn assistant_prompt_accepts_delayed_stream_response() {
+        use httpmock::Method::POST;
+        use httpmock::MockServer;
+
+        let server = MockServer::start();
+        let _prompt = server.mock(|when, then| {
+            when.method(POST)
+                .path("/assistant/prompt")
+                .header("cookie", "kagi_session=test-session")
+                .header("accept", "application/vnd.kagi.stream");
+            then.status(200)
+                .header("content-type", "application/vnd.kagi.stream")
+                .delay(Duration::from_millis(200))
+                .body(concat!(
+                    "hi:{\"v\":\"test\",\"trace\":\"trace-delayed\"}\0\n",
+                    "thread.json:{\"id\":\"thread-delayed\",\"title\":\"Delayed test\",\"ack\":\"2026-05-01T00:00:00Z\",\"created_at\":\"2026-05-01T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                    "new_message.json:{\"id\":\"msg-delayed\",\"thread_id\":\"thread-delayed\",\"created_at\":\"2026-05-01T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"delayed-ok\",\"documents\":[]}\0\n"
+                ));
+        });
+
+        let _env_guard = lock_env();
+        let _base_url_env = set_env_var("KAGI_BASE_URL", &server.base_url());
+        let response = execute_assistant_prompt(
+            &AssistantPromptRequest {
+                query: "Hello".to_string(),
+                thread_id: None,
+                attachments: Vec::new(),
+                profile_id: None,
+                model: None,
+                lens_id: None,
+                internet_access: None,
+                personalizations: None,
+            },
+            "test-session",
+        )
+        .await
+        .expect("delayed assistant prompt should succeed");
+
+        assert_eq!(response.meta.trace.as_deref(), Some("trace-delayed"));
+        assert_eq!(response.message.markdown.as_deref(), Some("delayed-ok"));
     }
 
     #[test]
