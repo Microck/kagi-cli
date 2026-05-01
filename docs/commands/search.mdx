@@ -208,6 +208,21 @@ Cap the number of results returned. Truncation happens locally after Kagi's resp
 kagi search "rust async runtime tradeoffs" --limit 5
 ```
 
+### `--news`
+
+Search the News tab of `kagi.com` (`kagi.com/news?q=...`) instead of web search. Returns articles grouped into story clusters (multiple sources covering the same story share a cluster). Forces session-token auth.
+
+```bash
+kagi search "iran" --news
+kagi search "iran" --news --time day --order recency --format pretty
+```
+
+Supported flags with `--news`: `--region`, `--time` (day, week, month only — not `year`), `--order` (default, recency, website only — not `trackers`), `--limit`, `--format`, `--local-cache`, `--cache-ttl`.
+
+Rejected flags with `--news`: `--lens`, `--snap`, `--from-date`, `--to-date`, `--verbatim`, `--personalized`, `--no-personalized`, `--follow`, `--template`. Each produces a clear error.
+
+The JSON shape is `NewsSearchResponse`, distinct from web search. See [Output Format](#output-format) below.
+
 ## Not Supported as Runtime Flags
 
 `safe_search` is currently an account setting, not a search-time flag in this CLI. Configure it in the Kagi web settings instead of expecting `kagi search` to override it per request.
@@ -230,6 +245,31 @@ The search response shape is unchanged:
   ]
 }
 ```
+
+With `--news`, the response shape is different — clusters of news articles:
+
+```json
+{
+  "query": "iran",
+  "clusters": [
+    {
+      "items": [
+        {
+          "title": "Lead headline",
+          "url": "https://www.example.com/article",
+          "source": "example.com",
+          "time_relative": "2 hours ago",
+          "snippet": "Optional snippet text.",
+          "paywall": false,
+          "image_url": "https://img.example/lead.jpg"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`time_relative` is a verbatim string like `"2 hours ago"` or `"Yesterday"`; the News page does not expose absolute timestamps. Cluster ordering reflects Kagi's page order. Single-item clusters represent ungrouped articles at the top of the page.
 
 ## Examples
 
@@ -285,6 +325,12 @@ kagi search --verbatim --no-personalized "\"rust book ownership\""
 
 ```bash
 kagi search --lens 2 --region us --time year "developer documentation"
+```
+
+### News-tab search
+
+```bash
+kagi search "iran" --news --time day --format pretty
 ```
 
 ## Processing Results

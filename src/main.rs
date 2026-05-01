@@ -39,17 +39,17 @@ use crate::cli::{
     AssistantCustomSubcommand, AssistantOutputFormat, AssistantReplArgs, AssistantSubcommand,
     AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs, AuthSubcommand,
     BangSubcommand, Cli, Commands, CompletionShell, CustomBangSubcommand, EnrichSubcommand,
-    HistorySubcommand, McpArgs, NotifyArgs, SearchOrder, SearchTime, SitePrefMode,
-    SitePrefSubcommand, TranslateArgs, WatchArgs,
+    HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs, SearchOrder, SearchTime,
+    SitePrefMode, SitePrefSubcommand, TranslateArgs, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
 use crate::types::{
     AskPageRequest, AssistantProfileCreateRequest, AssistantProfileUpdateRequest,
     AssistantPromptRequest, CustomBangCreateRequest, CustomBangUpdateRequest, FastGptRequest,
-    LensCreateRequest, LensUpdateRequest, QuickResponse, RedirectRuleCreateRequest,
-    RedirectRuleUpdateRequest, SearchResponse, SubscriberSummarizeRequest, SummarizeRequest,
-    TranslateCommandRequest,
+    LensCreateRequest, LensUpdateRequest, NewsSearchResponse, QuickResponse,
+    RedirectRuleCreateRequest, RedirectRuleUpdateRequest, SearchResponse,
+    SubscriberSummarizeRequest, SummarizeRequest, TranslateCommandRequest,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -131,6 +131,14 @@ async fn run() -> Result<(), KagiError> {
     {
         Commands::Search(args) => {
             args.validate().map_err(KagiError::Config)?;
+
+            if args.news {
+                args.validate_news_search().map_err(KagiError::Config)?;
+                let token = resolve_session_token(profile.as_deref())?;
+                let request = build_news_search_request(&args);
+                let response = search::execute_news_search(&request, &token).await?;
+                return print_news_search(&response, &args.format, !args.no_color);
+            }
 
             let options = SearchRequestOptions {
                 snap: args.snap,
@@ -1351,6 +1359,150 @@ fn format_csv_response(response: &SearchResponse) -> String {
     output
 }
 
+fn build_news_search_request(args: &SearchArgs) -> search::NewsSearchRequest {
+    let freshness = args.time.as_ref().and_then(|time| match time {
+        SearchTime::Day => Some(search::NewsFreshness::Day),
+        SearchTime::Week => Some(search::NewsFreshness::Week),
+        SearchTime::Month => Some(search::NewsFreshness::Month),
+        SearchTime::Year => None,
+    });
+    let order = args.order.as_ref().and_then(|order| match order {
+        SearchOrder::Default => Some(search::NewsSearchOrder::Default),
+        SearchOrder::Recency => Some(search::NewsSearchOrder::Recency),
+        SearchOrder::Website => Some(search::NewsSearchOrder::Website),
+        SearchOrder::Trackers => None,
+    });
+    search::NewsSearchRequest {
+        query: args.query.trim().to_string(),
+        region: args.region.clone(),
+        freshness,
+        order,
+        dir_desc: false,
+        limit: args.limit,
+    }
+}
+
+fn print_news_search(
+    response: &NewsSearchResponse,
+    format: &OutputFormat,
+    use_color: bool,
+) -> Result<(), KagiError> {
+    match format {
+        OutputFormat::Json => print_json(response),
+        OutputFormat::Compact => print_compact_json(response),
+        OutputFormat::Pretty => {
+            println!("{}", format_pretty_news_response(response, use_color));
+            Ok(())
+        }
+        OutputFormat::Markdown => {
+            println!("{}", format_markdown_news_response(response));
+            Ok(())
+        }
+        OutputFormat::Csv => {
+            println!("{}", format_csv_news_response(response));
+            Ok(())
+        }
+    }
+}
+
+fn format_pretty_news_response(response: &NewsSearchResponse, use_color: bool) -> String {
+    if response.clusters.is_empty() {
+        return "No news results found.".to_string();
+    }
+    let bold = if use_color { "\x1b[1;34m" } else { "" };
+    let dim = if use_color { "\x1b[2m" } else { "" };
+    let url_color = if use_color { "\x1b[36m" } else { "" };
+    let reset = if use_color { "\x1b[0m" } else { "" };
+
+    let mut blocks = Vec::with_capacity(response.clusters.len());
+    for (cluster_index, cluster) in response.clusters.iter().enumerate() {
+        let mut lines = Vec::with_capacity(cluster.items.len() + 1);
+        lines.push(format!(
+            "{dim}── Cluster {}{reset}",
+            cluster_index + 1,
+            dim = dim,
+            reset = reset,
+        ));
+        for item in &cluster.items {
+            let header = match (item.source.as_deref(), item.time_relative.as_deref()) {
+                (Some(source), Some(time)) => format!("{source} · {time}"),
+                (Some(source), None) => source.to_string(),
+                (None, Some(time)) => time.to_string(),
+                (None, None) => String::new(),
+            };
+            let paywall = if item.paywall { " [paywall]" } else { "" };
+            if header.is_empty() {
+                lines.push(format!(
+                    "{bold}{}{reset}{paywall}\n  {url_color}{}{reset}",
+                    item.title, item.url
+                ));
+            } else {
+                lines.push(format!(
+                    "{dim}{header}{reset}{paywall}\n  {bold}{}{reset}\n  {url_color}{}{reset}",
+                    item.title, item.url
+                ));
+            }
+            if let Some(snippet) = item.snippet.as_deref() {
+                lines.push(format!("  {snippet}"));
+            }
+        }
+        blocks.push(lines.join("\n"));
+    }
+    blocks.join("\n\n")
+}
+
+fn format_markdown_news_response(response: &NewsSearchResponse) -> String {
+    if response.clusters.is_empty() {
+        return "# No news results found.".to_string();
+    }
+    let mut sections = Vec::with_capacity(response.clusters.len());
+    for (cluster_index, cluster) in response.clusters.iter().enumerate() {
+        let mut section = format!("## Cluster {}\n\n", cluster_index + 1);
+        for item in &cluster.items {
+            let suffix = match (item.source.as_deref(), item.time_relative.as_deref()) {
+                (Some(source), Some(time)) => format!(" — {source}, {time}"),
+                (Some(source), None) => format!(" — {source}"),
+                (None, Some(time)) => format!(" — {time}"),
+                (None, None) => String::new(),
+            };
+            let paywall = if item.paywall { " *(paywall)*" } else { "" };
+            section.push_str(&format!(
+                "- [{}]({}){suffix}{paywall}\n",
+                item.title, item.url,
+            ));
+            if let Some(snippet) = item.snippet.as_deref() {
+                section.push_str(&format!("  {snippet}\n"));
+            }
+        }
+        sections.push(section);
+    }
+    sections.join("\n")
+}
+
+fn format_csv_news_response(response: &NewsSearchResponse) -> String {
+    let header = "cluster,source,time_relative,title,url,paywall,snippet";
+    if response.clusters.is_empty() {
+        return header.to_string();
+    }
+    let mut output = String::from(header);
+    output.push('\n');
+    for (cluster_index, cluster) in response.clusters.iter().enumerate() {
+        for item in &cluster.items {
+            let cluster_index = (cluster_index + 1).to_string();
+            let source = escape_csv_field(item.source.as_deref().unwrap_or(""));
+            let time = escape_csv_field(item.time_relative.as_deref().unwrap_or(""));
+            let title = escape_csv_field(&item.title);
+            let url = escape_csv_field(&item.url);
+            let paywall = if item.paywall { "true" } else { "false" };
+            let snippet = escape_csv_field(item.snippet.as_deref().unwrap_or(""));
+            output.push_str(&format!(
+                "{cluster_index},{source},{time},{title},{url},{paywall},{snippet}\n"
+            ));
+        }
+    }
+    output
+}
+
 /// Simple rate limiter using token bucket algorithm
 struct RateLimiter {
     capacity: u32,
@@ -1883,7 +2035,8 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                     {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
                     {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
                     {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}}
+                    {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}},
+                    {"name": "kagi_news_search", "description": "Search the News tab of kagi.com (clusters of articles)", "inputSchema": {"type": "object"}}
                 ]
             }),
             "tools/call" => run_mcp_tool_call(&request, profile).await?,
@@ -1911,56 +2064,99 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
-    let text = match name {
-        "kagi_search" => {
-            let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
-            let inventory = load_credential_inventory_for_profile(profile)?;
-            let request = search::SearchRequest::new(query.to_string());
-            let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
-            serde_json::to_string_pretty(&execute_search_request(&request, credentials).await?)?
-        }
-        "kagi_summarize" => {
-            let token = resolve_api_token(profile)?;
-            let request = SummarizeRequest {
-                url: arguments
-                    .get("url")
+    let text =
+        match name {
+            "kagi_search" => {
+                let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+                let inventory = load_credential_inventory_for_profile(profile)?;
+                let request = search::SearchRequest::new(query.to_string());
+                let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
+                serde_json::to_string_pretty(&execute_search_request(&request, credentials).await?)?
+            }
+            "kagi_summarize" => {
+                let token = resolve_api_token(profile)?;
+                let request = SummarizeRequest {
+                    url: arguments
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    text: arguments
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    engine: None,
+                    summary_type: None,
+                    target_language: None,
+                    cache: None,
+                };
+                serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
+            }
+            "kagi_quick" => {
+                let token = resolve_session_token(profile)?;
+                let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+                let request = search::SearchRequest::new(query.to_string());
+                serde_json::to_string_pretty(&execute_quick(&request, &token).await?)?
+            }
+            "kagi_news" => {
+                let category = arguments
+                    .get("category")
                     .and_then(Value::as_str)
-                    .map(str::to_string),
-                text: arguments
-                    .get("text")
+                    .unwrap_or("world");
+                let lang = arguments
+                    .get("lang")
                     .and_then(Value::as_str)
-                    .map(str::to_string),
-                engine: None,
-                summary_type: None,
-                target_language: None,
-                cache: None,
-            };
-            serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
-        }
-        "kagi_quick" => {
-            let token = resolve_session_token(profile)?;
-            let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
-            let request = search::SearchRequest::new(query.to_string());
-            serde_json::to_string_pretty(&execute_quick(&request, &token).await?)?
-        }
-        "kagi_news" => {
-            let category = arguments
-                .get("category")
-                .and_then(Value::as_str)
-                .unwrap_or("world");
-            let lang = arguments
-                .get("lang")
-                .and_then(Value::as_str)
-                .unwrap_or("default");
-            let limit = arguments
-                .get("limit")
-                .and_then(Value::as_u64)
-                .map(|v| v as u32)
-                .unwrap_or(12);
-            serde_json::to_string_pretty(&execute_news(category, limit, lang, None).await?)?
-        }
-        _ => format!("unsupported tool `{name}`"),
-    };
+                    .unwrap_or("default");
+                let limit = arguments
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as u32)
+                    .unwrap_or(12);
+                serde_json::to_string_pretty(&execute_news(category, limit, lang, None).await?)?
+            }
+            "kagi_news_search" => {
+                let token = resolve_session_token(profile)?;
+                let query = arguments
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let region = arguments
+                    .get("region")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let freshness = arguments.get("freshness").and_then(Value::as_str).and_then(
+                    |value| match value {
+                        "day" => Some(search::NewsFreshness::Day),
+                        "week" => Some(search::NewsFreshness::Week),
+                        "month" => Some(search::NewsFreshness::Month),
+                        _ => None,
+                    },
+                );
+                let order = arguments
+                    .get("order")
+                    .and_then(Value::as_str)
+                    .and_then(|value| match value {
+                        "default" => Some(search::NewsSearchOrder::Default),
+                        "recency" => Some(search::NewsSearchOrder::Recency),
+                        "website" => Some(search::NewsSearchOrder::Website),
+                        _ => None,
+                    });
+                let limit = arguments
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize);
+                let request = search::NewsSearchRequest {
+                    query,
+                    region,
+                    freshness,
+                    order,
+                    dir_desc: false,
+                    limit,
+                };
+                serde_json::to_string_pretty(&search::execute_news_search(&request, &token).await?)?
+            }
+            _ => format!("unsupported tool `{name}`"),
+        };
     Ok(serde_json::json!({ "content": [{ "type": "text", "text": text }] }))
 }
 

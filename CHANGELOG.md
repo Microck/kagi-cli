@@ -10,6 +10,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 ### Added
 
 - `kagi mcp` now exposes a `kagi_news` tool that fetches Kagi News stories without authentication (accepts `category`, `limit`, and `lang`)
+- `kagi search --news` searches the News tab of kagi.com and returns results grouped into story clusters (session auth required); supports `--region`, `--time` (day/week/month), `--order` (default/recency/website), and `--limit`
+- `kagi mcp` exposes a `kagi_news_search` tool wrapping the News-tab vertical (accepts `query`, `region`, `freshness`, `order`, `limit`)
 
 ### Fixed
 

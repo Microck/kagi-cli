@@ -10,10 +10,11 @@ use tracing::debug;
 
 use crate::error::KagiError;
 use crate::http::{self, map_transport_error};
-use crate::parser::parse_search_results;
-use crate::types::{SearchResponse, SearchResult};
+use crate::parser::{parse_news_search_results, parse_search_results};
+use crate::types::{NewsSearchResponse, SearchResponse, SearchResult};
 
 const KAGI_SEARCH_PATH: &str = "/html/search";
+const KAGI_NEWS_SEARCH_PATH: &str = "/news";
 const KAGI_API_SEARCH_PATH: &str = "/api/v0/search";
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const UNAUTHENTICATED_MARKERS: [&str; 3] = [
@@ -414,6 +415,171 @@ pub async fn execute_search(
     Ok(SearchResponse { data })
 }
 
+/// Freshness window for News-tab search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsFreshness {
+    Day,
+    Week,
+    Month,
+}
+
+impl NewsFreshness {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Week => "week",
+            Self::Month => "month",
+        }
+    }
+}
+
+/// Sort order for News-tab search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewsSearchOrder {
+    Default,
+    Recency,
+    Website,
+}
+
+impl NewsSearchOrder {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "1",
+            Self::Recency => "2",
+            Self::Website => "3",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+/// Parameters for a News-tab search request (kagi.com/news).
+pub struct NewsSearchRequest {
+    pub query: String,
+    pub region: Option<String>,
+    pub freshness: Option<NewsFreshness>,
+    pub order: Option<NewsSearchOrder>,
+    pub dir_desc: bool,
+    pub limit: Option<usize>,
+}
+
+impl NewsSearchRequest {
+    fn validate(&self) -> Result<(), KagiError> {
+        if self.query.trim().is_empty() {
+            return Err(KagiError::Config(
+                "search query cannot be empty".to_string(),
+            ));
+        }
+        if let Some(region) = self.region.as_deref()
+            && region.trim().is_empty()
+        {
+            return Err(KagiError::Config(
+                "search --region cannot be empty".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Executes a News-tab search request via session-token auth and returns parsed clusters.
+///
+/// # Errors
+/// Returns `KagiError::Auth` for missing or rejected session token, `KagiError::Network`
+/// for transport/server errors, `KagiError::Parse` for invalid response markup.
+pub async fn execute_news_search(
+    request: &NewsSearchRequest,
+    token: &str,
+) -> Result<NewsSearchResponse, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    request.validate()?;
+
+    let client = build_client()?;
+    let query_params = build_news_search_query_params(request);
+
+    let response = client
+        .get(http::kagi_url(KAGI_NEWS_SEARCH_PATH))
+        .query(&query_params)
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    let body = match response.status() {
+        StatusCode::OK => response.text().await.map_err(|error| {
+            KagiError::Network(format!("failed to read response body: {error}"))
+        })?,
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "news search").await;
+            return Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for news search: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )));
+        }
+        status if status.is_server_error() => {
+            let body = http::read_error_body(response, "news search").await;
+            return Err(KagiError::Network(format!(
+                "Kagi news search server error: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )));
+        }
+        status => {
+            let body = http::read_error_body(response, "news search").await;
+            return Err(KagiError::Network(format!(
+                "unexpected Kagi news search response status: HTTP {status}{}",
+                http::error_body_suffix(&body)
+            )));
+        }
+    };
+
+    if looks_unauthenticated(&body) {
+        return Err(KagiError::Auth(
+            "invalid or expired Kagi session token".to_string(),
+        ));
+    }
+
+    let mut clusters = parse_news_search_results(&body)?;
+
+    if let Some(limit) = request.limit {
+        let mut remaining = limit;
+        clusters.retain_mut(|cluster| {
+            if remaining == 0 {
+                return false;
+            }
+            if cluster.items.len() > remaining {
+                cluster.items.truncate(remaining);
+            }
+            remaining -= cluster.items.len();
+            !cluster.items.is_empty()
+        });
+    }
+
+    Ok(NewsSearchResponse {
+        query: request.query.trim().to_string(),
+        clusters,
+    })
+}
+
+fn build_news_search_query_params(request: &NewsSearchRequest) -> Vec<(&'static str, String)> {
+    let mut params = vec![("q", request.query.trim().to_string())];
+    if let Some(region) = trimmed_optional(request.region.as_deref()) {
+        params.push(("r", region.to_string()));
+    }
+    if let Some(freshness) = request.freshness {
+        params.push(("freshness", freshness.as_str().to_string()));
+    }
+    if let Some(order) = request.order {
+        params.push(("order", order.as_str().to_string()));
+    }
+    if request.dir_desc {
+        params.push(("dir", "desc".to_string()));
+    }
+    params
+}
+
 fn debug_body_preview(body: &str) -> &str {
     match body.char_indices().nth(DEBUG_BODY_PREVIEW_LIMIT) {
         Some((idx, _)) => &body[..idx],
@@ -763,6 +929,42 @@ mod tests {
         let parsed: ApiSearchResponse = serde_json::from_str(raw).expect("api response parses");
         assert_eq!(parsed.data.len(), 1);
         assert_eq!(parsed.data[0].title, "Example");
+    }
+
+    #[test]
+    fn news_query_params_include_freshness_order_and_region() {
+        let request = NewsSearchRequest {
+            query: "iran".to_string(),
+            region: Some("us".to_string()),
+            freshness: Some(NewsFreshness::Day),
+            order: Some(NewsSearchOrder::Recency),
+            dir_desc: true,
+            limit: None,
+        };
+
+        let params = build_news_search_query_params(&request);
+
+        assert!(params.contains(&("q", "iran".to_string())));
+        assert!(params.contains(&("r", "us".to_string())));
+        assert!(params.contains(&("freshness", "day".to_string())));
+        assert!(params.contains(&("order", "2".to_string())));
+        assert!(params.contains(&("dir", "desc".to_string())));
+    }
+
+    #[tokio::test]
+    async fn execute_news_search_requires_session_token() {
+        let request = NewsSearchRequest {
+            query: "iran".to_string(),
+            region: None,
+            freshness: None,
+            order: None,
+            dir_desc: false,
+            limit: None,
+        };
+        let err = execute_news_search(&request, "")
+            .await
+            .expect_err("empty token should fail");
+        assert!(matches!(err, KagiError::Auth(_)));
     }
 
     #[test]

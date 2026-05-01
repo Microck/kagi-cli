@@ -340,6 +340,13 @@ pub struct SearchArgs {
     /// Maximum number of search results to return
     #[arg(long, value_name = "N")]
     pub limit: Option<usize>,
+
+    /// Search the News tab of kagi.com (kagi.com/news?q=...) instead of web results.
+    /// Forces session auth. Conflicts with --lens, --snap, --from-date, --to-date,
+    /// --verbatim, --personalized, --no-personalized, --follow, --template, and
+    /// rejects --time year and --order trackers (no equivalents in the news vertical).
+    #[arg(long)]
+    pub news: bool,
 }
 
 impl SearchArgs {
@@ -350,6 +357,51 @@ impl SearchArgs {
     pub fn validate(&self) -> Result<(), String> {
         if matches!(self.limit, Some(0)) {
             return Err("limit must be at least 1".to_string());
+        }
+        Ok(())
+    }
+
+    /// Validates the flag combinations allowed with `--news`.
+    ///
+    /// # Errors
+    /// Returns a config error message when an incompatible flag is combined with `--news`.
+    pub fn validate_news_search(&self) -> Result<(), String> {
+        if !self.news {
+            return Ok(());
+        }
+        if self.lens.is_some() {
+            return Err("--news cannot be combined with --lens".to_string());
+        }
+        if self.snap.is_some() {
+            return Err("--news cannot be combined with --snap".to_string());
+        }
+        if self.from_date.is_some() || self.to_date.is_some() {
+            return Err("--news cannot be combined with --from-date or --to-date".to_string());
+        }
+        if self.verbatim {
+            return Err("--news cannot be combined with --verbatim".to_string());
+        }
+        if self.personalized || self.no_personalized {
+            return Err(
+                "--news cannot be combined with --personalized or --no-personalized".to_string(),
+            );
+        }
+        if self.follow.is_some() {
+            return Err("--news cannot be combined with --follow".to_string());
+        }
+        if self.template.is_some() {
+            return Err("--news cannot be combined with --template".to_string());
+        }
+        if matches!(self.time, Some(SearchTime::Year)) {
+            return Err(
+                "--time year is not supported with --news (only day, week, or month)".to_string(),
+            );
+        }
+        if matches!(self.order, Some(SearchOrder::Trackers)) {
+            return Err(
+                "--order trackers is not supported with --news (use default, recency, or website)"
+                    .to_string(),
+            );
         }
         Ok(())
     }
@@ -1548,8 +1600,35 @@ pub struct RedirectUpdateArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, NewsArgs, NewsFilterMode, NewsFilterScope, SummarizeArgs};
+    use super::{
+        Cli, Commands, NewsArgs, NewsFilterMode, NewsFilterScope, OutputFormat, SearchArgs,
+        SearchOrder, SearchTime, SummarizeArgs,
+    };
     use clap::Parser;
+
+    fn sample_search_args(query: &str) -> SearchArgs {
+        SearchArgs {
+            query: query.to_string(),
+            format: OutputFormat::Json,
+            no_color: false,
+            snap: None,
+            lens: None,
+            region: None,
+            time: None,
+            from_date: None,
+            to_date: None,
+            order: None,
+            verbatim: false,
+            personalized: false,
+            no_personalized: false,
+            template: None,
+            local_cache: false,
+            cache_ttl: None,
+            follow: None,
+            limit: None,
+            news: false,
+        }
+    }
 
     fn sample_news_args() -> NewsArgs {
         NewsArgs {
@@ -1596,6 +1675,63 @@ mod tests {
 
         assert!(args.validate().is_ok());
         assert!(args.has_filter_inputs());
+    }
+
+    #[test]
+    fn news_search_passthrough_flags_are_accepted() {
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.region = Some("us".to_string());
+        args.time = Some(SearchTime::Day);
+        args.order = Some(SearchOrder::Recency);
+        args.limit = Some(5);
+        assert!(args.validate_news_search().is_ok());
+    }
+
+    #[test]
+    fn news_search_rejects_lens() {
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.lens = Some("1".to_string());
+        let err = args
+            .validate_news_search()
+            .expect_err("--news + --lens should fail");
+        assert!(err.contains("--lens"));
+    }
+
+    #[test]
+    fn news_search_rejects_time_year() {
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.time = Some(SearchTime::Year);
+        let err = args
+            .validate_news_search()
+            .expect_err("--news + --time year should fail");
+        assert!(err.contains("--time year"));
+    }
+
+    #[test]
+    fn news_search_rejects_order_trackers() {
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.order = Some(SearchOrder::Trackers);
+        let err = args
+            .validate_news_search()
+            .expect_err("--news + --order trackers should fail");
+        assert!(err.contains("--order trackers"));
+    }
+
+    #[test]
+    fn news_search_rejects_template_and_follow() {
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.template = Some("{{title}}".to_string());
+        assert!(args.validate_news_search().is_err());
+
+        let mut args = sample_search_args("iran");
+        args.news = true;
+        args.follow = Some(2);
+        assert!(args.validate_news_search().is_err());
     }
 
     #[test]

@@ -19,6 +19,7 @@ kagi mcp
 - `kagi_summarize` - summarize a URL or text through the public API
 - `kagi_quick` - get a Kagi Quick Answer
 - `kagi_news` - fetch Kagi News stories (no auth required). Accepts `category` (default `world`), `limit` (default `12`), and `lang` (default `default`).
+- `kagi_news_search` - search the News tab of kagi.com and return story clusters (session token required). Accepts `query`, optional `region`, `freshness` (`day`/`week`/`month`), `order` (`default`/`recency`/`website`), and `limit`.
 
 The server reads one JSON-RPC request per stdin line and writes one JSON-RPC response per stdout line. This keeps the implementation dependency-light and easy to supervise from agent runners.
 

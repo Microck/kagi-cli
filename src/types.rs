@@ -38,6 +38,36 @@ pub struct SearchResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single article in the News tab of Kagi search.
+pub struct NewsSearchResult {
+    pub title: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_relative: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+    #[serde(default)]
+    pub paywall: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A cluster of news articles covering the same story.
+pub struct NewsSearchCluster {
+    pub items: Vec<NewsSearchResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Response from the News tab of Kagi search.
+pub struct NewsSearchResponse {
+    pub query: String,
+    pub clusters: Vec<NewsSearchCluster>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Metadata returned with most Kagi API responses (request ID, node, latency).
 pub struct ApiMeta {
     pub id: String,
