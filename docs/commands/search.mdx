@@ -200,6 +200,14 @@ kagi search "rust async runtime tradeoffs" --follow 3
 
 `--follow` requires `KAGI_SESSION_TOKEN` because it uses the subscriber summarizer.
 
+### `--limit <N>`
+
+Cap the number of results returned. Truncation happens locally after Kagi's response is received, so `--limit` does not reduce the upstream request cost. Combine with `--follow` to summarize only the top of the capped list.
+
+```bash
+kagi search "rust async runtime tradeoffs" --limit 5
+```
+
 ## Not Supported as Runtime Flags
 
 `safe_search` is currently an account setting, not a search-time flag in this CLI. Configure it in the Kagi web settings instead of expecting `kagi search` to override it per request.

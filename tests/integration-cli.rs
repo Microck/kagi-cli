@@ -253,6 +253,42 @@ fn search_command_pretty_format_prints_ranked_results() {
 }
 
 #[test]
+fn search_command_limit_truncates_results() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v0/search")
+            .query_param("q", "rust")
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": api_meta(),
+                "data": [
+                    { "t": 0, "url": "https://example.com/a", "title": "A", "snippet": "first" },
+                    { "t": 0, "url": "https://example.com/b", "title": "B", "snippet": "second" },
+                    { "t": 0, "url": "https://example.com/c", "title": "C", "snippet": "third" }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["search", "rust", "--limit", "2", "--format", "json"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    let data = body["data"].as_array().expect("data should be an array");
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[0]["title"], "A");
+    assert_eq!(data[1]["title"], "B");
+}
+
+#[test]
 fn batch_command_returns_queries_and_results() {
     let server = MockServer::start();
     let _rust = server.mock(|when, then| {

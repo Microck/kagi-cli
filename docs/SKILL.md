@@ -97,6 +97,9 @@ kagi search --time month --region us --order recency "rust release notes"
 # Date-bounded search
 kagi search --from-date 2026-03-01 --to-date 2026-03-31 "rust release notes"
 
+# Limit results (truncated locally)
+kagi search --limit 5 "rust release notes"
+
 # Per-request personalization override
 kagi search --no-personalized "rust release notes"
 
