@@ -336,6 +336,23 @@ pub struct SearchArgs {
     /// Summarize the top N result URLs using subscriber summarizer
     #[arg(long, value_name = "N")]
     pub follow: Option<usize>,
+
+    /// Maximum number of search results to return
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
+}
+
+impl SearchArgs {
+    /// Validates search arguments.
+    ///
+    /// # Errors
+    /// Returns an error if `--limit` is set to zero.
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.limit, Some(0)) {
+            return Err("limit must be at least 1".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Args)]
@@ -404,6 +421,10 @@ pub struct BatchSearchArgs {
     /// Render each result with a lightweight template
     #[arg(long, value_name = "TEMPLATE")]
     pub template: Option<String>,
+
+    /// Maximum number of search results to return per query
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
 }
 
 impl BatchSearchArgs {
@@ -420,6 +441,9 @@ impl BatchSearchArgs {
         }
         if self.queries.is_empty() {
             return Err("batch requires at least one query argument or stdin line".to_string());
+        }
+        if matches!(self.limit, Some(0)) {
+            return Err("limit must be at least 1".to_string());
         }
         Ok(())
     }
@@ -1705,6 +1729,45 @@ mod tests {
                 assert_eq!(args.attach.len(), 2);
                 assert_eq!(args.attach[0].to_string_lossy(), "./a.jpg");
                 assert_eq!(args.attach[1].to_string_lossy(), "./b.pdf");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_search_limit_flag() {
+        let cli = Cli::try_parse_from(["kagi", "search", "rust", "--limit", "5"])
+            .expect("search --limit should parse");
+        match cli.command.expect("command") {
+            Commands::Search(args) => {
+                assert_eq!(args.limit, Some(5));
+                assert!(args.validate().is_ok());
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_zero_limit_on_search() {
+        let cli = Cli::try_parse_from(["kagi", "search", "rust", "--limit", "0"])
+            .expect("--limit 0 should parse");
+        match cli.command.expect("command") {
+            Commands::Search(args) => {
+                let error = args.validate().expect_err("zero limit should be rejected");
+                assert!(error.contains("limit must be at least 1"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_zero_limit_on_batch() {
+        let cli = Cli::try_parse_from(["kagi", "batch", "rust", "--limit", "0"])
+            .expect("batch --limit 0 should parse");
+        match cli.command.expect("command") {
+            Commands::Batch(args) => {
+                let error = args.validate().expect_err("zero limit should be rejected");
+                assert!(error.contains("limit must be at least 1"));
             }
             other => panic!("unexpected command: {other:?}"),
         }

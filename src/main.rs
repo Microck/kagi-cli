@@ -130,6 +130,8 @@ async fn run() -> Result<(), KagiError> {
         .ok_or_else(|| KagiError::Config("missing command".to_string()))?
     {
         Commands::Search(args) => {
+            args.validate().map_err(KagiError::Config)?;
+
             let options = SearchRequestOptions {
                 snap: args.snap,
                 lens: args.lens,
@@ -151,7 +153,7 @@ async fn run() -> Result<(), KagiError> {
                 cli::OutputFormat::Csv => "csv",
             };
             if let Some(follow_count) = args.follow {
-                run_search_follow(request, follow_count, profile.as_deref()).await
+                run_search_follow(request, follow_count, args.limit, profile.as_deref()).await
             } else {
                 run_search(
                     request,
@@ -160,6 +162,7 @@ async fn run() -> Result<(), KagiError> {
                     args.template,
                     args.local_cache,
                     args.cache_ttl.unwrap_or(900),
+                    args.limit,
                     profile.as_deref(),
                 )
                 .await
@@ -725,6 +728,7 @@ async fn run() -> Result<(), KagiError> {
                     no_personalized: args.no_personalized,
                 },
                 template: args.template,
+                limit: args.limit,
                 profile: profile.as_deref(),
             })
             .await
@@ -1167,6 +1171,7 @@ fn format_assistant_markdown(response: &crate::types::AssistantPromptResponse) -
         .join("\n\n")
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_search(
     request: search::SearchRequest,
     format: String,
@@ -1174,6 +1179,7 @@ async fn run_search(
     template: Option<String>,
     local_cache: bool,
     cache_ttl: u64,
+    limit: Option<usize>,
     profile: Option<&str>,
 ) -> Result<(), KagiError> {
     let inventory = load_credential_inventory_for_profile(profile)?;
@@ -1184,7 +1190,10 @@ async fn run_search(
     })
     .await?;
     record_history("search", Some(&request.query), Some(response.data.len()))?;
-    let response = apply_local_site_preferences(response)?;
+    let mut response = apply_local_site_preferences(response)?;
+    if let Some(n) = limit {
+        response.data.truncate(n);
+    }
 
     let output = match format.as_str() {
         _ if template.is_some() => {
@@ -1405,6 +1414,7 @@ struct BatchSearchConfig<'a> {
     use_color: bool,
     options: SearchRequestOptions,
     template: Option<String>,
+    limit: Option<usize>,
     profile: Option<&'a str>,
 }
 
@@ -1417,6 +1427,7 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
         use_color,
         options,
         template,
+        limit,
         profile,
     } = config;
 
@@ -1460,7 +1471,12 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
 
     for (query, handle) in handles {
         match handle.await {
-            Ok((completed_query, Ok(output))) => results.push((completed_query, output)),
+            Ok((completed_query, Ok(mut output))) => {
+                if let Some(n) = limit {
+                    output.data.truncate(n);
+                }
+                results.push((completed_query, output));
+            }
             Ok((completed_query, Err(e))) => {
                 error!(query = %completed_query, error = %e, "batch query failed");
                 failures.push(format!("{completed_query}: {e}"));
@@ -1551,12 +1567,16 @@ fn format_batch_failure_message(success_count: usize, failures: &[String]) -> St
 async fn run_search_follow(
     request: search::SearchRequest,
     follow_count: usize,
+    limit: Option<usize>,
     profile: Option<&str>,
 ) -> Result<(), KagiError> {
     let inventory = load_credential_inventory_for_profile(profile)?;
     let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
-    let response =
+    let mut response =
         apply_local_site_preferences(execute_search_request(&request, credentials).await?)?;
+    if let Some(n) = limit {
+        response.data.truncate(n);
+    }
     let token = resolve_session_token(profile)?;
     let mut summaries = Vec::new();
 
@@ -2152,8 +2172,7 @@ mod tests {
         let elapsed = latest.duration_since(start);
         assert!(
             elapsed >= Duration::from_millis(150),
-            "expected throttling to delay final acquisition by at least ~200ms, got {:?}",
-            elapsed
+            "expected throttling to delay final acquisition by at least ~200ms, got {elapsed:?}"
         );
     }
 

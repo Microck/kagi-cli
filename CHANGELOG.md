@@ -7,6 +7,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi search` and `kagi batch` accept `--limit <N>` to cap the number of results returned (truncated locally; Kagi's search endpoints have no native count parameter)
+
 ## [0.5.0]
 
 ### Added

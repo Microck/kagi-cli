@@ -21,4 +21,5 @@ If no query arguments are provided, `batch` reads one query per stdin line.
 kagi batch "rust" "python" "go" --concurrency 3 --rate-limit 60
 printf 'rust\npython\ngo\n' | kagi batch --format compact
 kagi batch "rust" "zig" --template '{{rank}} {{title}} {{url}}'
+kagi batch "rust" "go" --limit 3
 ```
