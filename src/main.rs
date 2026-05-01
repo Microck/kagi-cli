@@ -1882,7 +1882,8 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                 "tools": [
                     {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
                     {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}}
+                    {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
+                    {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}}
                 ]
             }),
             "tools/call" => run_mcp_tool_call(&request, profile).await?,
@@ -1941,6 +1942,22 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
             let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
             let request = search::SearchRequest::new(query.to_string());
             serde_json::to_string_pretty(&execute_quick(&request, &token).await?)?
+        }
+        "kagi_news" => {
+            let category = arguments
+                .get("category")
+                .and_then(Value::as_str)
+                .unwrap_or("world");
+            let lang = arguments
+                .get("lang")
+                .and_then(Value::as_str)
+                .unwrap_or("default");
+            let limit = arguments
+                .get("limit")
+                .and_then(Value::as_u64)
+                .map(|v| v as u32)
+                .unwrap_or(12);
+            serde_json::to_string_pretty(&execute_news(category, limit, lang, None).await?)?
         }
         _ => format!("unsupported tool `{name}`"),
     };

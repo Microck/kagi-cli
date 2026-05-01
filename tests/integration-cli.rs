@@ -677,3 +677,83 @@ fn mcp_initialize_returns_server_info() {
     assert_eq!(response["id"], 1);
     assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
 }
+
+#[test]
+fn mcp_tools_list_includes_news() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let tools = response["result"]["tools"].as_array().expect("tools array");
+    assert!(
+        tools.iter().any(|tool| tool["name"] == "kagi_news"),
+        "expected kagi_news in tools list, got {tools:?}"
+    );
+}
+
+#[test]
+fn mcp_news_tool_call_returns_stories() {
+    let server = MockServer::start();
+    let _latest = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/latest")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_latest_batch());
+    });
+    let _metadata = server.mock(|when, then| {
+        when.method(GET).path("/api/categories/metadata");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_category_metadata());
+    });
+    let _categories = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/batch-1/categories")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_batch_categories());
+    });
+    let _stories = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/batch-1/categories/category-1/stories")
+            .query_param("limit", "3")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_stories());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_news",
+            "arguments": { "category": "tech", "lang": "en", "limit": 3 }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let body: Value = serde_json::from_str(text).expect("inner json parses");
+    assert_eq!(body["category"]["category_name"], "Tech");
+    assert_eq!(body["stories"][0]["title"], "Rust ships new release");
+}
