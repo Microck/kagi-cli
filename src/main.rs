@@ -2022,34 +2022,46 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
             continue;
         }
         let request: Value = serde_json::from_str(&line)?;
-        let id = request.get("id").cloned().unwrap_or(Value::Null);
-        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
-        let result = match method {
-            "initialize" => serde_json::json!({
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {"name": "kagi-cli", "version": env!("CARGO_PKG_VERSION")},
-                "capabilities": {"tools": {}}
-            }),
-            "tools/list" => serde_json::json!({
-                "tools": [
-                    {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}},
-                    {"name": "kagi_news_search", "description": "Search the News tab of kagi.com (clusters of articles)", "inputSchema": {"type": "object"}}
-                ]
-            }),
-            "tools/call" => run_mcp_tool_call(&request, profile).await?,
-            _ => serde_json::json!({"error": format!("unsupported method `{method}`")}),
+        // Notifications have no `id` field; per JSON-RPC 2.0 they must not be answered.
+        let Some(id) = request.get("id").cloned() else {
+            continue;
         };
-        println!(
-            "{}",
-            serde_json::to_string(&serde_json::json!({
+        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+        let response = match method {
+            "initialize" => serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": result,
-            }))?
-        );
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "serverInfo": {"name": "kagi-cli", "version": env!("CARGO_PKG_VERSION")},
+                    "capabilities": {"tools": {}}
+                }
+            }),
+            "tools/list" => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "tools": [
+                        {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
+                        {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
+                        {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
+                        {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}},
+                        {"name": "kagi_news_search", "description": "Search the News tab of kagi.com (clusters of articles)", "inputSchema": {"type": "object"}}
+                    ]
+                }
+            }),
+            "tools/call" => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": run_mcp_tool_call(&request, profile).await?,
+            }),
+            _ => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32601, "message": format!("Method not found: {method}")},
+            }),
+        };
+        println!("{}", serde_json::to_string(&response)?);
     }
     Ok(())
 }
