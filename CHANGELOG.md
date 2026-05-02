@@ -7,15 +7,18 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.5.2]
+
 ### Added
 
 - `kagi mcp` now exposes a `kagi_news` tool that fetches Kagi News stories without authentication (accepts `category`, `limit`, and `lang`)
-- `kagi search --news` searches the News tab of kagi.com and returns results grouped into story clusters (session auth required); supports `--region`, `--time` (day/week/month), `--order` (default/recency/website), and `--limit`
+- `kagi search --news` searches the News tab of kagi.com and returns results grouped into story clusters (session auth required); supports `--region`, `--time` (day/week/month), `--order` (default/recency/website), `--limit`, and local caching
 - `kagi mcp` exposes a `kagi_news_search` tool wrapping the News-tab vertical (accepts `query`, `region`, `freshness`, `order`, `limit`)
 
 ### Fixed
 
 - `kagi news` no longer fails to parse live responses; `total_stories` is now an integer in the output (previously typed as a string, which never matched the API's actual integer payload)
+- `kagi mcp` no longer replies to JSON-RPC notifications and now returns proper JSON-RPC errors for unsupported methods
 
 ## [0.5.1]
 
