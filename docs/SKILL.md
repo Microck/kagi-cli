@@ -69,7 +69,7 @@ export KAGI_API_TOKEN='...'
 
 | Credential | What It Unlocks |
 |------------|-----------------|
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, `search --news`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
 | `KAGI_API_TOKEN` | summarize, fastgpt, enrich web, enrich news |
 | none | news, smallweb, auth status, --help |
 
@@ -90,6 +90,9 @@ kagi search --format pretty "query"
 
 # Search with lens
 kagi search --lens 2 "query"
+
+# News-tab search (returns clusters of articles, session-only)
+kagi search --news "iran"
 
 # Filtered search
 kagi search --time month --region us --order recency "rust release notes"
@@ -436,7 +439,7 @@ kagi batch "topic1" "topic2" "topic3" --format csv > comparison.csv
 
 ## Constraints
 
-- Session token required for: search --lens, quick, ask-page, assistant, translate, summarize --subscriber
+- Session token required for: search --lens, search --news, quick, ask-page, assistant, translate, summarize --subscriber
 - API token required for: summarize (public API), fastgpt, enrich
 - Rate limits apply based on Kagi subscription tier
 - API usage has per-query costs; session-based features included with subscription

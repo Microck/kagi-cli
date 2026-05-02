@@ -178,7 +178,7 @@ fn news_stories() -> Value {
                 "url": "https://example.com/rust-release"
             }
         ],
-        "totalStories": "1",
+        "totalStories": 1,
         "domains": [],
         "readCount": 10
     })
@@ -454,6 +454,165 @@ fn summarize_url_command_prints_structured_json() {
     assert_eq!(body["data"]["output"], "A concise summary.");
 }
 
+fn news_search_html_fixture() -> &'static str {
+    r#"<html><body>
+        <div class="newsResultItem _0_SRI">
+          <span class="newsResultTime">2 hours ago</span>
+          <h3 class="__sri-title-box">
+            <a class="_0_TITLE" data-domain="cnn.com" href="https://www.cnn.com/lead">Lead Story</a>
+          </h3>
+          <div class="trigger paywall-icon"></div>
+          <div class="newsResultContent">Lead snippet.</div>
+        </div>
+        <div class="newsResultGroup">
+          <div class="newsResultItem _0_SRI">
+            <span class="newsResultTime">3 hours ago</span>
+            <h3 class="__sri-title-box">
+              <a class="_0_TITLE" data-domain="theguardian.com" href="https://theguardian.com/a">First in Cluster</a>
+            </h3>
+            <div class="newsResultContent">First cluster snippet.</div>
+          </div>
+          <div class="newsResultItem _0_SRI">
+            <span class="newsResultTime">4 hours ago</span>
+            <h3 class="__sri-title-box">
+              <a class="_0_TITLE" data-domain="bbc.com" href="https://bbc.com/b">Follower</a>
+            </h3>
+          </div>
+        </div>
+      </body></html>"#
+}
+
+#[test]
+fn search_news_returns_clustered_json() {
+    let server = MockServer::start();
+    let _news = server.mock(|when, then| {
+        when.method(GET)
+            .path("/news")
+            .query_param("q", "iran")
+            .query_param("freshness", "day")
+            .query_param("order", "2")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(news_search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "search", "iran", "--news", "--time", "day", "--order", "recency", "--format", "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["query"], "iran");
+    let clusters = body["clusters"].as_array().expect("clusters array");
+    assert_eq!(clusters.len(), 2, "expected ungrouped + grouped clusters");
+    assert_eq!(clusters[0]["items"][0]["title"], "Lead Story");
+    assert_eq!(clusters[0]["items"][0]["source"], "cnn.com");
+    assert_eq!(clusters[0]["items"][0]["time_relative"], "2 hours ago");
+    assert_eq!(clusters[0]["items"][0]["paywall"], true);
+    let cluster_items = clusters[1]["items"].as_array().expect("cluster items");
+    assert_eq!(cluster_items.len(), 2);
+    assert_eq!(cluster_items[1]["source"], "bbc.com");
+    assert_eq!(cluster_items[1]["time_relative"], "4 hours ago");
+}
+
+#[test]
+fn search_news_local_cache_reuses_cached_response() {
+    let server = MockServer::start();
+    let news = server.mock(|when, then| {
+        when.method(GET)
+            .path("/news")
+            .query_param("q", "iran")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(news_search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let cache_dir_value = cache_dir.to_string_lossy().to_string();
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir_value));
+
+    let first = run_kagi(
+        &[
+            "search",
+            "iran",
+            "--news",
+            "--local-cache",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+    assert_success(&first);
+
+    let second = run_kagi(
+        &[
+            "search",
+            "iran",
+            "--news",
+            "--local-cache",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+    assert_success(&second);
+
+    news.assert_calls(1);
+    assert_eq!(first.stdout, second.stdout);
+}
+
+#[test]
+fn search_news_rejects_lens_combination() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = [("KAGI_SESSION_TOKEN", "test-session")];
+    let output = run_kagi(
+        &["search", "iran", "--news", "--lens", "1"],
+        &env,
+        tempdir.path(),
+    );
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for --news --lens"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--lens"),
+        "expected --lens conflict in stderr: {stderr}"
+    );
+}
+
+#[test]
+fn search_news_rejects_time_year() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = [("KAGI_SESSION_TOKEN", "test-session")];
+    let output = run_kagi(
+        &["search", "iran", "--news", "--time", "year"],
+        &env,
+        tempdir.path(),
+    );
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for --news --time year"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--time year"),
+        "expected --time year rejection in stderr: {stderr}"
+    );
+}
+
 #[test]
 fn news_command_resolves_category_and_prints_json() {
     let server = MockServer::start();
@@ -676,4 +835,133 @@ fn mcp_initialize_returns_server_info() {
     let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
     assert_eq!(response["id"], 1);
     assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
+}
+
+#[test]
+fn mcp_tools_list_includes_news() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let tools = response["result"]["tools"].as_array().expect("tools array");
+    assert!(
+        tools.iter().any(|tool| tool["name"] == "kagi_news"),
+        "expected kagi_news in tools list, got {tools:?}"
+    );
+}
+
+#[test]
+fn mcp_news_tool_call_returns_stories() {
+    let server = MockServer::start();
+    let _latest = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/latest")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_latest_batch());
+    });
+    let _metadata = server.mock(|when, then| {
+        when.method(GET).path("/api/categories/metadata");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_category_metadata());
+    });
+    let _categories = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/batch-1/categories")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_batch_categories());
+    });
+    let _stories = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/batch-1/categories/category-1/stories")
+            .query_param("limit", "3")
+            .query_param("lang", "en");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_stories());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_news",
+            "arguments": { "category": "tech", "lang": "en", "limit": 3 }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let body: Value = serde_json::from_str(text).expect("inner json parses");
+    assert_eq!(body["category"]["category_name"], "Tech");
+    assert_eq!(body["stories"][0]["title"], "Rust ships new release");
+}
+
+#[test]
+fn mcp_news_search_tool_call_returns_clusters() {
+    let server = MockServer::start();
+    let _news = server.mock(|when, then| {
+        when.method(GET)
+            .path("/news")
+            .query_param("q", "iran")
+            .query_param("freshness", "day")
+            .query_param("order", "2")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(news_search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_news_search",
+            "arguments": {
+                "query": "iran",
+                "freshness": "day",
+                "order": "recency"
+            }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let body: Value = serde_json::from_str(text).expect("inner json parses");
+    assert_eq!(body["query"], "iran");
+    let clusters = body["clusters"].as_array().expect("clusters array");
+    assert_eq!(clusters.len(), 2);
+    assert_eq!(clusters[0]["items"][0]["title"], "Lead Story");
+    assert_eq!(clusters[0]["items"][0]["paywall"], true);
+    assert_eq!(clusters[1]["items"].as_array().unwrap().len(), 2);
 }

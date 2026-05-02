@@ -33,6 +33,33 @@ This page documents the current CLI output behavior as implemented in the repo.
 }
 ```
 
+### `kagi search --news`
+
+The News tab vertical returns a different shape — clusters of articles:
+
+```json
+{
+  "query": "iran",
+  "clusters": [
+    {
+      "items": [
+        {
+          "title": "Headline",
+          "url": "https://www.example.com/article",
+          "source": "example.com",
+          "time_relative": "2 hours ago",
+          "snippet": "Optional snippet text.",
+          "paywall": false,
+          "image_url": "https://img.example/lead.jpg"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`time_relative` is preserved verbatim from Kagi's page (the News tab does not expose absolute timestamps). Single-item clusters represent ungrouped articles at the top of the results page.
+
 ### `kagi batch`
 
 Default JSON output uses a structured envelope:
@@ -105,7 +132,7 @@ Subscriber mode:
     "category_name": "Technology"
   },
   "stories": [],
-  "total_stories": "20",
+  "total_stories": 20,
   "domains": [],
   "read_count": 1234
 }

@@ -4,13 +4,15 @@
 //! by Kagi's web search endpoint. Also parses assistant profiles, threads,
 //! custom bangs, and lens details from their respective HTML pages.
 
+use std::collections::HashSet;
+
 use scraper::{Html, Selector};
 
 use crate::error::KagiError;
 use crate::types::{
     AssistantProfileDetails, AssistantProfileSummary, AssistantThreadSummary, CustomBangDetails,
-    CustomBangSummary, LensDetails, LensSummary, RedirectRuleDetails, RedirectRuleSummary,
-    SearchResult,
+    CustomBangSummary, LensDetails, LensSummary, NewsSearchCluster, NewsSearchResult,
+    RedirectRuleDetails, RedirectRuleSummary, SearchResult,
 };
 
 /// Parse Kagi search results from HTML.
@@ -50,6 +52,122 @@ pub fn parse_search_results(html: &str) -> Result<Vec<SearchResult>, KagiError> 
     }
 
     Ok(results)
+}
+
+/// Parse Kagi News-tab search results (the `/news?q=...` page).
+///
+/// Returns clusters in document order. Items appearing inside a `.newsResultGroup`
+/// share a cluster; items appearing outside any group become single-item clusters.
+pub fn parse_news_search_results(html: &str) -> Result<Vec<NewsSearchCluster>, KagiError> {
+    let document = Html::parse_document(html);
+
+    let group_selector = selector(".newsResultGroup")?;
+    let item_selector = selector(".newsResultItem._0_SRI")?;
+    let combined_selector = selector(".newsResultGroup, .newsResultItem._0_SRI")?;
+    let title_link_selector = selector("a._0_TITLE")?;
+    let time_selector = selector(".newsResultTime")?;
+    let snippet_selector = selector(".newsResultContent")?;
+    let paywall_selector = selector(".paywall-icon")?;
+    let image_selector = selector(".newsResultImage img")?;
+
+    // Track which items are inside a group so the unified walk can skip them.
+    let mut claimed = HashSet::new();
+    for group in document.select(&group_selector) {
+        for item in group.select(&item_selector) {
+            claimed.insert(item.id());
+        }
+    }
+
+    let mut clusters = Vec::new();
+    for element in document.select(&combined_selector) {
+        let is_group = element.value().classes().any(|c| c == "newsResultGroup");
+        if is_group {
+            let items: Vec<NewsSearchResult> = element
+                .select(&item_selector)
+                .filter_map(|item| {
+                    extract_news_item(
+                        &item,
+                        &title_link_selector,
+                        &time_selector,
+                        &snippet_selector,
+                        &paywall_selector,
+                        &image_selector,
+                    )
+                })
+                .collect();
+            if !items.is_empty() {
+                clusters.push(NewsSearchCluster { items });
+            }
+        } else if !claimed.contains(&element.id())
+            && let Some(item) = extract_news_item(
+                &element,
+                &title_link_selector,
+                &time_selector,
+                &snippet_selector,
+                &paywall_selector,
+                &image_selector,
+            )
+        {
+            clusters.push(NewsSearchCluster { items: vec![item] });
+        }
+    }
+
+    Ok(clusters)
+}
+
+fn extract_news_item(
+    element: &scraper::element_ref::ElementRef<'_>,
+    title_link_selector: &Selector,
+    time_selector: &Selector,
+    snippet_selector: &Selector,
+    paywall_selector: &Selector,
+    image_selector: &Selector,
+) -> Option<NewsSearchResult> {
+    let link = element.select(title_link_selector).next()?;
+    let url = link.value().attr("href")?.trim().to_string();
+    let title = link.text().collect::<String>().trim().to_string();
+    if title.is_empty() || url.is_empty() {
+        return None;
+    }
+
+    let source = link
+        .value()
+        .attr("data-domain")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let time_relative = element
+        .select(time_selector)
+        .next()
+        .map(|node| node.text().collect::<String>().trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let snippet = element
+        .select(snippet_selector)
+        .next()
+        .map(|node| node.text().collect::<String>().trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let paywall = element.select(paywall_selector).next().is_some();
+
+    let image_url = element
+        .select(image_selector)
+        .next()
+        .and_then(|node| node.value().attr("src"))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    Some(NewsSearchResult {
+        title,
+        url,
+        source,
+        time_relative,
+        snippet,
+        paywall,
+        image_url,
+    })
 }
 
 /// Parses a list of assistant threads from the Kagi settings HTML.
@@ -653,7 +771,7 @@ mod tests {
     use super::{
         parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
         parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
-        parse_redirect_form, parse_redirect_list, parse_search_results,
+        parse_news_search_results, parse_redirect_form, parse_redirect_list, parse_search_results,
     };
     use crate::error::KagiError;
 
@@ -1034,5 +1152,83 @@ mod tests {
             details.rule,
             "^https://www.reddit.com|https://old.reddit.com"
         );
+    }
+
+    #[test]
+    fn parses_news_search_clusters_and_ungrouped_items() {
+        let html = r#"
+        <html><body>
+          <div class="newsResultItem _0_SRI">
+            <div class="newsResultHeader">
+              <span class="newsResultTime">2 hours ago</span>
+              <h3 class="__sri-title-box">
+                <a class="_0_URL _0_TITLE" data-domain="cnn.com" href="https://www.cnn.com/lead">Lead Story</a>
+              </h3>
+              <div class="trigger paywall-icon"></div>
+            </div>
+            <div class="newsResultBody">
+              <div class="newsResultContent">Lead story snippet.</div>
+            </div>
+            <div class="newsResultImage"><img src="https://img.example/lead.jpg" /></div>
+          </div>
+          <div class="newsResultGroup">
+            <div class="newsResultItem _0_SRI">
+              <span class="newsResultTime">3 hours ago</span>
+              <h3 class="__sri-title-box">
+                <a class="_0_TITLE" data-domain="theguardian.com" href="https://theguardian.com/a">First in Cluster</a>
+              </h3>
+              <div class="newsResultContent">First snippet.</div>
+            </div>
+            <div class="newsResultItem _0_SRI">
+              <span class="newsResultTime">4 hours ago</span>
+              <h3 class="__sri-title-box">
+                <a class="_0_TITLE" data-domain="bbc.com" href="https://bbc.com/b">Follower One</a>
+              </h3>
+            </div>
+            <div class="newsResultItem _0_SRI">
+              <h3 class="__sri-title-box">
+                <a class="_0_TITLE" data-domain="reuters.com" href="https://reuters.com/c">Follower Two</a>
+              </h3>
+              <div class="newsResultContent">Follower two snippet.</div>
+            </div>
+          </div>
+        </body></html>
+        "#;
+
+        let clusters = parse_news_search_results(html).expect("news parser should succeed");
+        assert_eq!(clusters.len(), 2, "expected ungrouped + grouped cluster");
+
+        let ungrouped = &clusters[0];
+        assert_eq!(ungrouped.items.len(), 1);
+        let lead = &ungrouped.items[0];
+        assert_eq!(lead.title, "Lead Story");
+        assert_eq!(lead.url, "https://www.cnn.com/lead");
+        assert_eq!(lead.source.as_deref(), Some("cnn.com"));
+        assert_eq!(lead.time_relative.as_deref(), Some("2 hours ago"));
+        assert_eq!(lead.snippet.as_deref(), Some("Lead story snippet."));
+        assert!(lead.paywall);
+        assert_eq!(
+            lead.image_url.as_deref(),
+            Some("https://img.example/lead.jpg")
+        );
+
+        let cluster = &clusters[1];
+        assert_eq!(cluster.items.len(), 3);
+        assert_eq!(cluster.items[0].title, "First in Cluster");
+        assert_eq!(cluster.items[0].source.as_deref(), Some("theguardian.com"));
+        assert_eq!(
+            cluster.items[1].time_relative.as_deref(),
+            Some("4 hours ago")
+        );
+        assert!(cluster.items[1].snippet.is_none());
+        assert_eq!(cluster.items[2].source.as_deref(), Some("reuters.com"));
+        assert!(!cluster.items[2].paywall);
+    }
+
+    #[test]
+    fn news_search_parser_returns_empty_when_no_items() {
+        let html = "<html><body><div>nothing here</div></body></html>";
+        let clusters = parse_news_search_results(html).expect("parser should succeed");
+        assert!(clusters.is_empty());
     }
 }

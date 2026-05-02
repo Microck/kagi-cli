@@ -173,7 +173,7 @@ kagi news --filter-keyword trump --filter-scope title
     "category_name": "Technology"
   },
   "stories": [],
-  "total_stories": "20",
+  "total_stories": 20,
   "domains": [],
   "read_count": 1234,
   "content_filter": {
@@ -194,7 +194,7 @@ kagi news --filter-keyword trump --filter-scope title
 | `latest_batch` | object | Metadata for the current news batch |
 | `category` | object | Resolved category metadata |
 | `stories` | array | Raw story payloads returned by Kagi News |
-| `total_stories` | string | Total number of stories in the category |
+| `total_stories` | integer | Total number of stories in the category |
 | `domains` | array | Domain-level metadata from the feed |
 | `read_count` | integer | Aggregate read count for the category |
 | `content_filter` | object | Present when local content filters are active |
