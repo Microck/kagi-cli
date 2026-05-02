@@ -416,7 +416,7 @@ pub async fn execute_search(
 }
 
 /// Freshness window for News-tab search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NewsFreshness {
     Day,
     Week,
@@ -434,7 +434,7 @@ impl NewsFreshness {
 }
 
 /// Sort order for News-tab search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NewsSearchOrder {
     Default,
     Recency,
@@ -451,7 +451,7 @@ impl NewsSearchOrder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 /// Parameters for a News-tab search request (kagi.com/news).
 pub struct NewsSearchRequest {
     pub query: String,

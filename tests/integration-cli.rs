@@ -523,6 +523,57 @@ fn search_news_returns_clustered_json() {
 }
 
 #[test]
+fn search_news_local_cache_reuses_cached_response() {
+    let server = MockServer::start();
+    let news = server.mock(|when, then| {
+        when.method(GET)
+            .path("/news")
+            .query_param("q", "iran")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(news_search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let cache_dir_value = cache_dir.to_string_lossy().to_string();
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir_value));
+
+    let first = run_kagi(
+        &[
+            "search",
+            "iran",
+            "--news",
+            "--local-cache",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+    assert_success(&first);
+
+    let second = run_kagi(
+        &[
+            "search",
+            "iran",
+            "--news",
+            "--local-cache",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+    assert_success(&second);
+
+    news.assert_calls(1);
+    assert_eq!(first.stdout, second.stdout);
+}
+
+#[test]
 fn search_news_rejects_lens_combination() {
     let tempdir = TempDir::new().expect("tempdir");
     let env = [("KAGI_SESSION_TOKEN", "test-session")];

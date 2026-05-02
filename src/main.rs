@@ -136,7 +136,14 @@ async fn run() -> Result<(), KagiError> {
                 args.validate_news_search().map_err(KagiError::Config)?;
                 let token = resolve_session_token(profile.as_deref())?;
                 let request = build_news_search_request(&args);
-                let response = search::execute_news_search(&request, &token).await?;
+                let response = cached_json(
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(900),
+                    "news-search",
+                    &request,
+                    || async { search::execute_news_search(&request, &token).await },
+                )
+                .await?;
                 return print_news_search(&response, &args.format, !args.no_color);
             }
 
