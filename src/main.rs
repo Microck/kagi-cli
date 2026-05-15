@@ -162,6 +162,7 @@ async fn run() -> Result<(), KagiError> {
             let request = build_search_request(args.query, &options);
             let format_str = match args.format {
                 cli::OutputFormat::Json => "json",
+                cli::OutputFormat::Toon => "toon",
                 cli::OutputFormat::Pretty => "pretty",
                 cli::OutputFormat::Compact => "compact",
                 cli::OutputFormat::Markdown => "markdown",
@@ -427,6 +428,7 @@ async fn run() -> Result<(), KagiError> {
             };
             let format_str = match args.format {
                 cli::QuickOutputFormat::Json => "json",
+                cli::QuickOutputFormat::Toon => "toon",
                 cli::QuickOutputFormat::Pretty => "pretty",
                 cli::QuickOutputFormat::Compact => "compact",
                 cli::QuickOutputFormat::Markdown => "markdown",
@@ -719,6 +721,7 @@ async fn run() -> Result<(), KagiError> {
 
             let format_str = match args.format {
                 cli::OutputFormat::Json => "json",
+                cli::OutputFormat::Toon => "toon",
                 cli::OutputFormat::Pretty => "pretty",
                 cli::OutputFormat::Compact => "compact",
                 cli::OutputFormat::Markdown => "markdown",
@@ -1015,6 +1018,13 @@ fn print_compact_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
     Ok(())
 }
 
+fn print_toon<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
+    let value = serde_json::to_value(value)
+        .map_err(|error| KagiError::Parse(format!("failed to serialize TOON output: {error}")))?;
+    println!("{}", toon::encode(&value, None));
+    Ok(())
+}
+
 async fn cached_json<T, K, Fut, F>(
     enabled: bool,
     ttl_seconds: u64,
@@ -1100,6 +1110,7 @@ fn print_quick_response(
             println!("{}", format_quick_pretty(response, use_color));
             Ok(())
         }
+        "toon" => print_toon(response),
         "compact" => print_compact_json(response),
         "markdown" => {
             println!("{}", format_quick_markdown(response));
@@ -1119,6 +1130,7 @@ fn print_assistant_response(
             println!("{}", format_assistant_pretty(response, use_color));
             Ok(())
         }
+        AssistantOutputFormat::Toon => print_toon(response),
         AssistantOutputFormat::Compact => print_compact_json(response),
         AssistantOutputFormat::Markdown => {
             println!("{}", format_assistant_markdown(response));
@@ -1215,6 +1227,9 @@ async fn run_search(
             format_template_response(&response, template.as_deref().unwrap())
         }
         "pretty" => format_pretty_response(&response, use_color),
+        "toon" => {
+            return print_toon(&response);
+        }
         "compact" => serde_json::to_string(&response).map_err(|error| {
             KagiError::Parse(format!("failed to serialize search response: {error}"))
         })?,
@@ -1396,6 +1411,7 @@ fn print_news_search(
 ) -> Result<(), KagiError> {
     match format {
         OutputFormat::Json => print_json(response),
+        OutputFormat::Toon => print_toon(response),
         OutputFormat::Compact => print_compact_json(response),
         OutputFormat::Pretty => {
             println!("{}", format_pretty_news_response(response, use_color));
@@ -1647,7 +1663,7 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
         }
     }
 
-    if !failures.is_empty() && (format == "json" || format == "compact") {
+    if !failures.is_empty() && (format == "json" || format == "compact" || format == "toon") {
         // For machine-readable formats, exit with error code if any queries failed
         return Err(KagiError::Batch(format_batch_failure_message(
             results.len(),
@@ -1658,7 +1674,7 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
     let success_count = results.len();
 
     // Output results in order
-    if format == "json" || format == "compact" {
+    if format == "json" || format == "compact" || format == "toon" {
         // For machine-readable formats, create a proper JSON envelope
         let queries: Vec<String> = results.iter().map(|(query, _)| query.clone()).collect();
         let results_payload = results
@@ -1677,6 +1693,8 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
 
         if format == "compact" {
             println!("{}", serde_json::to_string(&results_json)?);
+        } else if format == "toon" {
+            println!("{}", toon::encode(&results_json, None));
         } else {
             println!("{}", serde_json::to_string_pretty(&results_json)?);
         }
@@ -1866,6 +1884,7 @@ async fn run_watch(args: WatchArgs, profile: Option<&str>) -> Result<(), KagiErr
 
         match format.as_str() {
             "compact" => print_compact_json(&event)?,
+            "toon" => print_toon(&event)?,
             "pretty" => println!(
                 "watch #{iteration}: {} added, {} removed",
                 event["added"].as_array().map_or(0, Vec::len),

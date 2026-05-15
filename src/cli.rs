@@ -30,6 +30,8 @@ pub enum AssistantThreadExportFormat {
 pub enum OutputFormat {
     /// JSON output (default) - structured data for scripts and APIs
     Json,
+    /// TOON output - token-efficient structured data for LLM context
+    Toon,
     /// Pretty formatted output with colors - human-readable terminal display
     Pretty,
     /// Compact JSON output - minified JSON for reduced size
@@ -44,6 +46,7 @@ impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Json => write!(f, "json"),
+            Self::Toon => write!(f, "toon"),
             Self::Pretty => write!(f, "pretty"),
             Self::Compact => write!(f, "compact"),
             Self::Markdown => write!(f, "markdown"),
@@ -57,6 +60,8 @@ impl std::fmt::Display for OutputFormat {
 pub enum QuickOutputFormat {
     /// JSON output (default) - structured data for scripts and APIs
     Json,
+    /// TOON output - token-efficient structured data for LLM context
+    Toon,
     /// Pretty formatted output with colors - human-readable terminal display
     Pretty,
     /// Compact JSON output - minified JSON for reduced size
@@ -69,6 +74,7 @@ impl std::fmt::Display for QuickOutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Json => write!(f, "json"),
+            Self::Toon => write!(f, "toon"),
             Self::Pretty => write!(f, "pretty"),
             Self::Compact => write!(f, "compact"),
             Self::Markdown => write!(f, "markdown"),
@@ -80,6 +86,7 @@ impl std::fmt::Display for QuickOutputFormat {
 /// Output format for assistant responses.
 pub enum AssistantOutputFormat {
     Json,
+    Toon,
     Pretty,
     Compact,
     Markdown,
@@ -89,6 +96,7 @@ impl std::fmt::Display for AssistantOutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Json => write!(f, "json"),
+            Self::Toon => write!(f, "toon"),
             Self::Pretty => write!(f, "pretty"),
             Self::Compact => write!(f, "compact"),
             Self::Markdown => write!(f, "markdown"),
@@ -176,7 +184,7 @@ impl NewsFilterScope {
 
 Features:
 • Shell completion generation (bash, zsh, fish, powershell)
-• Multiple output formats (json, pretty, compact, markdown, csv)
+• Multiple output formats (json, toon, pretty, compact, markdown, csv)
 • Parallel batch searches with rate limiting
 • Colorized terminal output (disable with --no-color)
 • Full Kagi API coverage with session token support",
@@ -206,7 +214,7 @@ pub enum Commands {
     /// Example: kagi search "rust programming" --format pretty
     ///
     /// Features:
-    /// • Multiple output formats: json (default), pretty, compact, markdown, csv
+    /// • Multiple output formats: json (default), toon, pretty, compact, markdown, csv
     /// • Colorized pretty output (disable with --no-color)
     /// • Lens support for scoped searches
     /// • Region, time, date, order, verbatim, and personalization filters
@@ -254,7 +262,7 @@ pub enum Commands {
     /// Features:
     /// • Parallel execution with configurable concurrency
     /// • Token bucket rate limiting to respect API limits
-    /// • All output formats supported (json, pretty, compact, markdown, csv)
+    /// • All output formats supported (json, toon, pretty, compact, markdown, csv)
     /// • Lens support for scoped searches
     /// • Shared region, time, date, order, verbatim, and personalization filters
     /// • Color output control with --no-color

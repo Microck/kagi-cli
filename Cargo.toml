@@ -38,6 +38,7 @@ toml = "1.1.2"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 mime_guess = "2.0.5"
+toon = "0.1.2"
 
 [dev-dependencies]
 httpmock = "0.8.3"
