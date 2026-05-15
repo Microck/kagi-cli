@@ -7,6 +7,13 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.5.3]
+
+### Added
+
+- Added `--format toon` for compact structured output across CLI commands that support formatted responses
+- Documented TOON output in the README, command reference, output contract, coverage reference, and bundled skill docs
+
 ## [0.5.2]
 
 ### Added
