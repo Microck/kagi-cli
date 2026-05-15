@@ -161,8 +161,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 
 | command | purpose |
 | --- | --- |
-| `kagi search` | search Kagi with `json` by default, or render as `pretty`, `compact`, `markdown`, or `csv` |
-| `kagi batch` | run multiple searches in parallel with JSON, compact, pretty, markdown, or csv output and shared filters |
+| `kagi search` | search Kagi with `json` by default, or render as `toon`, `pretty`, `compact`, `markdown`, or `csv` |
+| `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
@@ -182,7 +182,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi bang custom` | list, inspect, create, update, and delete custom bangs |
 | `kagi redirect` | list, inspect, create, update, enable, disable, and delete redirect rules |
 
-for automation, stdout stays JSON by default. `--format pretty` only changes rendering for humans.
+for automation, stdout stays JSON by default. Use `--format toon` for token-efficient structured output in LLM context. `--format pretty` only changes rendering for humans.
 
 ## shell completion
 

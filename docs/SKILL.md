@@ -106,7 +106,7 @@ kagi search --limit 5 "rust release notes"
 # Per-request personalization override
 kagi search --no-personalized "rust release notes"
 
-# Output formats: json (default), pretty, compact, markdown, csv
+# Output formats: json (default), toon, pretty, compact, markdown, csv
 kagi search --format markdown "query" > results.md
 ```
 

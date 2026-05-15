@@ -215,6 +215,38 @@ fn search_command_returns_json_from_mock_api() {
 }
 
 #[test]
+fn search_command_returns_toon_from_mock_api() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v0/search")
+            .query_param("q", "rust programming")
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust Programming Language",
+                "https://www.rust-lang.org",
+                "Reliable systems programming.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["search", "rust programming", "--format", "toon"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("data"));
+    assert!(stdout.contains("Rust Programming Language"));
+    assert!(stdout.contains("https://www.rust-lang.org"));
+}
+
+#[test]
 fn search_command_pretty_format_prints_ranked_results() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
