@@ -1084,7 +1084,7 @@ fn mcp_tool_call_error_returns_json_rpc_error_and_keeps_server_alive() {
     );
     assert_eq!(error_resp["error"]["code"], -32000);
     assert!(
-        error_resp["error"]["message"].as_str().unwrap().len() > 0,
+        !error_resp["error"]["message"].as_str().unwrap().is_empty(),
         "error message should be non-empty"
     );
 
