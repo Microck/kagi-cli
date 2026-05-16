@@ -1022,8 +1022,7 @@ fn mcp_tool_call_error_returns_json_rpc_error_and_keeps_server_alive() {
             .json_body(news_category_metadata());
     });
     let _categories = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/batches/batch-1/categories");
+        when.method(GET).path("/api/batches/batch-1/categories");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(news_batch_categories());
