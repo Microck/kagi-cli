@@ -997,3 +997,102 @@ fn mcp_news_search_tool_call_returns_clusters() {
     assert_eq!(clusters[0]["items"][0]["paywall"], true);
     assert_eq!(clusters[1]["items"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn mcp_tool_call_error_returns_json_rpc_error_and_keeps_server_alive() {
+    let server = MockServer::start();
+
+    // Mock search endpoint to return a 500 error, simulating a backend failure.
+    let _search = server.mock(|when, then| {
+        when.method(GET).path("/search");
+        then.status(500).body("Internal Server Error");
+    });
+
+    // Mock news endpoints so kagi_news succeeds — proving the server survived.
+    let _latest = server.mock(|when, then| {
+        when.method(GET).path("/api/batches/latest");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_latest_batch());
+    });
+    let _metadata = server.mock(|when, then| {
+        when.method(GET).path("/api/categories/metadata");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_category_metadata());
+    });
+    let _categories = server.mock(|when, then| {
+        when.method(GET).path("/api/batches/batch-1/categories");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_batch_categories());
+    });
+    let _stories = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/batches/batch-1/categories/category-1/stories");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(news_stories());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+
+    // Send a search tool call (will fail) followed by a news tool call (should succeed).
+    let failing_request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_search",
+            "arguments": { "query": "test" }
+        }
+    });
+    let succeeding_request = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_news",
+            "arguments": { "category": "tech", "lang": "en", "limit": 3 }
+        }
+    });
+
+    let stdin = format!(
+        "{}\n{}\n",
+        serde_json::to_string(&failing_request).unwrap(),
+        serde_json::to_string(&succeeding_request).unwrap(),
+    );
+
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let responses: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each line is valid JSON"))
+        .collect();
+
+    assert_eq!(responses.len(), 2, "expected two JSON-RPC responses");
+
+    // First response: the failed tool call should be a JSON-RPC error, not a crash.
+    let error_resp = &responses[0];
+    assert_eq!(error_resp["id"], 1);
+    assert!(
+        error_resp.get("error").is_some(),
+        "expected JSON-RPC error for failed tool call, got: {error_resp}"
+    );
+    assert_eq!(error_resp["error"]["code"], -32000);
+    assert!(
+        !error_resp["error"]["message"].as_str().unwrap().is_empty(),
+        "error message should be non-empty"
+    );
+
+    // Second response: the server stayed alive and processed the next request.
+    let success_resp = &responses[1];
+    assert_eq!(success_resp["id"], 2);
+    assert!(
+        success_resp.get("result").is_some(),
+        "expected successful result for second tool call, got: {success_resp}"
+    );
+}

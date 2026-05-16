@@ -7,6 +7,9 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+- MCP server no longer crashes when a tool call fails; instead propogate errors as JSON-RPC responses.
+
 ## [0.5.3]
 
 ### Added

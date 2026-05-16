@@ -2076,11 +2076,18 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                     ]
                 }
             }),
-            "tools/call" => serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": run_mcp_tool_call(&request, profile).await?,
-            }),
+            "tools/call" => match run_mcp_tool_call(&request, profile).await {
+                Ok(result) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": result,
+                }),
+                Err(error) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32000, "message": error.to_string()},
+                }),
+            },
             _ => serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
