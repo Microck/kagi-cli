@@ -144,11 +144,11 @@ echo "🔍 Researching: $TOPIC"
 echo ""
 
 echo "Web Resources:"
-kagi enrich web "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+kagi enrich web "$TOPIC" | jq -r '.data[0:5] | .[] | "* \(.title)\n  \(.url)"'
 
 echo ""
 echo "News Coverage:"
-kagi enrich news "$TOPIC" | jq -r '.data[0:5] | .[] | "• \(.title)\n  \(.url)"'
+kagi enrich news "$TOPIC" | jq -r '.data[0:5] | .[] | "* \(.title)\n  \(.url)"'
 ```
 
 ## Comparison with Standard Search

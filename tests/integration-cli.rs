@@ -1008,7 +1008,7 @@ fn mcp_tool_call_error_returns_json_rpc_error_and_keeps_server_alive() {
         then.status(500).body("Internal Server Error");
     });
 
-    // Mock news endpoints so kagi_news succeeds — proving the server survived.
+    // Mock news endpoints so kagi_news succeeds -- proving the server survived.
     let _latest = server.mock(|when, then| {
         when.method(GET).path("/api/batches/latest");
         then.status(200)

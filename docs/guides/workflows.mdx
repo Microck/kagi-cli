@@ -32,22 +32,22 @@ echo ""
 
 echo "📰 Technology"
 echo "-------------"
-kagi news --category tech --limit 5 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+kagi news --category tech --limit 5 | jq -r '.stories[] | "* \(.title)\n  \(.articles[0].link)\n"'
 
 echo ""
 echo "🌍 World News"
 echo "-------------"
-kagi news --category world --limit 5 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+kagi news --category world --limit 5 | jq -r '.stories[] | "* \(.title)\n  \(.articles[0].link)\n"'
 
 echo ""
 echo "💼 Business"
 echo "------------"
-kagi news --category business --limit 3 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+kagi news --category business --limit 3 | jq -r '.stories[] | "* \(.title)\n  \(.articles[0].link)\n"'
 
 echo ""
 echo "🔬 Science"
 echo "-----------"
-kagi news --category science --limit 3 | jq -r '.stories[] | "• \(.title)\n  \(.articles[0].link)\n"'
+kagi news --category science --limit 3 | jq -r '.stories[] | "* \(.title)\n  \(.articles[0].link)\n"'
 ```
 
 **Usage:**
@@ -127,7 +127,7 @@ echo ""
 echo "📚 Quick Research:"
 echo "------------------"
 # Example: get latest on your tech stack
-kagi news --category tech --limit 3 | jq -r '.stories[] | "• \(.title)"'
+kagi news --category tech --limit 3 | jq -r '.stories[] | "* \(.title)"'
 ```
 
 ## Research & Investigation Workflows
