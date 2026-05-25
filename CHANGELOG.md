@@ -7,6 +7,14 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+
+- Added `kagi extract <URL>` to extract a page's full content as markdown through Kagi's v1 Extract API.
+- Added the matching MCP `kagi_extract` tool for full-page markdown extraction.
+- Documented Extract API auth, command usage, and coverage across the README and docs site.
+
 ## [0.5.4]
 
 ### Fixed
