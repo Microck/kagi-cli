@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.6.2]
+
+### Added
+
+- Added `kagi_extract` to the built-in MCP server tool list, matching the existing paid Extract API command behavior.
+
 ## [0.6.1]
 
 ### Changed

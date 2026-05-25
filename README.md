@@ -177,7 +177,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi fastgpt` | query FastGPT through the paid API |
 | `kagi enrich` | query Kagi's web and news enrichment indexes |
 | `kagi smallweb` | fetch the Kagi Small Web feed |
-| `kagi mcp` | run a stdio MCP server exposing search, summarize, and quick-answer tools |
+| `kagi mcp` | run a stdio MCP server exposing search, summarize, extract, quick-answer, and news tools |
 | `kagi site-pref` | manage local domain preferences that filter/reorder CLI search output |
 | `kagi lens` | list, inspect, create, update, enable, disable, and delete search lenses |
 | `kagi bang custom` | list, inspect, create, update, and delete custom bangs |

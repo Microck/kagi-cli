@@ -32,3 +32,4 @@ vendor/
 coverage/
 .cache/
 tmp/
+.residue/
