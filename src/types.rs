@@ -106,6 +106,47 @@ pub struct SummarizeResponse {
     pub data: Summarization,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Request body for Kagi's v1 content extraction endpoint.
+pub struct ExtractRequest {
+    pub pages: Vec<ExtractPageInput>,
+    pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single page input for content extraction.
+pub struct ExtractPageInput {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// Metadata returned by the v1 extraction endpoint.
+pub struct ExtractMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Extracted content for one page.
+pub struct ExtractPageOutput {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Response from Kagi's v1 content extraction endpoint.
+pub struct ExtractResponse {
+    pub meta: ExtractMeta,
+    pub data: Vec<ExtractPageOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<Value>>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 /// Metadata for the subscriber-mode summarization endpoint.
 pub struct SubscriberSummarizeMeta {

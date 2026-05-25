@@ -22,8 +22,8 @@ use crate::api::{
     execute_custom_assistant_create, execute_custom_assistant_delete, execute_custom_assistant_get,
     execute_custom_assistant_list, execute_custom_assistant_update, execute_custom_bang_create,
     execute_custom_bang_delete, execute_custom_bang_get, execute_custom_bang_list,
-    execute_custom_bang_update, execute_enrich_news, execute_enrich_web, execute_fastgpt,
-    execute_lens_create, execute_lens_delete, execute_lens_get, execute_lens_list,
+    execute_custom_bang_update, execute_enrich_news, execute_enrich_web, execute_extract,
+    execute_fastgpt, execute_lens_create, execute_lens_delete, execute_lens_get, execute_lens_list,
     execute_lens_set_enabled, execute_lens_update, execute_news, execute_news_categories,
     execute_news_chaos, execute_news_filter_presets, execute_redirect_create,
     execute_redirect_delete, execute_redirect_get, execute_redirect_list,
@@ -251,6 +251,12 @@ async fn run() -> Result<(), KagiError> {
                 .await?;
                 print_json(&response)
             }
+        }
+        Commands::Extract(args) => {
+            let token = resolve_api_token(profile.as_deref())?;
+            let markdown = execute_extract(&args.url, &token).await?;
+            println!("{markdown}");
+            Ok(())
         }
         Commands::News(args) => {
             args.validate().map_err(KagiError::Config)?;
@@ -2070,6 +2076,7 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                     "tools": [
                         {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
                         {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
+                        {"name": "kagi_extract", "description": "Extract a page's full content as markdown", "inputSchema": {"type": "object"}},
                         {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
                         {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}},
                         {"name": "kagi_news_search", "description": "Search the News tab of kagi.com (clusters of articles)", "inputSchema": {"type": "object"}}
@@ -2135,6 +2142,11 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
                     cache: None,
                 };
                 serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
+            }
+            "kagi_extract" => {
+                let token = resolve_api_token(profile)?;
+                let url = arguments.get("url").and_then(Value::as_str).unwrap_or("");
+                execute_extract(url, &token).await?
             }
             "kagi_quick" => {
                 let token = resolve_session_token(profile)?;
