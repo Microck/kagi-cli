@@ -73,6 +73,7 @@
               "commands/batch",
               "commands/auth",
               "commands/summarize",
+              "commands/extract",
               "commands/watch",
               "commands/notify",
               "commands/history",

@@ -486,6 +486,68 @@ fn summarize_url_command_prints_structured_json() {
     assert_eq!(body["data"]["output"], "A concise summary.");
 }
 
+#[test]
+fn extract_command_prints_markdown_from_mock_api() {
+    let server = MockServer::start();
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header("authorization", "Bot test-api-token")
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted content."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["extract", "https://example.com/article"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout, "# Article\n\nExtracted content.\n");
+}
+
+#[test]
+fn extract_command_rejects_non_https_urls() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = [("KAGI_API_TOKEN", API_TOKEN)];
+    let output = run_kagi(&["extract", "http://example.com"], &env, tempdir.path());
+
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for non-HTTPS extract URL"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("extract URL must use the https scheme"),
+        "expected HTTPS validation in stderr: {stderr}"
+    );
+}
+
 fn news_search_html_fixture() -> &'static str {
     r#"<html><body>
         <div class="newsResultItem _0_SRI">
@@ -870,7 +932,7 @@ fn mcp_initialize_returns_server_info() {
 }
 
 #[test]
-fn mcp_tools_list_includes_news() {
+fn mcp_tools_list_includes_news_and_extract() {
     let tempdir = TempDir::new().expect("tempdir");
     let output = run_kagi_with_stdin(
         &["mcp"],
@@ -885,6 +947,59 @@ fn mcp_tools_list_includes_news() {
     assert!(
         tools.iter().any(|tool| tool["name"] == "kagi_news"),
         "expected kagi_news in tools list, got {tools:?}"
+    );
+    assert!(
+        tools.iter().any(|tool| tool["name"] == "kagi_extract"),
+        "expected kagi_extract in tools list, got {tools:?}"
+    );
+}
+
+#[test]
+fn mcp_extract_tool_call_returns_markdown() {
+    let server = MockServer::start();
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header("authorization", "Bot test-api-token")
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted content."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kagi_extract","arguments":{"url":"https://example.com/article"}}}"#,
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(
+        response["result"]["content"][0]["text"],
+        "# Article\n\nExtracted content."
     );
 }
 

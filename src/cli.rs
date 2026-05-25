@@ -223,6 +223,8 @@ pub enum Commands {
     Auth(AuthCommand),
     /// Summarize a URL or text with Kagi's public API or subscriber web Summarizer
     Summarize(SummarizeArgs),
+    /// Extract a page's full content as markdown through Kagi's Extract API
+    Extract(ExtractArgs),
     /// Read Kagi News from the live public JSON endpoints
     News(NewsArgs),
     /// Prompt Kagi Assistant and manage Assistant threads
@@ -602,6 +604,14 @@ impl SummarizeArgs {
 
         Ok(())
     }
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `extract` subcommand.
+pub struct ExtractArgs {
+    /// HTTPS URL of the page to extract as markdown
+    #[arg(value_name = "URL")]
+    pub url: String,
 }
 
 #[derive(Debug, Args)]

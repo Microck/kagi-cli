@@ -123,7 +123,7 @@ export KAGI_API_TOKEN='...'
 | credential | what it unlocks |
 | --- | --- |
 | `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
-| `KAGI_API_TOKEN` | public `summarize`, `fastgpt`, `enrich web`, `enrich news` |
+| `KAGI_API_TOKEN` | public `summarize`, `extract`, `fastgpt`, `enrich web`, `enrich news` |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
 example config:
@@ -165,6 +165,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
+| `kagi extract` | extract a page's full content as markdown through the paid API |
 | `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
 | `kagi notify` | send search or news output to a webhook |
 | `kagi history` | inspect local command history and aggregate query stats |

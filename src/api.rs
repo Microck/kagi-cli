@@ -33,14 +33,15 @@ use crate::types::{
     AssistantPromptResponse, AssistantThread, AssistantThreadDeleteResponse,
     AssistantThreadExportResponse, AssistantThreadListResponse, AssistantThreadOpenResponse,
     AssistantThreadPagination, CustomBangCreateRequest, CustomBangDetails, CustomBangSummary,
-    CustomBangUpdateRequest, DeletedResourceResponse, EnrichResponse, FastGptRequest,
-    FastGptResponse, LensCreateRequest, LensDetails, LensSummary, LensUpdateRequest,
-    NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata,
-    NewsCategoryMetadataList, NewsChaos, NewsChaosResponse, NewsContentFilterSummary,
-    NewsFilterPresetListEntry, NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory,
-    NewsStoriesPayload, NewsStoriesResponse, NewsStoryContentFilterSummary,
-    RedirectRuleCreateRequest, RedirectRuleDetails, RedirectRuleSummary, RedirectRuleUpdateRequest,
-    SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta, SubscriberSummarizeRequest,
+    CustomBangUpdateRequest, DeletedResourceResponse, EnrichResponse, ExtractPageInput,
+    ExtractRequest, ExtractResponse, FastGptRequest, FastGptResponse, LensCreateRequest,
+    LensDetails, LensSummary, LensUpdateRequest, NewsBatchCategories, NewsBatchCategory,
+    NewsCategoriesResponse, NewsCategoryMetadata, NewsCategoryMetadataList, NewsChaos,
+    NewsChaosResponse, NewsContentFilterSummary, NewsFilterPresetListEntry,
+    NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
+    NewsStoriesResponse, NewsStoryContentFilterSummary, RedirectRuleCreateRequest,
+    RedirectRuleDetails, RedirectRuleSummary, RedirectRuleUpdateRequest, SmallWebFeed,
+    SubscriberSummarization, SubscriberSummarizeMeta, SubscriberSummarizeRequest,
     SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse, TextAlignmentsResponse,
     ToggleResourceResponse, TranslateBootstrapMetadata, TranslateCommandRequest,
     TranslateDetectedLanguage, TranslateOptionState, TranslateResponse, TranslateTextResponse,
@@ -48,6 +49,7 @@ use crate::types::{
 };
 
 const KAGI_SUMMARIZE_PATH: &str = "/api/v0/summarize";
+const KAGI_EXTRACT_PATH: &str = "/api/v1/extract";
 const KAGI_SUBSCRIBER_SUMMARIZE_PATH: &str = "/mother/summary_labs";
 const KAGI_NEWS_LATEST_PATH: &str = "/api/batches/latest";
 const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
@@ -145,6 +147,45 @@ pub async fn execute_summarize(
     decode_kagi_json(response, "summarizer").await
 }
 
+/// Extracts a web page as markdown using Kagi's v1 Extract API with API-token auth.
+///
+/// # Arguments
+/// * `url` - The HTTPS URL to extract.
+/// * `token` - The Kagi API token.
+///
+/// # Returns
+/// Extracted page markdown.
+///
+/// # Errors
+/// Returns `KagiError::Auth` if the token is missing, `KagiError::Config` if the
+/// URL does not satisfy the Extract API contract, and network/parse errors on failure.
+pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi API token (expected KAGI_API_TOKEN)".to_string(),
+        ));
+    }
+
+    let url = normalize_extract_url(url)?;
+    let request = ExtractRequest {
+        pages: vec![ExtractPageInput { url }],
+        format: "json".to_string(),
+    };
+
+    let client = build_client()?;
+    let response = client
+        .post(http::kagi_url(KAGI_EXTRACT_PATH))
+        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    let response: ExtractResponse = decode_kagi_json(response, "Extract").await?;
+    extract_first_markdown(response)
+}
+
 /// Summarizes a URL or text using the subscriber web Summarizer with session-token auth.
 ///
 /// # Arguments
@@ -230,6 +271,58 @@ pub async fn execute_subscriber_summarize(
             )))
         }
     }
+}
+
+fn normalize_extract_url(url: &str) -> Result<String, KagiError> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(KagiError::Config("extract requires a URL".to_string()));
+    }
+
+    let parsed = Url::parse(trimmed)
+        .map_err(|error| KagiError::Config(format!("extract URL is invalid: {error}")))?;
+    if parsed.scheme() != "https" {
+        return Err(KagiError::Config(
+            "extract URL must use the https scheme".to_string(),
+        ));
+    }
+    if parsed.host_str().is_none() {
+        return Err(KagiError::Config(
+            "extract URL must include a valid host".to_string(),
+        ));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn extract_first_markdown(response: ExtractResponse) -> Result<String, KagiError> {
+    if let Some(markdown) = response
+        .data
+        .first()
+        .and_then(|page| page.markdown.as_deref())
+        .filter(|markdown| !markdown.is_empty())
+    {
+        return Ok(markdown.to_string());
+    }
+
+    let suffix = response
+        .meta
+        .trace
+        .as_deref()
+        .map(|trace| format!(" (trace id: {trace})"))
+        .unwrap_or_default();
+
+    if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
+        return Err(KagiError::Network(format!(
+            "Kagi Extract API error: {}{}",
+            serde_json::to_string(&errors).unwrap_or_else(|_| format!("{errors:?}")),
+            suffix
+        )));
+    }
+
+    Err(KagiError::Parse(format!(
+        "Kagi Extract API returned no content{suffix}"
+    )))
 }
 
 /// Fetches Kagi News stories for a given category with optional content filtering.

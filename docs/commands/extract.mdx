@@ -1,0 +1,77 @@
+---
+title: "extract"
+description: "Complete reference for the kagi extract command - fetch a page's full content as markdown using Kagi's Extract API."
+---
+
+# `kagi extract`
+
+Extract the readable content of a web page as markdown using Kagi's Extract API.
+
+## Synopsis
+
+```bash
+kagi extract <URL>
+```
+
+## Description
+
+The `kagi extract` command sends one HTTPS URL to Kagi's v1 Extract API and prints the extracted page markdown to stdout. It is useful when a search result, article, or documentation page needs full-page text instead of a search snippet.
+
+The command uses JSON mode internally because that is the stable envelope returned by the API, then prints the first page's `markdown` field. If Kagi returns no page markdown, the CLI reports the Extract API error details and trace id when available.
+
+## Authentication
+
+**Required:** `KAGI_API_TOKEN`
+
+Extract is part of Kagi's paid API surface and consumes API credit per request.
+
+## Arguments
+
+### `<URL>` (Required)
+
+The HTTPS URL of the page to extract.
+
+```bash
+kagi extract "https://example.com/article"
+```
+
+Only `https://` URLs with a valid host are accepted.
+
+## Output
+
+The command prints markdown directly:
+
+```markdown
+# Article title
+
+Extracted page content...
+```
+
+## Examples
+
+### Save an Article
+
+```bash
+kagi extract "https://example.com/article" > article.md
+```
+
+### Pipe into Another Tool
+
+```bash
+kagi extract "https://example.com/article" | sed -n '1,80p'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success - markdown extracted |
+| 1 | Error - see stderr |
+
+Common errors:
+
+- Missing API token
+- Non-HTTPS or invalid URL
+- Insufficient API credit
+- Kagi returns no extractable content
+- Network error
