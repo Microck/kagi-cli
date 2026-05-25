@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "kagi"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "clap",
  "clap_complete",

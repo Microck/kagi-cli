@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Changed
+
+- Updated `serde_json` to 1.0.150.
+
 ## [0.6.0]
 
 ### Added
