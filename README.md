@@ -20,7 +20,7 @@
 
 the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link` or `API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
-[documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [github](https://github.com/Microck/kagi-cli)
+[documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [mcp](https://github.com/Microck/kagi-mcp)
 
 ![search demo](images/demos/search.gif)
 
