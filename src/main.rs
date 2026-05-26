@@ -1107,8 +1107,7 @@ async fn execute_once_assistant_prompt(
     prompt_request.model = None;
 
     let prompt_result = if stream {
-        execute_assistant_prompt_stream(&prompt_request, token, |event| print_compact_json(event))
-            .await
+        execute_assistant_prompt_stream(&prompt_request, token, print_compact_json).await
     } else {
         execute_assistant_prompt(&prompt_request, token).await
     };
