@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.7.0]
+
 ### Added
 
 - Added `KAGI_API_KEY`, `[auth].api_key`, and `kagi auth set --api-key` for current `/api/v1` Search and Extract API credentials.
