@@ -28,7 +28,7 @@ Error: Auth error: invalid Kagi API token or access is not enabled for search AP
 Transport errors include the request URL when the HTTP client exposes it:
 
 ```text
-Error: Network error: request to https://kagi.com/api/v0/search timed out after the configured timeout
+Error: Network error: request to https://kagi.com/api/v1/search timed out after the configured timeout
 ```
 
 ## Authentication Errors
@@ -47,7 +47,10 @@ Config error: missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env),
 # Set session token
 kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
-# Or set API token
+# Or set a current V1 API key for Search API and Extract
+kagi auth set --api-key 'YOUR_API_KEY'
+
+# Or set a legacy V0 API token for summarize, FastGPT, and enrich
 kagi auth set --api-token 'YOUR_API_TOKEN'
 
 # Verify
@@ -211,14 +214,14 @@ kagi translate "Bonjour tout le monde"
 
 ## Command Errors
 
-### "search filters require KAGI_SESSION_TOKEN"
+### "this search option requires KAGI_SESSION_TOKEN"
 
 **Message:**
 ```
-Config error: search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+Config error: this search option requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
 ```
 
-**Meaning:** You used session-only search filters like `--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, or personalization flags without a configured session token.
+**Meaning:** You used a session-only search option like `--lens`, `--time`, `--order`, `--verbatim`, or personalization flags without a configured session token. `--region`, `--from-date`, and `--to-date` can use the V1 Search API when `KAGI_API_KEY` is configured.
 
 **Solution:**
 ```bash

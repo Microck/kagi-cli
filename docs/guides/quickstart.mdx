@@ -295,7 +295,7 @@ kagi enrich web "artificial intelligence"
 
 When you have multiple credentials configured:
 
-- **Session Token**: Enables lens search, Quick Answer, filtered search, ask-page, assistant, translate, and subscriber Summarizer
+- **Session Token**: Enables lens search, session-only search options, Quick Answer, ask-page, assistant, translate, and subscriber Summarizer
 - **API Key**: Enables current Search API and Extract API
 - **Legacy API Token**: Enables FastGPT, public Summarizer, and Enrichment APIs
 - **Base Search**: Defaults to session unless `[auth.preferred_auth] = "api"`
@@ -336,7 +336,7 @@ chmod 600 ./.kagi.toml
 
 Kagi resolves credentials in this order (first match wins):
 
-1. **Environment variables** (`KAGI_API_TOKEN`, `KAGI_SESSION_TOKEN`)
+1. **Environment variables** (`KAGI_API_KEY`, `KAGI_API_TOKEN`, `KAGI_SESSION_TOKEN`)
 2. **Config file** (`./.kagi.toml`)
 
 This means you can override file configuration with environment variables for specific workflows or CI/CD.
@@ -522,7 +522,7 @@ Continue your *kagi* journey:
 | Problem | Solution |
 |---------|----------|
 | "command not found" | Check PATH, reload shell |
-| "missing credentials" | Set KAGI_SESSION_TOKEN or KAGI_API_TOKEN |
+| "missing credentials" | Set KAGI_SESSION_TOKEN, KAGI_API_KEY, or KAGI_API_TOKEN depending on the command |
 | "auth check failed" | Verify token is valid and not expired |
 | Empty search results | Try different query or check rate limits |
 | JSON parse errors | Verify *kagi* version, check for CLI updates |

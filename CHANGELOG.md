@@ -7,6 +7,17 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.8.1]
+
+### Added
+
+- Added V1 Search API support for `--region`, `--from-date`, `--to-date`, and `--limit` when search is routed through `KAGI_API_KEY`.
+- Added a release workflow step that triggers the Mintlify docs deployment when `MINTLIFY_DEPLOY_COOKIE` is configured.
+
+### Changed
+
+- Clarified current `/api/v1` API key behavior and legacy `/api/v0` API token behavior across README and Mintlify docs.
+
 ## [0.8.0]
 
 ### Added

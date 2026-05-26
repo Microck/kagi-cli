@@ -21,10 +21,10 @@ kagi search [OPTIONS] <QUERY>
 
 There are now two search modes:
 
-- **Base search** uses your configured base-search auth preference. By default this repo prefers the subscriber session path. If you set `[auth.preferred_auth] = "api"`, base search uses the Search API first and can fall back to the subscriber web-product path on API auth rejection.
-- **Filtered search** uses Kagi's authenticated HTML/session search path and requires `KAGI_SESSION_TOKEN`.
+- **V1 API search** uses `KAGI_API_KEY` with `Bearer` auth against `/api/v1/search` when `[auth.preferred_auth] = "api"` or when no session token is configured. The CLI sends OpenAPI-compatible `region`, `after`, and `before` filters on this path.
+- **Subscriber search** uses Kagi's authenticated HTML/session search path with `KAGI_SESSION_TOKEN`. This remains the default when a session token is configured and handles web-product-only options.
 
-This matters because the Kagi Search API is still base-search only in this CLI. As soon as you add live search filters like `--lens`, `--region`, `--time`, `--order`, `--verbatim`, or `--personalized`, the request becomes session-only.
+This matters because some CLI flags map to the V1 OpenAPI contract and some are web-product-only. `--region`, `--from-date`, and `--to-date` can use the V1 API path. `--lens`, `--time`, `--order`, `--verbatim`, and personalization flags require `KAGI_SESSION_TOKEN`.
 
 `--snap` works in either mode. It simply prefixes your query with a snap shortcut before the request is built.
 
@@ -41,21 +41,20 @@ Plain base search keeps the existing repo behavior:
 - API-first only when you configure `[auth.preferred_auth] = "api"` and provide `KAGI_API_KEY`
 - session fallback only when the API path was selected first and rejected
 
-### Filtered Search
+### Session-Only Search Options
 
 **Required:** `KAGI_SESSION_TOKEN`
 
 Any of these flags make the request session-only:
 
 - `--lens`
-- `--region`
 - `--time`
-- `--from-date`
-- `--to-date`
 - `--order`
 - `--verbatim`
 - `--personalized`
 - `--no-personalized`
+
+`--region`, `--from-date`, and `--to-date` use the V1 Search API `filters` object when the request is routed through `KAGI_API_KEY`.
 
 ## Options
 
@@ -203,7 +202,7 @@ kagi search "rust async runtime tradeoffs" --follow 3
 
 ### `--limit <N>`
 
-Cap the number of results returned. Truncation happens locally after Kagi's response is received, so `--limit` does not reduce the upstream request cost. Combine with `--follow` to summarize only the top of the capped list.
+Cap the number of results returned. On the V1 API path this is sent as the OpenAPI `limit` field. On the subscriber web-product path, truncation happens locally after Kagi's response is received. Combine with `--follow` to summarize only the top of the capped list.
 
 ```bash
 kagi search "rust async runtime tradeoffs" --limit 5
@@ -356,7 +355,7 @@ kagi search --format markdown "rust ownership"
 
 ## Common Errors
 
-- `search filters require KAGI_SESSION_TOKEN` - you used runtime filters without a session token
+- `this search option requires KAGI_SESSION_TOKEN` - you used a web-product-only search option without a session token
 - `search --time cannot be combined with --from-date or --to-date` - choose a preset window or a custom date range
 - `search --from-date must use YYYY-MM-DD format` - dates must be zero-padded ISO dates
 - `lens 'foo' must be a numeric index` - lens values are numeric Kagi lens indices

@@ -207,6 +207,27 @@ jobs:
             gh release create "$RELEASE_TAG" dist/* --notes-file dist/release-notes.md --title "$RELEASE_TAG" --verify-tag
           fi
 
+      - name: Trigger Mintlify docs deployment
+        id: trigger_mintlify_docs
+        continue-on-error: true
+        env:
+          MINTLIFY_DEPLOY_COOKIE: ${{ secrets.MINTLIFY_DEPLOY_COOKIE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MINTLIFY_DEPLOY_COOKIE:-}" ]; then
+            echo "MINTLIFY_DEPLOY_COOKIE is not configured; skipping Mintlify deployment trigger."
+            exit 0
+          fi
+
+          curl -fsS -X POST \
+            -H "accept: */*" \
+            -H "content-type: application/json" \
+            -H "origin: https://app.mintlify.com" \
+            -H "referer: https://app.mintlify.com/kagi-cli/kagi-cli" \
+            -H "cookie: ${MINTLIFY_DEPLOY_COOKIE}" \
+            https://app.mintlify.com/api/deployment/update/kagi-cli
+
       - name: Sync Homebrew tap and Scoop bucket
         id: sync_package_indexes
         continue-on-error: true
@@ -357,3 +378,8 @@ jobs:
         if: steps.sync_package_indexes.outcome == 'failure'
         run: |
           echo "::warning title=Package index sync failed::GitHub release assets were published, but Homebrew/Scoop sync did not complete. Check the release job logs."
+
+      - name: Report Mintlify deployment warning
+        if: steps.trigger_mintlify_docs.outcome == 'failure'
+        run: |
+          echo "::warning title=Mintlify deployment trigger failed::GitHub release assets were published, but the private Mintlify deployment endpoint did not accept the configured cookie. Rotate MINTLIFY_DEPLOY_COOKIE or trigger the deployment from the Mintlify dashboard."

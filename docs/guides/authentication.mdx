@@ -32,7 +32,7 @@ The *kagi* CLI supports three distinct credential types that unlock different ca
 **What it unlocks:**
 - Subscriber-only web product features
 - Lens-aware search (`kagi search --lens`)
-- Session-backed filtered search
+- Session-backed search options such as lenses, relative time windows, ordering, verbatim mode, and personalization
 - Kagi Quick Answer (`kagi quick`)
 - Kagi Assistant (`kagi assistant`)
 - Custom assistant management (`kagi assistant custom`)
@@ -241,11 +241,14 @@ The wizard is the preferred setup flow.
 # Set session token (extracts token from URL automatically)
 kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
-# Set API token
+# Set current V1 API key
+kagi auth set --api-key 'YOUR_API_KEY'
+
+# Set legacy V0 API token
 kagi auth set --api-token 'YOUR_API_TOKEN'
 
 # Set both at once
-kagi auth set --session-token 'https://kagi.com/search?token=SESSION_TOKEN' --api-token 'API_TOKEN'
+kagi auth set --session-token 'https://kagi.com/search?token=SESSION_TOKEN' --api-key 'API_KEY' --api-token 'API_TOKEN'
 ```
 
 **Creating manually:**
@@ -376,7 +379,7 @@ auth check passed: api-key (env)
 
 Invalid or missing:
 ```
-Error: missing credentials - this command requires KAGI_SESSION_TOKEN or KAGI_API_TOKEN
+Error: missing credentials - set KAGI_API_KEY, KAGI_API_TOKEN, or KAGI_SESSION_TOKEN depending on the command
 ```
 
 **Important:** `auth check` is intentionally strict and does not use the base-search fallback behavior. It tests the primary credential only.
@@ -398,7 +401,8 @@ These commands work without any tokens:
 These commands require `KAGI_SESSION_TOKEN`:
 
 - `kagi search --lens <INDEX>` - Lens-aware search
-- `kagi search --region ...`, `--time ...`, `--from-date ...`, `--to-date ...`, `--order ...`, `--verbatim`, personalization flags - session-backed filtered search
+- `kagi search --time ...`, `--order ...`, `--verbatim`, personalization flags - session-backed search options
+- `kagi search --region ...`, `--from-date ...`, `--to-date ...` - V1 Search API filters when routed through `KAGI_API_KEY`, or subscriber filters when routed through `KAGI_SESSION_TOKEN`
 - `kagi assistant` - AI Assistant
 - `kagi assistant custom` - saved assistant CRUD
 - `kagi quick` - Quick Answer

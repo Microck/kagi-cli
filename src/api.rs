@@ -148,11 +148,11 @@ pub async fn execute_summarize(
     decode_kagi_json(response, "summarizer").await
 }
 
-/// Extracts a web page as markdown using Kagi's v1 Extract API with API-token auth.
+/// Extracts a web page as markdown using Kagi's v1 Extract API with API-key auth.
 ///
 /// # Arguments
 /// * `url` - The HTTPS URL to extract.
-/// * `token` - The Kagi API token.
+/// * `token` - The Kagi API key.
 ///
 /// # Returns
 /// Extracted page markdown.
@@ -163,7 +163,7 @@ pub async fn execute_summarize(
 pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
-            "missing Kagi API token (expected KAGI_API_TOKEN)".to_string(),
+            "missing Kagi API key (expected KAGI_API_KEY)".to_string(),
         ));
     }
 

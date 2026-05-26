@@ -125,7 +125,7 @@ pub fn error_body_suffix(body: &str) -> String {
 /// Builds a full Kagi API URL from a path, using the `KAGI_BASE_URL` env override or the default.
 ///
 /// # Arguments
-/// * `path` - API path (e.g. `"/api/v0/search"`). Absolute URLs are returned unchanged.
+/// * `path` - API path (e.g. `"/api/v1/search"`). Absolute URLs are returned unchanged.
 ///
 /// # Returns
 /// The complete URL string.
@@ -223,7 +223,7 @@ mod tests {
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
 
-        assert_eq!(kagi_url("/api/v0/search"), "https://kagi.com/api/v0/search");
+        assert_eq!(kagi_url("/api/v1/search"), "https://kagi.com/api/v1/search");
         assert_eq!(
             kagi_news_url("/api/batches/latest"),
             "https://news.kagi.com/api/batches/latest"
@@ -243,8 +243,8 @@ mod tests {
         set_env_var(KAGI_TRANSLATE_BASE_URL_ENV, "http://127.0.0.1:9002/");
 
         assert_eq!(
-            kagi_url("/api/v0/search"),
-            "http://127.0.0.1:9000/api/v0/search"
+            kagi_url("/api/v1/search"),
+            "http://127.0.0.1:9000/api/v1/search"
         );
         assert_eq!(
             kagi_news_url("/api/batches/latest"),

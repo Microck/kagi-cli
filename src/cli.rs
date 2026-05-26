@@ -368,6 +368,9 @@ impl SearchArgs {
         if matches!(self.limit, Some(0)) {
             return Err("limit must be at least 1".to_string());
         }
+        if self.limit.is_some_and(|limit| limit > 1024) {
+            return Err("limit must be at most 1024".to_string());
+        }
         Ok(())
     }
 
@@ -506,6 +509,9 @@ impl BatchSearchArgs {
         }
         if matches!(self.limit, Some(0)) {
             return Err("limit must be at least 1".to_string());
+        }
+        if self.limit.is_some_and(|limit| limit > 1024) {
+            return Err("limit must be at most 1024".to_string());
         }
         Ok(())
     }

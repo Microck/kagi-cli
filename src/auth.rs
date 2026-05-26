@@ -160,7 +160,7 @@ impl CredentialInventory {
                                 .to_string()
                         }
                         SearchAuthRequirement::Filtered => {
-                            "search filters require KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                            "this search option requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
                                 .to_string()
                         }
                         SearchAuthRequirement::Base => unreachable!(),
@@ -929,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn requires_session_for_filtered_search() {
+    fn requires_session_for_session_only_search_options() {
         let inventory = CredentialInventory {
             api_key: Some(Credential {
                 kind: CredentialKind::ApiKey,
@@ -945,9 +945,9 @@ mod tests {
 
         let error = inventory
             .resolve_for_search(SearchAuthRequirement::Filtered)
-            .expect_err("filtered search should require session token");
+            .expect_err("session-only search option should require session token");
         assert!(matches!(error, KagiError::Config(_)));
-        assert!(error.to_string().contains("search filters require"));
+        assert!(error.to_string().contains("search option requires"));
     }
 
     #[test]

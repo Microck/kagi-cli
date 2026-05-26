@@ -264,6 +264,54 @@ fn search_command_returns_json_from_mock_api() {
 }
 
 #[test]
+fn search_command_sends_v1_filters_with_api_key() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({
+                "query": "rust programming",
+                "filters": {
+                    "region": "us",
+                    "after": "2026-01-01",
+                    "before": "2026-02-01"
+                }
+            }))
+            .header("authorization", "Bearer test-api-key");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust Programming Language",
+                "https://www.rust-lang.org",
+                "Reliable systems programming.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &[
+            "search",
+            "rust programming",
+            "--region",
+            "us",
+            "--from-date",
+            "2026-01-01",
+            "--to-date",
+            "2026-02-01",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["data"][0]["title"], "Rust Programming Language");
+}
+
+#[test]
 fn search_command_returns_toon_from_mock_api() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
@@ -339,7 +387,7 @@ fn search_command_limit_truncates_results() {
     let _search = server.mock(|when, then| {
         when.method(POST)
             .path("/api/v1/search")
-            .json_body(json!({ "query": "rust" }))
+            .json_body(json!({ "query": "rust", "limit": 2 }))
             .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")

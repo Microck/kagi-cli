@@ -663,13 +663,17 @@ strace -f kagi search "test" 2>&1 | grep -E '(connect|send|recv)'
 ### Test Authentication Directly
 
 ```bash
-# Test session token
-curl -H "Authorization: Bearer $KAGI_SESSION_TOKEN" \
-  https://kagi.com/api/...  # endpoint varies
+# Test current V1 API key
+curl -H "Authorization: Bearer $KAGI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"test","limit":1}' \
+  https://kagi.com/api/v1/search
 
-# Test API token
-curl -H "Authorization: Bearer $KAGI_API_TOKEN" \
-  https://kagi.com/api/...
+# Test legacy V0 API token
+curl -H "Authorization: Bot $KAGI_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test"}' \
+  https://kagi.com/api/v0/fastgpt
 ```
 
 ### Isolate Issues
@@ -723,7 +727,7 @@ kagi auth check 2>&1 || echo "Auth check failed"
 |--------------|--------------|----------|
 | `command not found` | Not in PATH | Reload shell or add to PATH |
 | `Permission denied` | Not executable | `chmod +x *kagi*` |
-| `missing credentials` | No token set | Set KAGI_SESSION_TOKEN or KAGI_API_TOKEN |
+| `missing credentials` | No credential set | Set KAGI_SESSION_TOKEN, KAGI_API_KEY, or KAGI_API_TOKEN depending on the command |
 | `kagi auth is interactive on TTYs` | Bare `kagi auth` was run in CI, a pipe, or another non-interactive environment | Use `kagi auth set`, `kagi auth status`, or `kagi auth check` instead |
 | `auth check failed` | Invalid token | Regenerate token in Kagi settings |
 | `403 Forbidden` | Auth issue | Check token validity |
@@ -779,6 +783,7 @@ kagi auth check
 
 - `KAGI_SESSION_TOKEN` ✓
 - `KAGI_SESSON_TOKEN` ✗
+- `KAGI_API_KEY` ✓
 - `KAGI_API_TOKEN` ✓
 - `KAGI_APITOKEN` ✗
 

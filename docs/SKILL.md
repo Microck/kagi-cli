@@ -15,7 +15,7 @@ metadata:
 
 kagi-cli is a terminal CLI that provides command-line access to Kagi search, Quick Answer, AI Assistant, translation, summarization, public feeds through `news` and `smallweb`, and account-level search settings like lenses, custom assistants, custom bangs, and redirects. It outputs JSON by default for scripting and automation, with `--format pretty` for human-readable terminal output on the commands that support alternate renderers.
 
-The CLI prioritizes the subscriber session-token path, so existing Kagi subscribers can use most features without paying for API access. Paid API features (summarize, fastgpt, enrich) are available by setting `KAGI_API_TOKEN`.
+The CLI prioritizes the subscriber session-token path, so existing Kagi subscribers can use most features without paying for API access. Current `/api/v1` Search and Extract features use `KAGI_API_KEY`; legacy paid API features (summarize, fastgpt, enrich) use `KAGI_API_TOKEN`.
 
 ## Installation
 
@@ -72,8 +72,8 @@ export KAGI_API_TOKEN='...'
 
 | Credential | What It Unlocks |
 |------------|-----------------|
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, `search --news`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
-| `KAGI_API_KEY` | search API, extract |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, `search --news`, session-only search options, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
+| `KAGI_API_KEY` | current `/api/v1` Search API and Extract API |
 | `KAGI_API_TOKEN` | summarize, fastgpt, enrich web, enrich news |
 | none | news, smallweb, auth status, --help |
 

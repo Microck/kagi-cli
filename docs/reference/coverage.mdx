@@ -9,15 +9,24 @@ This document summarizes what the *kagi* CLI implements today, which auth path i
 
 ## Currently Implemented
 
-### Documented Kagi APIs
+### Current V1 OpenAPI Endpoints
 
-These are official, documented API endpoints:
+These endpoints come from Kagi's current OpenAPI contract at `https://kagi.com/api/docs/openapi` and use `KAGI_API_KEY` with `Bearer` auth:
 
 | Endpoint | Command | Status |
 |----------|---------|--------|
-| Search API | `kagi search` | ✅ Implemented for base search |
-| Universal Summarizer | `kagi summarize` | ✅ Implemented |
+| Search API (`POST /api/v1/search`) | `kagi search` | ✅ Implemented for query, limit, and `filters.region/after/before` |
 | Extract API | `kagi extract` | ✅ Implemented |
+
+Current V1 Search optional fields not exposed by this CLI: `workflow`, API response `format`, `lens_id`, inline `lens`, `timeout`, `page`, search-result `extract`, `safe_search`, and explicit personalization rule objects. Subscriber web-product features cover some adjacent workflows, but they are not represented as V1 OpenAPI request fields.
+
+### Legacy V0 APIs
+
+These commands use Kagi's older public API surface with `KAGI_API_TOKEN` and `Bot` auth:
+
+| Endpoint | Command | Status |
+|----------|---------|--------|
+| Universal Summarizer | `kagi summarize` | ✅ Implemented |
 | FastGPT | `kagi fastgpt` | ✅ Implemented |
 | Web Enrichment (Teclis) | `kagi enrich web` | ✅ Implemented |
 | News Enrichment (TinyGem) | `kagi enrich news` | ✅ Implemented |
@@ -31,7 +40,7 @@ These features use the subscriber web product with `KAGI_SESSION_TOKEN`:
 | Base search | `kagi search` | ✅ Implemented |
 | Snap-prefixed search | `kagi search --snap` | ✅ Implemented |
 | Lens search | `kagi search --lens` | ✅ Implemented |
-| Filtered search | `kagi search --region/--time/...` | ✅ Implemented |
+| Filtered search | `kagi search --region/--from-date/--to-date` on V1 API or session path; `--time/--order/...` on session path | ✅ Implemented |
 | Quick Answer | `kagi quick` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
 | Search result summarize pipeline | `kagi search --follow` | ✅ Implemented |

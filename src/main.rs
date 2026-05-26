@@ -74,6 +74,7 @@ struct SearchRequestOptions {
     time: Option<SearchTime>,
     from_date: Option<String>,
     to_date: Option<String>,
+    limit: Option<usize>,
     order: Option<SearchOrder>,
     verbatim: bool,
     personalized: bool,
@@ -155,6 +156,7 @@ async fn run() -> Result<(), KagiError> {
                 time: args.time,
                 from_date: args.from_date,
                 to_date: args.to_date,
+                limit: args.limit,
                 order: args.order,
                 verbatim: args.verbatim,
                 personalized: args.personalized,
@@ -767,6 +769,7 @@ async fn run() -> Result<(), KagiError> {
                     time: args.time,
                     from_date: args.from_date,
                     to_date: args.to_date,
+                    limit: args.limit,
                     order: args.order,
                     verbatim: args.verbatim,
                     personalized: args.personalized,
@@ -1025,6 +1028,9 @@ fn build_search_request(query: String, options: &SearchRequestOptions) -> search
     if let Some(to_date) = options.to_date.clone() {
         request = request.with_to_date(to_date);
     }
+    if let Some(limit) = options.limit {
+        request = request.with_limit(limit);
+    }
     if let Some(order) = options.order.clone() {
         request = match order {
             SearchOrder::Default => request,
@@ -1048,7 +1054,7 @@ fn build_search_request(query: String, options: &SearchRequestOptions) -> search
 fn search_auth_requirement(request: &search::SearchRequest) -> SearchAuthRequirement {
     if request.lens.is_some() {
         SearchAuthRequirement::Lens
-    } else if request.has_runtime_filters() {
+    } else if request.requires_session_auth() {
         SearchAuthRequirement::Filtered
     } else {
         SearchAuthRequirement::Base
@@ -2456,6 +2462,7 @@ mod tests {
                 time: Some(SearchTime::Month),
                 from_date: None,
                 to_date: None,
+                limit: None,
                 order: Some(SearchOrder::Default),
                 verbatim: false,
                 personalized: false,
@@ -2465,7 +2472,7 @@ mod tests {
 
         assert_eq!(request.time_filter.as_deref(), Some("3"));
         assert_eq!(request.order, None);
-        assert!(request.has_runtime_filters());
+        assert!(request.requires_session_auth());
     }
 
     #[test]
@@ -2479,6 +2486,7 @@ mod tests {
                 time: None,
                 from_date: None,
                 to_date: None,
+                limit: None,
                 order: None,
                 verbatim: false,
                 personalized: false,

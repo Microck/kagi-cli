@@ -82,19 +82,24 @@ flowchart TD
 
 **No fallback:** Lens search requires session token exclusively.
 
-#### Filtered Search (`kagi search --region ...`, `--time ...`, etc.)
+#### Search Filters and Session-Only Options
 
 ```mermaid
 flowchart TD
-    Start([User Query with Search Filters]) --> CheckSession{KAGI_SESSION_TOKEN configured?}
+    Start([User Query with Search Options]) --> ApiCompat{Only region/date filters?}
+    ApiCompat -->|Yes| AuthPref{API path selected or no session token?}
+    AuthPref -->|Yes| QueryApi[Query /api/v1/search with filters]
+    AuthPref -->|No| QueryWeb[Query web product with filters]
 
-    CheckSession -->|Yes| QueryWeb[Query web product with filters]
-    QueryWeb -->|Success| ReturnResults[Success ✓]
+    ApiCompat -->|No| CheckSession{KAGI_SESSION_TOKEN configured?}
+    CheckSession -->|Yes| QueryWeb
 
+    QueryApi -->|Success| ReturnResults[Success ✓]
+    QueryWeb -->|Success| ReturnResults
     CheckSession -->|No| Error[Error: missing session token]
 ```
 
-**No fallback:** filtered search requires session token exclusively.
+`--region`, `--from-date`, and `--to-date` map to the current V1 Search API `filters` object. `--lens`, `--time`, `--order`, `--verbatim`, and personalization flags remain session-only because they target the subscriber web-product flow exposed by this CLI.
 
 ### Authentication Commands
 
@@ -184,7 +189,7 @@ Requires `KAGI_SESSION_TOKEN`:
 
 - ✅ Lens-aware search (`--lens`)
 - ✅ Quick Answer (`quick`)
-- ✅ Filtered search (`--region`, `--time`, `--from-date`, `--to-date`, `--order`, `--verbatim`, personalization flags)
+- ✅ Session-only search options (`--lens`, `--time`, `--order`, `--verbatim`, personalization flags)
 - ✅ Kagi Assistant prompt and thread commands (`assistant`)
 - ✅ Custom assistant management (`assistant custom`)
 - ✅ Ask Page (`ask-page`)

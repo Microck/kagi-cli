@@ -122,7 +122,7 @@ export KAGI_API_KEY='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, and `summarize --subscriber` |
+| `KAGI_SESSION_TOKEN` | base search fallback, session-only search options, `quick`, `ask-page`, `assistant`, `translate`, and `summarize --subscriber` |
 | `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
 | `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
 | none | `news`, `smallweb`, `auth status`, `--help` |
@@ -157,7 +157,8 @@ notes:
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
-- `search --lens` and all runtime search filters require `KAGI_SESSION_TOKEN`
+- `search --lens`, `--time`, `--order`, `--verbatim`, and personalization flags require `KAGI_SESSION_TOKEN`
+- `search --region`, `--from-date`, and `--to-date` use V1 API filters when routed through `KAGI_API_KEY`
 - `auth check` validates the selected primary credential without using search fallback logic
 
 for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.dev/reference/auth-matrix) docs page.

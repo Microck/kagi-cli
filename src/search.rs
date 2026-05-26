@@ -32,6 +32,7 @@ pub struct SearchRequest {
     pub time_filter: Option<String>,
     pub from_date: Option<String>,
     pub to_date: Option<String>,
+    pub limit: Option<usize>,
     pub order: Option<String>,
     pub verbatim: Option<bool>,
     pub personalized: Option<bool>,
@@ -50,6 +51,7 @@ impl SearchRequest {
             time_filter: None,
             from_date: None,
             to_date: None,
+            limit: None,
             order: None,
             verbatim: None,
             personalized: None,
@@ -101,6 +103,15 @@ impl SearchRequest {
         self
     }
 
+    /// Sets the maximum number of results to request from the V1 Search API.
+    ///
+    /// The subscriber web-product path still applies this limit locally after
+    /// parsing because its HTML endpoint does not expose the same JSON field.
+    pub const fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
     /// Sets the sort order for this search request.
     ///
     /// # Arguments
@@ -128,20 +139,16 @@ impl SearchRequest {
         self
     }
 
-    /// Returns `true` if any runtime filter (region, time, dates, order, verbatim, personalized) is set.
-    pub fn has_runtime_filters(&self) -> bool {
-        self.region.is_some()
+    /// Returns `true` if this request requires session-token authentication.
+    ///
+    /// Region and absolute date filters are part of the current `/api/v1/search`
+    /// request schema, so they do not force the legacy HTML/session path.
+    pub fn requires_session_auth(&self) -> bool {
+        self.lens.is_some()
             || self.time_filter.is_some()
-            || self.from_date.is_some()
-            || self.to_date.is_some()
             || self.order.is_some()
             || self.verbatim.unwrap_or(false)
             || self.personalized.is_some()
-    }
-
-    /// Returns `true` if this request requires session-token authentication (lens or runtime filters).
-    pub fn requires_session_auth(&self) -> bool {
-        self.lens.is_some() || self.has_runtime_filters()
     }
 
     /// Validates the search request parameters.
@@ -220,6 +227,13 @@ impl SearchRequest {
         {
             return Err(KagiError::Config(
                 "search --from-date cannot be after --to-date".to_string(),
+            ));
+        }
+        if let Some(limit) = self.limit
+            && !(1..=1024).contains(&limit)
+        {
+            return Err(KagiError::Config(
+                "search --limit must be between 1 and 1024".to_string(),
             ));
         }
 
@@ -314,11 +328,11 @@ pub async fn search_with_lens(request: &SearchRequest, token: &str) -> Result<St
     }
 }
 
-/// Executes a search request using API-token authentication via the Kagi Search API.
+/// Executes a search request using API-key authentication via the V1 Kagi Search API.
 ///
 /// # Arguments
 /// * `request` - The search request. Must not require session-only features (lens, filters).
-/// * `token` - The Kagi API token.
+/// * `token` - The Kagi API key.
 ///
 /// # Returns
 /// A `SearchResponse` with parsed search results.
@@ -334,7 +348,7 @@ pub async fn execute_api_search(
 ) -> Result<SearchResponse, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
-            "missing Kagi API token (expected KAGI_API_TOKEN)".to_string(),
+            "missing Kagi API key (expected KAGI_API_KEY)".to_string(),
         ));
     }
 
@@ -349,9 +363,7 @@ pub async fn execute_api_search(
         .post(http::kagi_url(KAGI_API_SEARCH_PATH))
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .json(&ApiSearchRequest {
-            query: request.query.trim(),
-        })
+        .json(&ApiSearchRequest::from_search_request(request))
         .send()
         .await
         .map_err(map_transport_error)?;
@@ -690,10 +702,10 @@ const fn is_leap_year(year: u32) -> bool {
 
 fn api_session_requirement_message(request: &SearchRequest) -> String {
     if request.lens.is_some() {
-        "lens search requires KAGI_SESSION_TOKEN; the Kagi Search API only supports plain base search"
+        "lens search requires KAGI_SESSION_TOKEN; numeric lens indices are a subscriber web-product option"
             .to_string()
     } else {
-        "search filters require KAGI_SESSION_TOKEN; the Kagi Search API only supports plain base search"
+        "this search option requires KAGI_SESSION_TOKEN; the Kagi Search API path only supports the V1 fields exposed by this CLI"
             .to_string()
     }
 }
@@ -711,6 +723,46 @@ fn build_client() -> Result<Client, KagiError> {
 #[derive(Debug, Serialize)]
 struct ApiSearchRequest<'a> {
     query: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filters: Option<ApiSearchFilters<'a>>,
+}
+
+impl<'a> ApiSearchRequest<'a> {
+    fn from_search_request(request: &'a SearchRequest) -> Self {
+        Self {
+            query: request.query.trim(),
+            limit: request.limit,
+            filters: ApiSearchFilters::from_search_request(request),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ApiSearchFilters<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    region: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    after: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<&'a str>,
+}
+
+impl<'a> ApiSearchFilters<'a> {
+    fn from_search_request(request: &'a SearchRequest) -> Option<Self> {
+        let filters = Self {
+            region: trimmed_optional(request.region.as_deref()),
+            after: trimmed_optional(request.from_date.as_deref()),
+            before: trimmed_optional(request.to_date.as_deref()),
+        };
+
+        if filters.region.is_none() && filters.after.is_none() && filters.before.is_none() {
+            None
+        } else {
+            Some(filters)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -807,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn search_request_with_filters_requires_session_auth() {
+    fn search_request_with_session_only_filters_requires_session_auth() {
         let request = SearchRequest::new("rust lang")
             .with_region("us")
             .with_time_filter("2")
@@ -815,8 +867,18 @@ mod tests {
             .with_verbatim(true)
             .with_personalized(false);
 
-        assert!(request.has_runtime_filters());
         assert!(request.requires_session_auth());
+    }
+
+    #[test]
+    fn search_request_with_v1_filters_does_not_require_session_auth() {
+        let request = SearchRequest::new("rust lang")
+            .with_region("us")
+            .with_from_date("2026-01-01")
+            .with_to_date("2026-02-01")
+            .with_limit(10);
+
+        assert!(!request.requires_session_auth());
     }
 
     #[test]
@@ -932,7 +994,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, KagiError::Auth(_)));
-        assert!(err.to_string().contains("KAGI_API_TOKEN"));
+        assert!(err.to_string().contains("KAGI_API_KEY"));
     }
 
     #[tokio::test]
@@ -947,16 +1009,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_api_search_rejects_filtered_requests() {
-        let request = SearchRequest::new("test query").with_region("us");
+    async fn execute_api_search_rejects_session_only_options() {
+        let request = SearchRequest::new("test query").with_time_filter("1");
         let result = execute_api_search(&request, "api-token").await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, KagiError::Config(_)));
-        assert!(
-            err.to_string()
-                .contains("search filters require KAGI_SESSION_TOKEN")
+        assert!(err.to_string().contains("requires KAGI_SESSION_TOKEN"));
+    }
+
+    #[test]
+    fn api_search_request_serializes_v1_filters() {
+        let request = SearchRequest::new("test query")
+            .with_region("us")
+            .with_from_date("2026-01-01")
+            .with_to_date("2026-02-01")
+            .with_limit(10);
+
+        let body = serde_json::to_value(ApiSearchRequest::from_search_request(&request))
+            .expect("api request serializes");
+
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "query": "test query",
+                "limit": 10,
+                "filters": {
+                    "region": "us",
+                    "after": "2026-01-01",
+                    "before": "2026-02-01"
+                }
+            })
         );
     }
 
