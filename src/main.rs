@@ -28,8 +28,8 @@ use crate::api::{
     execute_lens_set_enabled, execute_lens_update, execute_news, execute_news_categories,
     execute_news_chaos, execute_news_filter_presets, execute_redirect_create,
     execute_redirect_delete, execute_redirect_get, execute_redirect_list,
-    execute_redirect_set_enabled, execute_redirect_update, execute_session_extract,
-    execute_smallweb, execute_subscriber_summarize, execute_summarize, execute_translate,
+    execute_redirect_set_enabled, execute_redirect_update, execute_smallweb,
+    execute_subscriber_summarize, execute_summarize, execute_translate,
 };
 use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
@@ -912,13 +912,9 @@ async fn execute_extract_with_available_auth(
     if let Some(key) = inventory.api_key {
         return execute_extract(url, &key.value).await;
     }
-    if let Some(token) = inventory.session_token {
-        return execute_session_extract(url, &token.value).await;
-    }
 
     Err(KagiError::Config(
-        "extract requires KAGI_API_KEY or KAGI_SESSION_TOKEN (env or .kagi.toml [auth])"
-            .to_string(),
+        "extract requires KAGI_API_KEY (env or .kagi.toml [auth.api_key])".to_string(),
     ))
 }
 

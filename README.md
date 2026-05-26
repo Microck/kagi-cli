@@ -122,7 +122,7 @@ export KAGI_API_KEY='...'
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber`, and Extract eligibility checks through the authenticated API portal |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, and `summarize --subscriber` |
 | `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
 | `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
 | none | `news`, `smallweb`, `auth status`, `--help` |
@@ -170,7 +170,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
-| `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly; session-only auth is rejected when Kagi's API portal does not allow Extract access |
+| `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly |
 | `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
 | `kagi notify` | send search or news output to a webhook |
 | `kagi history` | inspect local command history and aggregate query stats |

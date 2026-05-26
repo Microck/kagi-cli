@@ -20,7 +20,7 @@ This reference provides a complete mapping of which commands require which authe
 | `auth set` | None | None | Saves credentials |
 | `summarize` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
-| `extract` | `KAGI_API_KEY` | Session-derived key when API portal allows it | Current `/api/v1` Extract API |
+| `extract` | `KAGI_API_KEY` | None | Current `/api/v1` Extract API |
 | `news` | None | None | Public endpoint |
 | `quick` | `KAGI_SESSION_TOKEN` | None | Quick Answer web product |
 | `ask-page` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
@@ -294,6 +294,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 - ❌ `kagi fastgpt` - requires API token
 - ❌ `kagi summarize --url ...` (without --subscriber) - requires API token
 - ❌ `kagi enrich web` - requires API token
+- ❌ `kagi extract` - requires API key
 
 ### Legacy API Token Only
 
@@ -322,6 +323,7 @@ kagi auth set --api-token 'your_api_token'
 - ❌ `kagi bang custom list` - requires session token
 - ❌ `kagi redirect list` - requires session token
 - ❌ `kagi summarize --subscriber` - requires session token
+- ❌ `kagi extract` - requires API key
 
 ### Session Token, API Key, and Legacy API Token
 
@@ -335,7 +337,7 @@ kagi auth set --session-token '...' --api-key '...' --api-token '...'
 
 **Smart behavior:**
 - `search`: Uses session (default), or API key if `[auth.preferred_auth = "api"]` is set
-- `extract`: Uses API key directly, or session only when Kagi's API portal allows Extract access
+- `extract`: Uses API key directly
 - `summarize` without `--subscriber`: Uses legacy API token
 - `summarize --subscriber`: Uses session
 - `quick`: Uses session

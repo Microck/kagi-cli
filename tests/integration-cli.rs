@@ -685,169 +685,10 @@ fn extract_command_rejects_non_https_urls() {
 }
 
 #[test]
-fn extract_command_uses_session_api_token_from_portal() {
+fn extract_command_requires_api_key_with_session_only_auth() {
     let server = MockServer::start();
-    let _portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<input id="team_invite_link" class="copyToClipText" value="session-derived-api-token-1234567890abcdef">"#);
-    });
-    let _extract = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/v1/extract")
-            .header(
-                "authorization",
-                "Bearer session-derived-api-token-1234567890abcdef",
-            )
-            .json_body(json!({
-                "pages": [
-                    {
-                        "url": "https://example.com/article"
-                    }
-                ],
-                "format": "json"
-            }));
-        then.status(200)
-            .header("content-type", "application/json")
-            .json_body(json!({
-                "meta": {
-                    "trace": "trace-1",
-                    "node": "test",
-                    "ms": 12
-                },
-                "data": [
-                    {
-                        "url": "https://example.com/article",
-                        "markdown": "# Article\n\nExtracted via session-derived API token."
-                    }
-                ]
-            }));
-    });
-
     let tempdir = TempDir::new().expect("tempdir");
-    let cache_dir = tempdir.path().join("cache");
-    let mut env = session_env(&server);
-    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
-    let output = run_kagi(
-        &["extract", "https://example.com/article"],
-        &env_refs(&env),
-        tempdir.path(),
-    );
-
-    assert_success(&output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout,
-        "# Article\n\nExtracted via session-derived API token.\n"
-    );
-}
-
-#[test]
-fn extract_command_generates_api_token_when_portal_has_none() {
-    let server = MockServer::start();
-    let _new_portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<h1>Kagi API</h1><a href="/api/playground/extract">Extraction</a>"#);
-    });
-    let _generate = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/api")
-            .query_param("generate", "1")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<input id="team_invite_link" class="copyToClipText" value="generated-api-token-1234567890abcdef">"#);
-    });
-    let _portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<a href="/settings/api?generate=1">Generate API key</a>"#);
-    });
-    let _extract = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/v1/extract")
-            .header(
-                "authorization",
-                "Bearer generated-api-token-1234567890abcdef",
-            )
-            .json_body(json!({
-                "pages": [
-                    {
-                        "url": "https://example.com/article"
-                    }
-                ],
-                "format": "json"
-            }));
-        then.status(200)
-            .header("content-type", "application/json")
-            .json_body(json!({
-                "meta": {
-                    "trace": "trace-1",
-                    "node": "test",
-                    "ms": 12
-                },
-                "data": [
-                    {
-                        "url": "https://example.com/article",
-                        "markdown": "# Article\n\nExtracted after API token generation."
-                    }
-                ]
-            }));
-    });
-
-    let tempdir = TempDir::new().expect("tempdir");
-    let cache_dir = tempdir.path().join("cache");
-    let mut env = session_env(&server);
-    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
-    let output = run_kagi(
-        &["extract", "https://example.com/article"],
-        &env_refs(&env),
-        tempdir.path(),
-    );
-
-    assert_success(&output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout,
-        "# Article\n\nExtracted after API token generation.\n"
-    );
-}
-
-#[test]
-fn extract_command_rejects_family_restricted_session_before_generating_api_token() {
-    let server = MockServer::start();
-    let _settings_portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<a href="/settings/api?generate=1">Generate API key</a>"#);
-    });
-    let _new_portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200).header("content-type", "text/html").body(
-            r#"<h1>API access is restricted for family members</h1>
-            <p>Request an API key from your family administrator.</p>"#,
-        );
-    });
-
-    let tempdir = TempDir::new().expect("tempdir");
-    let cache_dir = tempdir.path().join("cache");
-    let mut env = session_env(&server);
-    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
+    let env = session_env(&server);
     let output = run_kagi(
         &["extract", "https://example.com/article"],
         &env_refs(&env),
@@ -856,12 +697,12 @@ fn extract_command_rejects_family_restricted_session_before_generating_api_token
 
     assert!(
         !output.status.success(),
-        "expected family-restricted session to fail"
+        "expected session-only extract to fail"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("API access is restricted for this session"),
-        "expected family restriction in stderr: {stderr}"
+        stderr.contains("extract requires KAGI_API_KEY"),
+        "expected API key requirement in stderr: {stderr}"
     );
 }
 
@@ -1444,68 +1285,6 @@ fn mcp_extract_tool_call_returns_markdown() {
     assert_eq!(
         response["result"]["content"][0]["text"],
         "# Article\n\nExtracted content."
-    );
-}
-
-#[test]
-fn mcp_extract_tool_call_uses_session_api_token_from_portal() {
-    let server = MockServer::start();
-    let _portal = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/api")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .header("content-type", "text/html")
-            .body(r#"<input id="team_invite_link" class="copyToClipText" value="session-mcp-api-token-1234567890abcdef">"#);
-    });
-    let _extract = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/v1/extract")
-            .header(
-                "authorization",
-                "Bearer session-mcp-api-token-1234567890abcdef",
-            )
-            .json_body(json!({
-                "pages": [
-                    {
-                        "url": "https://example.com/article"
-                    }
-                ],
-                "format": "json"
-            }));
-        then.status(200)
-            .header("content-type", "application/json")
-            .json_body(json!({
-                "meta": {
-                    "trace": "trace-1",
-                    "node": "test",
-                    "ms": 12
-                },
-                "data": [
-                    {
-                        "url": "https://example.com/article",
-                        "markdown": "# Article\n\nMCP session extract."
-                    }
-                ]
-            }));
-    });
-
-    let tempdir = TempDir::new().expect("tempdir");
-    let cache_dir = tempdir.path().join("cache");
-    let mut env = session_env(&server);
-    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
-    let output = run_kagi_with_stdin(
-        &["mcp"],
-        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kagi_extract","arguments":{"url":"https://example.com/article"}}}"#,
-        &env_refs(&env),
-        tempdir.path(),
-    );
-
-    assert_success(&output);
-    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
-    assert_eq!(
-        response["result"]["content"][0]["text"],
-        "# Article\n\nMCP session extract."
     );
 }
 
