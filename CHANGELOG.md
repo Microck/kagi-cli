@@ -7,6 +7,18 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.8.0]
+
+### Added
+
+- Added `kagi assistant models` for stable JSON output of available Assistant base-model slugs.
+- Added `kagi assistant --stream` to emit NDJSON updates with `md_delta` while Assistant responses are generated.
+- Added `kagi assistant --once --model <MODEL>` to create a temporary custom assistant for one prompt and delete it afterward.
+
+### Changed
+
+- `kagi extract` and MCP `kagi_extract` now require `KAGI_API_KEY` directly instead of trying to derive an API key from session auth.
+
 ## [0.7.0]
 
 ### Added
