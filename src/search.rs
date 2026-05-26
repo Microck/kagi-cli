@@ -15,7 +15,7 @@ use crate::types::{NewsSearchResponse, SearchResponse, SearchResult};
 
 const KAGI_SEARCH_PATH: &str = "/html/search";
 const KAGI_NEWS_SEARCH_PATH: &str = "/news";
-const KAGI_API_SEARCH_PATH: &str = "/api/v0/search";
+const KAGI_API_SEARCH_PATH: &str = "/api/v1/search";
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const UNAUTHENTICATED_MARKERS: [&str; 3] = [
     "<title>Kagi Search - A Premium Search Engine</title>",
@@ -346,9 +346,12 @@ pub async fn execute_api_search(
 
     let client = build_client()?;
     let response = client
-        .get(http::kagi_url(KAGI_API_SEARCH_PATH))
-        .query(&[("q", request.query.trim())])
-        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .post(http::kagi_url(KAGI_API_SEARCH_PATH))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&ApiSearchRequest {
+            query: request.query.trim(),
+        })
         .send()
         .await
         .map_err(map_transport_error)?;
@@ -368,7 +371,7 @@ pub async fn execute_api_search(
                 KagiError::Parse(format!("failed to parse Kagi API response: {error}"))
             })?;
             Ok(SearchResponse {
-                data: api_response.data,
+                data: api_response.into_search_results(),
             })
         }
         status if status.is_client_error() => {
@@ -705,9 +708,54 @@ fn build_client() -> Result<Client, KagiError> {
     http::client_20s()
 }
 
+#[derive(Debug, Serialize)]
+struct ApiSearchRequest<'a> {
+    query: &'a str,
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiSearchResponse {
-    data: Vec<SearchResult>,
+    data: Option<ApiSearchData>,
+}
+
+impl ApiSearchResponse {
+    fn into_search_results(self) -> Vec<SearchResult> {
+        self.data
+            .and_then(|data| data.search)
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(index, result)| result.into_search_result(index as u32 + 1))
+            .collect()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiSearchData {
+    search: Option<Vec<ApiSearchResult>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiSearchResult {
+    url: String,
+    title: String,
+    #[serde(default)]
+    snippet: Option<String>,
+    #[serde(default)]
+    time: Option<String>,
+}
+
+impl ApiSearchResult {
+    fn into_search_result(self, rank: u32) -> SearchResult {
+        SearchResult {
+            t: 0,
+            rank: Some(rank),
+            url: self.url,
+            title: self.title,
+            snippet: self.snippet.unwrap_or_default(),
+            published: self.time,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -915,20 +963,22 @@ mod tests {
     #[test]
     fn parses_api_response_shape_into_search_response() {
         let raw = r#"{
-            "meta": { "id": "abc", "node": "us", "ms": 10 },
-            "data": [
-                {
-                    "t": 0,
-                    "url": "https://example.com",
-                    "title": "Example",
-                    "snippet": "Example snippet"
-                }
-            ]
+            "meta": { "trace": "abc", "node": "us", "ms": 10 },
+            "data": {
+                "search": [
+                    {
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "snippet": "Example snippet"
+                    }
+                ]
+            }
         }"#;
 
         let parsed: ApiSearchResponse = serde_json::from_str(raw).expect("api response parses");
-        assert_eq!(parsed.data.len(), 1);
-        assert_eq!(parsed.data[0].title, "Example");
+        let results = parsed.into_search_results();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Example");
     }
 
     #[test]

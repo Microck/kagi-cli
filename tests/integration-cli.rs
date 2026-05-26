@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -7,6 +8,7 @@ use httpmock::MockServer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+const API_KEY: &str = "test-api-key";
 const API_TOKEN: &str = "test-api-token";
 
 fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
@@ -14,6 +16,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
     command.args(args).current_dir(cwd);
 
     for key in [
+        "KAGI_API_KEY",
         "KAGI_API_TOKEN",
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
@@ -41,6 +44,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         .stderr(Stdio::piped());
 
     for key in [
+        "KAGI_API_KEY",
         "KAGI_API_TOKEN",
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
@@ -77,6 +81,7 @@ fn assert_success(output: &Output) {
 
 fn test_env(server: &MockServer) -> Vec<(&'static str, String)> {
     vec![
+        ("KAGI_API_KEY", API_KEY.to_string()),
         ("KAGI_API_TOKEN", API_TOKEN.to_string()),
         ("KAGI_BASE_URL", server.base_url()),
         ("KAGI_NEWS_BASE_URL", server.base_url()),
@@ -108,14 +113,15 @@ fn api_meta() -> Value {
 fn search_payload(title: &str, url: &str, snippet: &str) -> Value {
     json!({
         "meta": api_meta(),
-        "data": [
-            {
-                "t": 0,
-                "url": url,
-                "title": title,
-                "snippet": snippet
-            }
-        ]
+        "data": {
+            "search": [
+                {
+                    "url": url,
+                    "title": title,
+                    "snippet": snippet
+                }
+            ]
+        }
     })
 }
 
@@ -188,10 +194,10 @@ fn news_stories() -> Value {
 fn search_command_returns_json_from_mock_api() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust programming")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust programming" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -218,10 +224,10 @@ fn search_command_returns_json_from_mock_api() {
 fn search_command_returns_toon_from_mock_api() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust programming")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust programming" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -250,10 +256,10 @@ fn search_command_returns_toon_from_mock_api() {
 fn search_command_pretty_format_prints_ranked_results() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust programming")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust programming" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -288,19 +294,21 @@ fn search_command_pretty_format_prints_ranked_results() {
 fn search_command_limit_truncates_results() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(json!({
                 "meta": api_meta(),
-                "data": [
-                    { "t": 0, "url": "https://example.com/a", "title": "A", "snippet": "first" },
-                    { "t": 0, "url": "https://example.com/b", "title": "B", "snippet": "second" },
-                    { "t": 0, "url": "https://example.com/c", "title": "C", "snippet": "third" }
-                ]
+                "data": {
+                    "search": [
+                        { "url": "https://example.com/a", "title": "A", "snippet": "first" },
+                        { "url": "https://example.com/b", "title": "B", "snippet": "second" },
+                        { "url": "https://example.com/c", "title": "C", "snippet": "third" }
+                    ]
+                }
             }));
     });
 
@@ -324,10 +332,10 @@ fn search_command_limit_truncates_results() {
 fn batch_command_returns_queries_and_results() {
     let server = MockServer::start();
     let _rust = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -337,10 +345,10 @@ fn batch_command_returns_queries_and_results() {
             ));
     });
     let _zig = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "zig")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "zig" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -379,10 +387,10 @@ fn batch_command_returns_queries_and_results() {
 fn batch_command_reports_partial_failures_in_json_mode() {
     let server = MockServer::start();
     let _ok = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -392,10 +400,10 @@ fn batch_command_reports_partial_failures_in_json_mode() {
             ));
     });
     let _fail = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "broken")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "broken" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(403)
             .header("content-type", "application/json")
             .json_body(json!({
@@ -433,10 +441,10 @@ fn batch_command_reports_partial_failures_in_json_mode() {
 fn auth_check_validates_credentials_without_live_network() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust lang")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust lang" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -452,7 +460,92 @@ fn auth_check_validates_credentials_without_live_network() {
 
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("auth check passed: api-key (env)"));
+}
+
+#[test]
+fn auth_check_uses_current_search_api_for_api_keys() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust lang" }))
+            .header("authorization", "Bearer test-api-key");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust",
+                "https://www.rust-lang.org",
+                "Rust homepage.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(&["auth", "check"], &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("auth check passed: api-key (env)"));
+    assert_eq!(_search.calls(), 1, "auth check should call v1 Search API");
+}
+
+#[test]
+fn auth_check_validates_legacy_api_token_with_fastgpt() {
+    let server = MockServer::start();
+    let _fastgpt = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v0/fastgpt")
+            .json_body(json!({
+                "query": "2+2",
+                "cache": true,
+                "web_search": false
+            }))
+            .header("authorization", "Bot test-api-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": api_meta(),
+                "data": {
+                    "output": "4",
+                    "tokens": 4,
+                    "references": []
+                }
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = vec![
+        ("KAGI_API_TOKEN", API_TOKEN.to_string()),
+        ("KAGI_BASE_URL", server.base_url()),
+    ];
+    let output = run_kagi(&["auth", "check"], &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("auth check passed: api-token (env)"));
+}
+
+#[test]
+fn auth_set_saves_api_key_and_legacy_api_token_separately() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "auth",
+            "set",
+            "--api-key",
+            "current-key",
+            "--api-token",
+            "legacy-token",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(tempdir.path().join(".kagi.toml")).expect("config should exist");
+    assert!(raw.contains("api_key = \"current-key\""));
+    assert!(raw.contains("api_token = \"legacy-token\""));
 }
 
 #[test]
@@ -492,7 +585,7 @@ fn extract_command_prints_markdown_from_mock_api() {
     let _extract = server.mock(|when, then| {
         when.method(POST)
             .path("/api/v1/extract")
-            .header("authorization", "Bot test-api-token")
+            .header("authorization", "Bearer test-api-key")
             .json_body(json!({
                 "pages": [
                     {
@@ -534,7 +627,7 @@ fn extract_command_prints_markdown_from_mock_api() {
 #[test]
 fn extract_command_rejects_non_https_urls() {
     let tempdir = TempDir::new().expect("tempdir");
-    let env = [("KAGI_API_TOKEN", API_TOKEN)];
+    let env = [("KAGI_API_KEY", API_KEY)];
     let output = run_kagi(&["extract", "http://example.com"], &env, tempdir.path());
 
     assert!(
@@ -545,6 +638,187 @@ fn extract_command_rejects_non_https_urls() {
     assert!(
         stderr.contains("extract URL must use the https scheme"),
         "expected HTTPS validation in stderr: {stderr}"
+    );
+}
+
+#[test]
+fn extract_command_uses_session_api_token_from_portal() {
+    let server = MockServer::start();
+    let _portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<input id="team_invite_link" class="copyToClipText" value="session-derived-api-token-1234567890abcdef">"#);
+    });
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header(
+                "authorization",
+                "Bearer session-derived-api-token-1234567890abcdef",
+            )
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted via session-derived API token."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
+    let output = run_kagi(
+        &["extract", "https://example.com/article"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout,
+        "# Article\n\nExtracted via session-derived API token.\n"
+    );
+}
+
+#[test]
+fn extract_command_generates_api_token_when_portal_has_none() {
+    let server = MockServer::start();
+    let _new_portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<h1>Kagi API</h1><a href="/api/playground/extract">Extraction</a>"#);
+    });
+    let _generate = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/api")
+            .query_param("generate", "1")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<input id="team_invite_link" class="copyToClipText" value="generated-api-token-1234567890abcdef">"#);
+    });
+    let _portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<a href="/settings/api?generate=1">Generate API key</a>"#);
+    });
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header(
+                "authorization",
+                "Bearer generated-api-token-1234567890abcdef",
+            )
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted after API token generation."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
+    let output = run_kagi(
+        &["extract", "https://example.com/article"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout,
+        "# Article\n\nExtracted after API token generation.\n"
+    );
+}
+
+#[test]
+fn extract_command_rejects_family_restricted_session_before_generating_api_token() {
+    let server = MockServer::start();
+    let _settings_portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<a href="/settings/api?generate=1">Generate API key</a>"#);
+    });
+    let _new_portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).header("content-type", "text/html").body(
+            r#"<h1>API access is restricted for family members</h1>
+            <p>Request an API key from your family administrator.</p>"#,
+        );
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
+    let output = run_kagi(
+        &["extract", "https://example.com/article"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "expected family-restricted session to fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("API access is restricted for this session"),
+        "expected family restriction in stderr: {stderr}"
     );
 }
 
@@ -818,10 +1092,10 @@ fn assistant_thread_list_paginates_with_cursor_id() {
 fn batch_command_reads_queries_from_stdin() {
     let server = MockServer::start();
     let _rust = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -831,10 +1105,10 @@ fn batch_command_reads_queries_from_stdin() {
             ));
     });
     let _zig = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "zig")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "zig" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -862,10 +1136,10 @@ fn batch_command_reads_queries_from_stdin() {
 fn search_template_renders_result_fields() {
     let server = MockServer::start();
     let _search = server.mock(|when, then| {
-        when.method(GET)
-            .path("/api/v0/search")
-            .query_param("q", "rust")
-            .header("authorization", "Bot test-api-token");
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(search_payload(
@@ -960,7 +1234,7 @@ fn mcp_extract_tool_call_returns_markdown() {
     let _extract = server.mock(|when, then| {
         when.method(POST)
             .path("/api/v1/extract")
-            .header("authorization", "Bot test-api-token")
+            .header("authorization", "Bearer test-api-key")
             .json_body(json!({
                 "pages": [
                     {
@@ -1000,6 +1274,68 @@ fn mcp_extract_tool_call_returns_markdown() {
     assert_eq!(
         response["result"]["content"][0]["text"],
         "# Article\n\nExtracted content."
+    );
+}
+
+#[test]
+fn mcp_extract_tool_call_uses_session_api_token_from_portal() {
+    let server = MockServer::start();
+    let _portal = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/api")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(r#"<input id="team_invite_link" class="copyToClipText" value="session-mcp-api-token-1234567890abcdef">"#);
+    });
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header(
+                "authorization",
+                "Bearer session-mcp-api-token-1234567890abcdef",
+            )
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nMCP session extract."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let cache_dir = tempdir.path().join("cache");
+    let mut env = session_env(&server);
+    env.push(("KAGI_CACHE_DIR", cache_dir.to_string_lossy().to_string()));
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kagi_extract","arguments":{"url":"https://example.com/article"}}}"#,
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(
+        response["result"]["content"][0]["text"],
+        "# Article\n\nMCP session extract."
     );
 }
 

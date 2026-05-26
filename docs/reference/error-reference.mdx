@@ -37,7 +37,7 @@ Error: Network error: request to https://kagi.com/api/v0/search timed out after 
 
 **Message:**
 ```
-Config error: missing credentials: set KAGI_API_TOKEN or KAGI_SESSION_TOKEN (env), or add [auth] api_token/session_token to .kagi.toml
+Config error: missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env), or add [auth] api_key/session_token to .kagi.toml
 ```
 
 **Meaning:** No authentication token is configured.
@@ -61,7 +61,7 @@ kagi auth check
 Config error: this command requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
 ```
 
-**Meaning:** Command needs session token, but you may have only API token configured.
+**Meaning:** Command needs a session token, but you may have only an API key or legacy API token configured.
 
 **Solution:**
 ```bash

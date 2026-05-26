@@ -16,7 +16,7 @@ Step 2: Verify Installation (1 minute)
     ↓
 Step 3: Subscriber Setup with Session Token (3 minutes)
     ↓
-Step 4: Paid API Setup with API Token (optional)
+Step 4: Paid API Setup with API Key or Legacy API Token (optional)
     ↓
 Step 5: Persistent Configuration (2 minutes)
     ↓
@@ -87,7 +87,8 @@ At this stage, `kagi auth status` will likely show:
 
 ```
 selected: none
-api token: not configured
+api key: not configured
+legacy api token: not configured
 session token: not configured
 config path: .kagi.toml
 ```
@@ -163,7 +164,8 @@ Expected output:
 
 ```
 selected: session-token (config)
-api token: not configured
+api key: not configured
+legacy api token: not configured
 session token: configured via config
 config path: .kagi.toml
 ```
@@ -236,20 +238,20 @@ kagi summarize --subscriber --url https://www.rust-lang.org --summary-type keypo
 
 ![Summarize command demo](/images/demos/summarize.gif)
 
-## Step 4: Paid API Setup with API Token (Optional)
+## Step 4: Paid API Setup with API Key or Legacy API Token (Optional)
 
-If you have Kagi API access (separate from your subscription), you can add an API token for additional commands.
+If you have Kagi API access (separate from your subscription), add an API key for current `/api/v1` commands or a legacy API token for older `/api/v0` commands.
 
-### Getting Your API Token
+### Getting Your API Key
 
 1. **Log into Kagi** in your web browser
-2. **Go to Settings** → [API Settings](https://kagi.com/settings/api)
-3. **Generate a new API token** if you don't have one
-4. **Copy the token** (looks like a long alphanumeric string)
+2. **Open** [API keys](https://kagi.com/api/keys)
+3. **Generate a new API key** if you don't have one
+4. **Copy the key** (looks like a long alphanumeric string)
 
 **Note:** API access requires available credit. Check your Kagi account for API credit balance.
 
-### Setting Up the API Token
+### Setting Up the API Key
 
 **Option A: Auth Wizard**
 
@@ -257,21 +259,21 @@ If you have Kagi API access (separate from your subscription), you can add an AP
 kagi auth
 ```
 
-Choose `API Token`, paste it, and let the wizard add it alongside your existing Session Link.
+Choose `API Key`, paste it, and let the wizard add it alongside your existing Session Link.
 
 **Option B: Environment Variable**
 
 ```bash
-export KAGI_API_TOKEN='your_api_token_here'
+export KAGI_API_KEY='your_api_key_here'
 ```
 
 **Option C: Persistent Configuration**
 
 ```bash
-kagi auth set --api-token 'your_api_token_here'
+kagi auth set --api-key 'your_api_key_here'
 ```
 
-**Note:** If you previously set a session token, this will add the API token alongside it. Both can coexist.
+**Note:** If you previously set a session token, this will add the API key alongside it. Both can coexist. Use `--api-token` only for legacy FastGPT, Summarizer, and Enrich commands.
 
 ### Testing Paid API Commands
 
@@ -289,12 +291,13 @@ kagi fastgpt "Explain quantum computing"
 kagi enrich web "artificial intelligence"
 ```
 
-### Understanding Dual Token Setup
+### Understanding Multi-Credential Setup
 
-When you have both tokens configured:
+When you have multiple credentials configured:
 
 - **Session Token**: Enables lens search, Quick Answer, filtered search, ask-page, assistant, translate, and subscriber Summarizer
-- **API Token**: Enables FastGPT, public Summarizer, Enrichment APIs
+- **API Key**: Enables current Search API and Extract API
+- **Legacy API Token**: Enables FastGPT, public Summarizer, and Enrichment APIs
 - **Base Search**: Defaults to session unless `[auth.preferred_auth] = "api"`
 
 See the [Auth Matrix](/reference/auth-matrix) for the complete command-to-token mapping.

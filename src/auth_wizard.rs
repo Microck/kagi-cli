@@ -6,13 +6,16 @@ use std::io::Write;
 use cliclack::{Theme, ThemeState, log};
 use console::{Style, Term, style};
 
+use crate::api;
 use crate::auth::{
-    API_TOKEN_ENV, ConfigAuthSnapshot, Credential, CredentialKind, CredentialSource,
+    API_KEY_ENV, API_TOKEN_ENV, ConfigAuthSnapshot, Credential, CredentialKind, CredentialSource,
     SESSION_TOKEN_ENV, SearchAuthPreference, load_config_auth_snapshot, load_credential_inventory,
-    normalize_api_token, normalize_session_token, save_credentials_with_preference,
+    normalize_api_key, normalize_api_token, normalize_session_token,
+    save_credentials_with_preference,
 };
 use crate::error::KagiError;
 use crate::search;
+use crate::types::FastGptRequest;
 
 const VALIDATION_QUERY: &str = "rust lang";
 const GOLD: u8 = 220;
@@ -127,9 +130,14 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
                 "Search, Quick Answer, Assistant, Translate, subscriber Summarizer",
             )
             .item(
+                CredentialKind::ApiKey,
+                "API Key",
+                "Current Search API and Extract API",
+            )
+            .item(
                 CredentialKind::ApiToken,
-                "API Token",
-                "FastGPT, enrich, public Summarizer, and API-first base search",
+                "Legacy API Token",
+                "Legacy FastGPT, enrich, and public Summarizer APIs",
             )
             .interact(),
     )?
@@ -194,7 +202,7 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
         ))?;
         let Some(save_anyway) = prompt_result(
             cliclack::confirm(format!("Save this {} anyway?", kind_display(kind)))
-                .initial_value(kind == CredentialKind::ApiToken)
+                .initial_value(kind != CredentialKind::SessionToken)
                 .interact(),
         )?
         else {
@@ -213,7 +221,7 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
     let preferred_auth = if should_prompt_preference(&config_snapshot, kind) {
         let Some(use_selected_method) = prompt_result(
             cliclack::confirm(format!(
-                "Both auth methods are configured. Make {} the preferred path for base search?",
+                "Both base-search auth methods are configured. Make {} the preferred path for base search?",
                 kind_display(kind)
             ))
             .initial_value(true)
@@ -224,7 +232,7 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
         };
 
         if use_selected_method {
-            Some(preference_for_kind(kind))
+            preference_for_kind(kind)
         } else {
             None
         }
@@ -233,11 +241,14 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
     };
 
     let saved_inventory = match kind {
+        CredentialKind::ApiKey => {
+            save_credentials_with_preference(Some(&credential.value), None, None, preferred_auth)?
+        }
         CredentialKind::ApiToken => {
-            save_credentials_with_preference(Some(&credential.value), None, preferred_auth)?
+            save_credentials_with_preference(None, Some(&credential.value), None, preferred_auth)?
         }
         CredentialKind::SessionToken => {
-            save_credentials_with_preference(None, Some(&credential.value), preferred_auth)?
+            save_credentials_with_preference(None, None, Some(&credential.value), preferred_auth)?
         }
     };
 
@@ -304,7 +315,7 @@ fn auth_ascii_width() -> u16 {
         .min(u16::MAX as usize) as u16
 }
 
-/// Validates a credential by executing a test search against the Kagi API.
+/// Validates a credential against the Kagi surface that uses that credential type.
 ///
 /// # Arguments
 /// * `credential` - The credential to validate.
@@ -317,14 +328,28 @@ fn auth_ascii_width() -> u16 {
 pub async fn validate_credential(credential: &Credential) -> Result<(), KagiError> {
     let request = search::SearchRequest::new(VALIDATION_QUERY.to_string());
     match credential.kind {
-        CredentialKind::ApiToken => {
+        CredentialKind::ApiKey => {
             search::execute_api_search(&request, &credential.value).await?;
+        }
+        CredentialKind::ApiToken => {
+            validate_legacy_api_token(&credential.value).await?;
         }
         CredentialKind::SessionToken => {
             search::execute_search(&request, &credential.value).await?;
         }
     }
 
+    Ok(())
+}
+
+async fn validate_legacy_api_token(token: &str) -> Result<(), KagiError> {
+    let request = FastGptRequest {
+        query: "2+2".to_string(),
+        cache: Some(true),
+        web_search: Some(false),
+    };
+
+    api::execute_fastgpt(&request, token).await?;
     Ok(())
 }
 
@@ -349,6 +374,7 @@ fn wizard_io<T>(result: io::Result<T>) -> Result<T, KagiError> {
 
 fn build_candidate_credential(kind: CredentialKind, input: &str) -> Result<Credential, KagiError> {
     let value = match kind {
+        CredentialKind::ApiKey => normalize_api_key(input)?,
         CredentialKind::ApiToken => normalize_api_token(input)?,
         CredentialKind::SessionToken => normalize_session_token(input)?,
     };
@@ -362,6 +388,7 @@ fn build_candidate_credential(kind: CredentialKind, input: &str) -> Result<Crede
 
 const fn kind_display(kind: CredentialKind) -> &'static str {
     match kind {
+        CredentialKind::ApiKey => "API key",
         CredentialKind::ApiToken => "API token",
         CredentialKind::SessionToken => "Session Link",
     }
@@ -398,13 +425,14 @@ fn format_inventory_summary(inventory: &crate::auth::CredentialInventory) -> Str
             ),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
-        wizard_status_line(
-            "Session Link",
-            &inventory_value_line(inventory.session_token.as_ref()),
-        ),
+        wizard_status_line("API Key", &inventory_value_line(inventory.api_key.as_ref())),
         wizard_status_line(
             "API Token",
             &inventory_value_line(inventory.api_token.as_ref()),
+        ),
+        wizard_status_line(
+            "Session Link",
+            &inventory_value_line(inventory.session_token.as_ref()),
         ),
         wizard_status_line("Config File", &inventory.config_path.display().to_string()),
     ]
@@ -427,13 +455,14 @@ fn format_saved_summary(inventory: &crate::auth::CredentialInventory) -> String 
             ),
         ),
         wizard_status_line("Base Search", inventory.search_preference.as_str()),
-        wizard_status_line(
-            "Session Link",
-            &inventory_value_line(inventory.session_token.as_ref()),
-        ),
+        wizard_status_line("API Key", &inventory_value_line(inventory.api_key.as_ref())),
         wizard_status_line(
             "API Token",
             &inventory_value_line(inventory.api_token.as_ref()),
+        ),
+        wizard_status_line(
+            "Session Link",
+            &inventory_value_line(inventory.session_token.as_ref()),
         ),
     ]
     .join("\n")
@@ -441,6 +470,7 @@ fn format_saved_summary(inventory: &crate::auth::CredentialInventory) -> String 
 
 const fn method_title(kind: CredentialKind) -> &'static str {
     match kind {
+        CredentialKind::ApiKey => "API Key Setup",
         CredentialKind::ApiToken => "API Token Setup",
         CredentialKind::SessionToken => "Session Link Setup",
     }
@@ -448,6 +478,7 @@ const fn method_title(kind: CredentialKind) -> &'static str {
 
 const fn method_prompt(kind: CredentialKind) -> &'static str {
     match kind {
+        CredentialKind::ApiKey => "Paste your API key",
         CredentialKind::ApiToken => "Paste your API token",
         CredentialKind::SessionToken => "Paste your Session Link or raw session token",
     }
@@ -455,9 +486,15 @@ const fn method_prompt(kind: CredentialKind) -> &'static str {
 
 fn method_instructions(kind: CredentialKind) -> String {
     match kind {
+        CredentialKind::ApiKey => [
+            "Open: https://kagi.com/api/keys",
+            "Then copy your API key and paste it here.",
+            "",
+        ]
+        .join("\n"),
         CredentialKind::ApiToken => [
             "Open: https://kagi.com/settings/api",
-            "Then copy your API token and paste it here.",
+            "Then copy your legacy API token and paste it here.",
             "",
         ]
         .join("\n"),
@@ -474,9 +511,26 @@ fn validation_warning(kind: CredentialKind, error: &KagiError) -> String {
     let mut message = format!("Validation Error:\n{error}");
 
     match kind {
+        CredentialKind::ApiKey => {
+            message.push_str(
+                "\n\nAPI key validation uses Kagi's current Search API path. Verify the key at https://kagi.com/api/keys and confirm your account has API access enabled.",
+            );
+            if error.to_string().contains("401") {
+                message.push_str(
+                    "\nKagi rejected the key as unauthorized. Generate a fresh API key and paste the complete value.",
+                );
+            } else if error.to_string().contains("403") {
+                message.push_str(
+                    "\nKagi returned forbidden. The key may be valid, but this account may not have Search API access.",
+                );
+            }
+            message.push_str(
+                "\nYou may still save the key and test Extract directly if that endpoint is available to your account.",
+            );
+        }
         CredentialKind::ApiToken => {
             message.push_str(
-                "\n\nAPI token validation uses Kagi's Search API path. Verify the token at https://kagi.com/settings/api and confirm your account has API access enabled.",
+                "\n\nLegacy API token validation uses Kagi's legacy FastGPT API path. Verify the token at https://kagi.com/settings/api if you still use legacy /api/v0 endpoints.",
             );
             if error.to_string().contains("401") {
                 message.push_str(
@@ -484,11 +538,11 @@ fn validation_warning(kind: CredentialKind, error: &KagiError) -> String {
                 );
             } else if error.to_string().contains("403") {
                 message.push_str(
-                    "\nKagi returned forbidden. The token may be valid, but this account may not have Search API access.",
+                    "\nKagi returned forbidden. The token may be valid, but this account may not have FastGPT API access.",
                 );
             }
             message.push_str(
-                "\nYou may still save the token and test FastGPT or enrich directly if those API endpoints are available to your account.",
+                "\nYou may still save the token and test summarize, fastgpt, or enrich directly if those legacy endpoints are available to your account.",
             );
         }
         CredentialKind::SessionToken => {
@@ -513,16 +567,22 @@ fn env_override_notice(kind: CredentialKind) -> Option<String> {
 
 const fn has_config_credential(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) -> bool {
     match kind {
+        CredentialKind::ApiKey => snapshot.api_key.is_some(),
         CredentialKind::ApiToken => snapshot.api_token.is_some(),
         CredentialKind::SessionToken => snapshot.session_token.is_some(),
     }
 }
 
 fn should_prompt_preference(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) -> bool {
+    if kind == CredentialKind::ApiToken {
+        return false;
+    }
+
     should_prompt_preference_with_other_method(
         snapshot,
         kind,
-        other_method_configured(snapshot, kind) || env_credential_present(other_kind(kind)),
+        other_method_configured(snapshot, kind)
+            || search_other_kind(kind).is_some_and(env_credential_present),
     )
 }
 
@@ -531,29 +591,34 @@ fn should_prompt_preference_with_other_method(
     kind: CredentialKind,
     other_method_configured: bool,
 ) -> bool {
-    other_method_configured && snapshot.search_preference != preference_for_kind(kind)
+    preference_for_kind(kind).is_some_and(|preference| {
+        other_method_configured && snapshot.search_preference != preference
+    })
 }
 
-const fn preference_for_kind(kind: CredentialKind) -> SearchAuthPreference {
+const fn preference_for_kind(kind: CredentialKind) -> Option<SearchAuthPreference> {
     match kind {
-        CredentialKind::ApiToken => SearchAuthPreference::Api,
-        CredentialKind::SessionToken => SearchAuthPreference::Session,
+        CredentialKind::ApiKey => Some(SearchAuthPreference::Api),
+        CredentialKind::ApiToken => None,
+        CredentialKind::SessionToken => Some(SearchAuthPreference::Session),
     }
 }
 
-const fn other_kind(kind: CredentialKind) -> CredentialKind {
+const fn search_other_kind(kind: CredentialKind) -> Option<CredentialKind> {
     match kind {
-        CredentialKind::ApiToken => CredentialKind::SessionToken,
-        CredentialKind::SessionToken => CredentialKind::ApiToken,
+        CredentialKind::ApiKey => Some(CredentialKind::SessionToken),
+        CredentialKind::ApiToken => None,
+        CredentialKind::SessionToken => Some(CredentialKind::ApiKey),
     }
 }
 
 fn other_method_configured(snapshot: &ConfigAuthSnapshot, kind: CredentialKind) -> bool {
-    has_config_credential(snapshot, other_kind(kind))
+    search_other_kind(kind).is_some_and(|other_kind| has_config_credential(snapshot, other_kind))
 }
 
 const fn env_var_name(kind: CredentialKind) -> &'static str {
     match kind {
+        CredentialKind::ApiKey => API_KEY_ENV,
         CredentialKind::ApiToken => API_TOKEN_ENV,
         CredentialKind::SessionToken => SESSION_TOKEN_ENV,
     }
@@ -575,8 +640,13 @@ fn env_override_message(env_var: &str) -> String {
 
 fn next_steps(kind: CredentialKind) -> String {
     match kind {
-        CredentialKind::ApiToken => [
+        CredentialKind::ApiKey => [
             "kagi auth check",
+            "kagi search --format pretty \"rust programming language\"",
+            "kagi extract \"https://example.com/article\"",
+        ]
+        .join("\n"),
+        CredentialKind::ApiToken => [
             "kagi fastgpt \"what changed in rust 1.86?\"",
             "kagi enrich web \"local-first software\"",
         ]
@@ -595,12 +665,14 @@ mod tests {
     use super::*;
 
     fn snapshot(
+        api_key: Option<&str>,
         api_token: Option<&str>,
         session_token: Option<&str>,
         search_preference: SearchAuthPreference,
     ) -> ConfigAuthSnapshot {
         ConfigAuthSnapshot {
             config_path: ".kagi.toml".into(),
+            api_key: api_key.map(str::to_string),
             api_token: api_token.map(str::to_string),
             session_token: session_token.map(str::to_string),
             search_preference,
@@ -609,17 +681,22 @@ mod tests {
 
     #[test]
     fn prompts_for_preference_when_both_methods_exist_and_choice_changes_it() {
-        let config = snapshot(Some("api"), None, SearchAuthPreference::Session);
+        let config = snapshot(Some("key"), None, None, SearchAuthPreference::Session);
         assert!(!should_prompt_preference_with_other_method(
             &config,
-            CredentialKind::ApiToken,
+            CredentialKind::ApiKey,
             false
         ));
 
-        let config = snapshot(Some("api"), Some("session"), SearchAuthPreference::Session);
+        let config = snapshot(
+            Some("key"),
+            None,
+            Some("session"),
+            SearchAuthPreference::Session,
+        );
         assert!(should_prompt_preference_with_other_method(
             &config,
-            CredentialKind::ApiToken,
+            CredentialKind::ApiKey,
             true
         ));
         assert!(!should_prompt_preference_with_other_method(
@@ -631,10 +708,10 @@ mod tests {
 
     #[test]
     fn prompts_for_preference_when_other_method_exists_via_environment() {
-        let config = snapshot(None, None, SearchAuthPreference::Session);
+        let config = snapshot(None, None, None, SearchAuthPreference::Session);
         assert!(should_prompt_preference_with_other_method(
             &config,
-            CredentialKind::ApiToken,
+            CredentialKind::ApiKey,
             true
         ));
         assert!(!should_prompt_preference_with_other_method(
@@ -652,19 +729,37 @@ mod tests {
     }
 
     #[test]
-    fn builds_api_instructions_with_official_settings_page() {
-        let instructions = method_instructions(CredentialKind::ApiToken);
-        assert!(instructions.contains("https://kagi.com/settings/api"));
-        assert!(instructions.contains("API token"));
+    fn builds_api_key_instructions_with_official_keys_page() {
+        let instructions = method_instructions(CredentialKind::ApiKey);
+        assert!(instructions.contains("https://kagi.com/api/keys"));
+        assert!(instructions.contains("API key"));
     }
 
     #[test]
-    fn api_validation_warning_mentions_search_api_behavior() {
+    fn builds_legacy_api_token_instructions_with_legacy_settings_page() {
+        let instructions = method_instructions(CredentialKind::ApiToken);
+        assert!(instructions.contains("https://kagi.com/settings/api"));
+        assert!(instructions.contains("legacy API token"));
+    }
+
+    #[test]
+    fn api_key_validation_warning_mentions_search_api_behavior() {
+        let warning = validation_warning(
+            CredentialKind::ApiKey,
+            &KagiError::Auth("403 Forbidden".to_string()),
+        );
+        assert!(warning.contains("Search API"));
+        assert!(warning.contains("https://kagi.com/api/keys"));
+        assert!(warning.contains("forbidden"));
+    }
+
+    #[test]
+    fn legacy_api_token_validation_warning_mentions_fastgpt_behavior() {
         let warning = validation_warning(
             CredentialKind::ApiToken,
             &KagiError::Auth("403 Forbidden".to_string()),
         );
-        assert!(warning.contains("Search API"));
+        assert!(warning.contains("FastGPT API"));
         assert!(warning.contains("https://kagi.com/settings/api"));
         assert!(warning.contains("forbidden"));
     }

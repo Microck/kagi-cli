@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +27,13 @@ pub struct CacheEnvelope {
     pub created_at: u64,
     pub ttl_seconds: u64,
     pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct SessionApiTokenCache {
+    session_key: String,
+    api_token: String,
+    created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -125,6 +133,58 @@ pub fn cache_put(key: &str, ttl_seconds: u64, value: &Value) -> Result<(), KagiE
         value: value.clone(),
     };
     write_json(&path, &envelope)
+}
+
+pub fn session_api_token_get(session_token: &str) -> Result<Option<String>, KagiError> {
+    let session_key = session_api_token_key(session_token);
+    let path = session_api_token_path(&session_key);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&path).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to read cached Kagi API token {}: {error}",
+            path.display()
+        ))
+    })?;
+    let cache: SessionApiTokenCache = serde_json::from_str(&raw).map_err(|error| {
+        KagiError::Parse(format!(
+            "failed to parse cached Kagi API token {}: {error}",
+            path.display()
+        ))
+    })?;
+
+    if cache.session_key != session_key || cache.api_token.trim().is_empty() {
+        let _ = fs::remove_file(path);
+        return Ok(None);
+    }
+
+    Ok(Some(cache.api_token))
+}
+
+pub fn session_api_token_put(session_token: &str, api_token: &str) -> Result<(), KagiError> {
+    let session_key = session_api_token_key(session_token);
+    let path = session_api_token_path(&session_key);
+    ensure_parent_dir(&path)?;
+    let cache = SessionApiTokenCache {
+        session_key,
+        api_token: api_token.to_string(),
+        created_at: now_unix_seconds()?,
+    };
+    write_json_private(&path, &cache)
+}
+
+pub fn session_api_token_remove(session_token: &str) -> Result<(), KagiError> {
+    let path = session_api_token_path(&session_api_token_key(session_token));
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(KagiError::Config(format!(
+            "failed to remove cached Kagi API token {}: {error}",
+            path.display()
+        ))),
+    }
 }
 
 pub fn append_history(entry: &HistoryEntry) -> Result<(), KagiError> {
@@ -251,6 +311,16 @@ fn cache_response_path(key: &str) -> PathBuf {
     cache_root().join("responses").join(format!("{key}.json"))
 }
 
+fn session_api_token_key(session_token: &str) -> String {
+    cache_key(&["session-api-token", session_token.trim()])
+}
+
+fn session_api_token_path(session_key: &str) -> PathBuf {
+    cache_root()
+        .join("auth")
+        .join(format!("session-api-token-{session_key}.json"))
+}
+
 fn site_preferences_path() -> PathBuf {
     cache_root().join("site-preferences.json")
 }
@@ -258,6 +328,24 @@ fn site_preferences_path() -> PathBuf {
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), KagiError> {
     let raw = serde_json::to_string_pretty(value)?;
     fs::write(path, raw)
+        .map_err(|error| KagiError::Config(format!("failed to write {}: {error}", path.display())))
+}
+
+fn write_json_private<T: Serialize>(path: &Path, value: &T) -> Result<(), KagiError> {
+    let raw = serde_json::to_string_pretty(value)?;
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options
+        .open(path)
+        .and_then(|mut file| {
+            use std::io::Write;
+            file.write_all(raw.as_bytes())
+        })
         .map_err(|error| KagiError::Config(format!("failed to write {}: {error}", path.display())))
 }
 
@@ -286,6 +374,27 @@ mod tests {
         let value = cache_get("abc").expect("cache get").expect("cached value");
 
         assert_eq!(value["ok"], true);
+        unsafe { env::remove_var(CACHE_DIR_ENV) };
+    }
+
+    #[test]
+    fn session_api_token_cache_round_trips_values() {
+        let _guard = lock_env();
+        let tempdir = TempDir::new().expect("tempdir");
+        unsafe { env::set_var(CACHE_DIR_ENV, tempdir.path()) };
+
+        session_api_token_put("session-token", "api-token").expect("cache put");
+        let value = session_api_token_get("session-token")
+            .expect("cache get")
+            .expect("cached token");
+
+        assert_eq!(value, "api-token");
+        session_api_token_remove("session-token").expect("cache remove");
+        assert!(
+            session_api_token_get("session-token")
+                .expect("cache get")
+                .is_none()
+        );
         unsafe { env::remove_var(CACHE_DIR_ENV) };
     }
 
