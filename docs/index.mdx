@@ -65,18 +65,20 @@ The `kagi search` command provides multiple pathways depending on your authentic
 
 - **Base Search**: Standard Kagi search with high-quality results
 - **Snap-Prefixed Search**: Reuse your Kagi snap shortcuts from the CLI with `--snap`
-- **API Token Path**: Uses the documented Search API when you have API access
+- **API Key Path**: Uses the current documented Search API when you have API access
 - **Session Token Path**: Uses the subscriber web product for enhanced capabilities
 - **Lens Search**: Scope searches to your personal Kagi lenses (requires session token)
 - **Automatic Fallback**: Intelligently falls back from API to session path when appropriate
 
 ### Authentication Flexibility
 
-Two credential types serve different purposes:
+Three credential types serve different purposes:
 
 - **KAGI_SESSION_TOKEN**: Unlocks subscriber features including lens search, Assistant, subscriber Summarizer, and Translate text mode. Obtained from your Kagi Session Link URL.
 
-- **KAGI_API_TOKEN**: Enables paid public API commands including Extract, FastGPT, public Summarizer, and enrichment APIs. Requires API credit.
+- **KAGI_API_KEY**: Enables current `/api/v1` public API commands including Search and Extract. Requires API access and credit.
+
+- **KAGI_API_TOKEN**: Enables legacy `/api/v0` public API commands including FastGPT, public Summarizer, and enrichment APIs. Requires API credit.
 
 ### Content Processing
 

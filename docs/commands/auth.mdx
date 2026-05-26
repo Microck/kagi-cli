@@ -5,7 +5,7 @@ description: "Reference for the kagi auth wizard and non-interactive credential 
 
 # `kagi auth`
 
-`kagi auth` is the main onboarding path for this CLI. On a real terminal, it launches an interactive setup wizard that lets you choose `Session Link` or `API Token`, shows the official Kagi settings page for that credential, accepts a paste, saves into `./.kagi.toml`, and validates the selected credential immediately.
+`kagi auth` is the main onboarding path for this CLI. On a real terminal, it launches an interactive setup wizard that lets you choose `Session Link`, `API Key`, or `Legacy API Token`, shows the official Kagi settings page for that credential, accepts a paste, saves into `./.kagi.toml`, and validates the selected credential immediately.
 
 ![Auth command demo](/images/demos/auth.gif)
 
@@ -29,7 +29,7 @@ kagi auth
 The wizard flow is:
 
 1. shows your current auth state and config path
-2. lets you choose `Session Link` or `API Token`
+2. lets you choose `Session Link`, `API Key`, or `Legacy API Token`
 3. shows the official place to get that credential
 4. accepts the pasted value
 5. asks before overwriting an existing config value of the same type
@@ -50,7 +50,19 @@ It accepts either:
 - the full Session Link URL
 - the raw token value
 
-### API Token Path
+### API Key Path
+
+The wizard points you to:
+
+```text
+https://kagi.com/api/keys
+```
+
+It accepts:
+
+- the raw API key
+
+### Legacy API Token Path
 
 The wizard points you to:
 
@@ -60,7 +72,7 @@ https://kagi.com/settings/api
 
 It accepts:
 
-- the raw API token
+- the raw legacy API token
 
 ### Non-TTY Behavior
 
@@ -94,7 +106,8 @@ Example:
 selected: session-token (config)
 profile: default
 preferred auth for base search: session
-api token: not configured
+api key: not configured
+legacy api token: not configured
 session token: configured via config
 config path: .kagi.toml
 precedence: env > selected profile config > default config; base search defaults to session unless preferred_auth = "api"; lens search requires session token
@@ -118,21 +131,27 @@ auth check passed: session-token (config)
 auth check passed: api-token (env)
 ```
 
+```text
+auth check passed: api-key (env)
+```
+
 ## `kagi auth set`
 
 Use this when you want scripting or explicit non-interactive config writes.
 
 ```bash
 kagi auth set --session-token 'https://kagi.com/search?token=...'
+kagi auth set --api-key '...'
 kagi auth set --api-token '...'
-kagi auth set --session-token 'https://kagi.com/search?token=...' --api-token '...'
+kagi auth set --session-token 'https://kagi.com/search?token=...' --api-key '...' --api-token '...'
 kagi --profile work auth set --session-token 'https://kagi.com/search?token=...'
 ```
 
 Options:
 
 - `--session-token <TOKEN_OR_URL>` saves a Session Link or raw session token
-- `--api-token <TOKEN>` saves a raw API token
+- `--api-key <KEY>` saves a current API key for `/api/v1` endpoints
+- `--api-token <TOKEN>` saves a legacy API token for `/api/v0` endpoints
 
 Behavior:
 
@@ -145,7 +164,7 @@ Behavior:
 
 The CLI resolves credentials in this order:
 
-1. `KAGI_API_TOKEN` / `KAGI_SESSION_TOKEN`
+1. `KAGI_API_KEY` / `KAGI_API_TOKEN` / `KAGI_SESSION_TOKEN`
 2. selected profile config, such as `[profiles.work.auth]`
 3. default `./.kagi.toml` `[auth]`
 
@@ -154,7 +173,8 @@ Environment variables override the config file. Use `--profile <NAME>` to select
 ```toml
 [profiles.work.auth]
 session_token = "work-session"
-api_token = "work-api"
+api_key = "work-api-key"
+api_token = "work-legacy-api-token"
 preferred_auth = "session"
 ```
 
@@ -184,17 +204,17 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 kagi auth check
 ```
 
-### Add API Token Later
+### Add API Credentials Later
 
 ```bash
 kagi auth
 ```
 
-Choose `API Token`, paste it, then verify:
+Choose `API Key` for current Search API or Extract access. Choose `Legacy API Token` for FastGPT, public Summarizer, or Enrich.
 
 ```bash
 kagi auth status
-kagi fastgpt "what changed in rust 1.86?"
+kagi search --format pretty "what changed in rust 1.86?"
 ```
 
 ## Security Notes

@@ -27,8 +27,8 @@ use crate::api::{
     execute_lens_set_enabled, execute_lens_update, execute_news, execute_news_categories,
     execute_news_chaos, execute_news_filter_presets, execute_redirect_create,
     execute_redirect_delete, execute_redirect_get, execute_redirect_list,
-    execute_redirect_set_enabled, execute_redirect_update, execute_smallweb,
-    execute_subscriber_summarize, execute_summarize, execute_translate,
+    execute_redirect_set_enabled, execute_redirect_update, execute_session_extract,
+    execute_smallweb, execute_subscriber_summarize, execute_summarize, execute_translate,
 };
 use crate::auth::{
     Credential, CredentialKind, SearchAuthRequirement, SearchCredentials, format_status,
@@ -253,8 +253,8 @@ async fn run() -> Result<(), KagiError> {
             }
         }
         Commands::Extract(args) => {
-            let token = resolve_api_token(profile.as_deref())?;
-            let markdown = execute_extract(&args.url, &token).await?;
+            let markdown =
+                execute_extract_with_available_auth(&args.url, profile.as_deref()).await?;
             println!("{markdown}");
             Ok(())
         }
@@ -792,6 +792,7 @@ fn run_auth_status(profile: Option<&str>) -> Result<(), KagiError> {
 fn run_auth_set(args: AuthSetArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let inventory = save_credentials_for_profile(
         profile,
+        args.api_key.as_deref(),
         args.api_token.as_deref(),
         args.session_token.as_deref(),
     )?;
@@ -802,11 +803,16 @@ fn run_auth_set(args: AuthSetArgs, profile: Option<&str>) -> Result<(), KagiErro
 
 async fn run_auth_check(profile: Option<&str>) -> Result<(), KagiError> {
     let inventory = load_credential_inventory_for_profile(profile)?;
-    let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
+    let credential = inventory.preferred_for_status().cloned().ok_or_else(|| {
+        KagiError::Config(
+            "missing credentials: set KAGI_API_KEY, KAGI_API_TOKEN, or KAGI_SESSION_TOKEN (env), or add [auth] api_key/api_token/session_token to .kagi.toml"
+                .to_string(),
+        )
+    })?;
 
-    let selected_kind = credentials.primary.kind;
-    let selected_source = credentials.primary.source;
-    validate_credential(&credentials.primary).await?;
+    let selected_kind = credential.kind;
+    let selected_source = credential.source;
+    validate_credential(&credential).await?;
 
     println!(
         "auth check passed: {} ({})",
@@ -823,7 +829,7 @@ async fn execute_search_request(
     match execute_primary_search_request(request, &credentials.primary).await {
         Ok(response) => Ok(response),
         Err(api_error)
-            if credentials.primary.kind == CredentialKind::ApiToken
+            if credentials.primary.kind == CredentialKind::ApiKey
                 && should_fallback_to_session(&api_error) =>
         {
             let fallback = credentials.fallback_session.ok_or(api_error)?;
@@ -838,7 +844,11 @@ async fn execute_primary_search_request(
     credential: &Credential,
 ) -> Result<SearchResponse, KagiError> {
     match credential.kind {
-        CredentialKind::ApiToken => search::execute_api_search(request, &credential.value).await,
+        CredentialKind::ApiKey => search::execute_api_search(request, &credential.value).await,
+        CredentialKind::ApiToken => Err(KagiError::Config(
+            "base search requires KAGI_API_KEY for API-first mode; legacy KAGI_API_TOKEN only works with /api/v0 commands"
+                .to_string(),
+        )),
         CredentialKind::SessionToken => search::execute_search(request, &credential.value).await,
     }
 }
@@ -871,6 +881,24 @@ fn resolve_session_token(profile: Option<&str>) -> Result<String, KagiError> {
                     .to_string(),
             )
         })
+}
+
+async fn execute_extract_with_available_auth(
+    url: &str,
+    profile: Option<&str>,
+) -> Result<String, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    if let Some(key) = inventory.api_key {
+        return execute_extract(url, &key.value).await;
+    }
+    if let Some(token) = inventory.session_token {
+        return execute_session_extract(url, &token.value).await;
+    }
+
+    Err(KagiError::Config(
+        "extract requires KAGI_API_KEY or KAGI_SESSION_TOKEN (env or .kagi.toml [auth])"
+            .to_string(),
+    ))
 }
 
 fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandRequest, KagiError> {
@@ -2144,9 +2172,8 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
                 serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
             }
             "kagi_extract" => {
-                let token = resolve_api_token(profile)?;
                 let url = arguments.get("url").and_then(Value::as_str).unwrap_or("");
-                execute_extract(url, &token).await?
+                execute_extract_with_available_auth(url, profile).await?
             }
             "kagi_quick" => {
                 let token = resolve_session_token(profile)?;

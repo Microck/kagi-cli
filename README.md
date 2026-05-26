@@ -18,7 +18,7 @@
 
 `kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, ask-page, assistant, translate, summarization, public feeds through `news` and `smallweb`, paid API commands like `fastgpt` and `enrich`, and account-level settings like lenses, custom assistants, custom bangs, and redirect rules. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
-the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link` or `API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
+the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link`, `API Key`, or `Legacy API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
 [documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [mcp](https://github.com/Microck/kagi-mcp)
 
@@ -31,7 +31,7 @@ if you already use Kagi and want to access it from scripts, shell workflows, or 
 - use your existing session-link URL for subscriber features
 - get structured JSON for scripts, agents, and other tooling
 - use one CLI for search, quick answers, assistant, translate, summarization, `news`, and `smallweb`
-- add `KAGI_API_TOKEN` only when you want the paid public API commands
+- add `KAGI_API_KEY` for current `/api/v1` commands, or `KAGI_API_TOKEN` for legacy `/api/v0` commands
 
 ## quickstart
 
@@ -79,7 +79,8 @@ kagi auth
 the wizard is the default setup path. it guides you through:
 
 - `Session Link` from `https://kagi.com/settings/user_details`
-- `API Token` from `https://kagi.com/settings/api`
+- `API Key` from `https://kagi.com/api/keys`
+- `Legacy API Token` from `https://kagi.com/settings/api`
 - saving into `./.kagi.toml`
 - immediate validation
 
@@ -101,29 +102,29 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 kagi auth check
 ```
 
-add an api token when you want the paid public api commands:
+add an api key when you want current paid api commands:
 
 
 how to get it:
 
 1. click the top-right menu icon
 2. go into `Settings`
-3. click `Advanced` in the left sidebar
-4. go into `Open API Portal`
-5. under `API Token`, click `Generate New Token`
+3. open `https://kagi.com/api/keys`
+4. generate or copy an API key
 
 ![api token tutorial](images/tutorials/api-token.gif)
 
 ```bash
-export KAGI_API_TOKEN='...'
+export KAGI_API_KEY='...'
 ```
 
 ## auth model
 
 | credential | what it unlocks |
 | --- | --- |
-| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
-| `KAGI_API_TOKEN` | public `summarize`, `extract`, `fastgpt`, `enrich web`, `enrich news` |
+| `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber`, and Extract eligibility checks through the authenticated API portal |
+| `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
+| `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
 | none | `news`, `smallweb`, `auth status`, `--help` |
 
 example config:
@@ -133,15 +134,19 @@ example config:
 # Full Kagi session-link URL or just the raw token value.
 session_token = "https://kagi.com/search?token=kagi_session_demo_1234567890abcdef"
 
-# Paid API token for summarize, fastgpt, and enrich commands.
-api_token = "kagi_api_demo_abcdef1234567890"
+# Current API key for Search API and Extract.
+api_key = "kagi_api_key_demo_abcdef1234567890"
+
+# Legacy API token for summarize, fastgpt, and enrich commands.
+api_token = "kagi_api_token_demo_abcdef1234567890"
 
 # Base `kagi search` auth preference: "session" or "api".
 preferred_auth = "api"
 
 [profiles.work.auth]
 session_token = "https://kagi.com/search?token=work_session_demo"
-api_token = "kagi_api_work_demo"
+api_key = "kagi_api_key_work_demo"
+api_token = "kagi_api_token_work_demo"
 preferred_auth = "session"
 ```
 notes:
@@ -165,7 +170,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
-| `kagi extract` | extract a page's full content as markdown through the paid API |
+| `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly; session-only auth is rejected when Kagi's API portal does not allow Extract access |
 | `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
 | `kagi notify` | send search or news output to a webhook |
 | `kagi history` | inspect local command history and aggregate query stats |

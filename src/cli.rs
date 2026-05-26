@@ -532,7 +532,11 @@ pub enum AuthSubcommand {
 #[derive(Debug, Args)]
 /// Arguments for `auth set` (store a credential).
 pub struct AuthSetArgs {
-    /// Kagi API token to save into .kagi.toml
+    /// Kagi API key for current /api/v1 endpoints to save into .kagi.toml
+    #[arg(long, value_name = "KEY")]
+    pub api_key: Option<String>,
+
+    /// Legacy Kagi API token for /api/v0 endpoints to save into .kagi.toml
     #[arg(long, value_name = "TOKEN")]
     pub api_token: Option<String>,
 

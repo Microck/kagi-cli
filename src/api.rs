@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use reqwest::multipart;
 use reqwest::{Client, StatusCode, Url, header};
-use scraper::Html;
+use scraper::{Html, Selector};
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
@@ -19,6 +19,7 @@ use tracing::debug;
 use crate::cli::{NewsFilterMode, NewsFilterScope};
 use crate::error::KagiError;
 use crate::http::{self, map_transport_error};
+use crate::local;
 use crate::parser::{
     parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
     parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
@@ -50,6 +51,7 @@ use crate::types::{
 
 const KAGI_SUMMARIZE_PATH: &str = "/api/v0/summarize";
 const KAGI_EXTRACT_PATH: &str = "/api/v1/extract";
+const KAGI_API_PORTAL_PATH: &str = "/api";
 const KAGI_SUBSCRIBER_SUMMARIZE_PATH: &str = "/mother/summary_labs";
 const KAGI_NEWS_LATEST_PATH: &str = "/api/batches/latest";
 const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
@@ -175,7 +177,7 @@ pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError
     let client = build_client()?;
     let response = client
         .post(http::kagi_url(KAGI_EXTRACT_PATH))
-        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .json(&request)
         .send()
@@ -184,6 +186,181 @@ pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError
 
     let response: ExtractResponse = decode_kagi_json(response, "Extract").await?;
     extract_first_markdown(response)
+}
+
+/// Extracts a web page as markdown by minting a Kagi API token from session auth.
+///
+/// This preserves the real Extract API behavior: session auth is only used to reach Kagi's
+/// authenticated API portal and obtain the one-time API token value Kagi would show in the
+/// browser. The extraction itself still goes through `/api/v1/extract`.
+///
+/// # Arguments
+/// * `url` - The HTTPS URL to extract.
+/// * `token` - The Kagi session token.
+///
+/// # Returns
+/// Extracted page markdown.
+///
+/// # Errors
+/// Returns `KagiError::Auth` if the session token is missing, expired, or the account cannot mint
+/// an Extract-enabled API token, plus the normal Extract API errors.
+pub async fn execute_session_extract(url: &str, token: &str) -> Result<String, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    if let Some(api_token) = local::session_api_token_get(token)? {
+        match execute_extract(url, &api_token).await {
+            Ok(markdown) => return Ok(markdown),
+            Err(error @ KagiError::Auth(_)) => {
+                local::session_api_token_remove(token)?;
+                debug!(error = %error, "cached session-derived Kagi API token was rejected");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    let api_token = resolve_api_token_from_session(token).await?;
+    local::session_api_token_put(token, &api_token)?;
+    execute_extract(url, &api_token).await.map_err(|error| {
+        if matches!(error, KagiError::Auth(_)) {
+            let _ = local::session_api_token_remove(token);
+            return KagiError::Auth(format!(
+                "session-derived Kagi API token was minted, but Extract rejected it. The account may not have Extract API access enabled: {error}"
+            ));
+        }
+        error
+    })
+}
+
+async fn resolve_api_token_from_session(token: &str) -> Result<String, KagiError> {
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    match fetch_api_portal_token(token, false).await? {
+        Some(api_token) => Ok(api_token),
+        None => {
+            verify_new_api_portal_allows_extract(token).await?;
+            fetch_api_portal_token(token, true).await?.ok_or_else(|| {
+                KagiError::Parse("Kagi API portal did not return a generated API token".to_string())
+            })
+        }
+    }
+}
+
+async fn verify_new_api_portal_allows_extract(token: &str) -> Result<(), KagiError> {
+    let client = build_client()?;
+    let response = client
+        .get(http::kagi_url(KAGI_API_PORTAL_PATH))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "text/html,application/xhtml+xml")
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    match response.status() {
+        StatusCode::OK => {
+            let body = response.text().await.map_err(|error| {
+                KagiError::Network(format!("failed to read Kagi API portal response: {error}"))
+            })?;
+            if body.contains("API access is restricted for family members") {
+                return Err(KagiError::Auth(
+                    "Kagi API access is restricted for this session because it belongs to a family member account; Extract requires an API key from the family administrator or an account with API access"
+                        .to_string(),
+                ));
+            }
+            Ok(())
+        }
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "Kagi API portal").await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for API portal: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "Kagi API portal").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi API portal response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+    }
+}
+
+async fn fetch_api_portal_token(token: &str, generate: bool) -> Result<Option<String>, KagiError> {
+    let client = build_client()?;
+    let path = if generate {
+        "/settings/api?generate=1"
+    } else {
+        "/settings/api"
+    };
+    let response = client
+        .get(http::kagi_url(path))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "text/html,application/xhtml+xml")
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    match response.status() {
+        StatusCode::OK => {
+            let body = response.text().await.map_err(|error| {
+                KagiError::Network(format!("failed to read Kagi API portal response: {error}"))
+            })?;
+            parse_api_portal_token(&body)
+        }
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, "Kagi API portal").await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for API portal: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status => {
+            let body = http::read_error_body(response, "Kagi API portal").await;
+            Err(KagiError::Network(format!(
+                "unexpected Kagi API portal response status: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+    }
+}
+
+fn parse_api_portal_token(body: &str) -> Result<Option<String>, KagiError> {
+    let document = Html::parse_document(body);
+    let selector =
+        Selector::parse("input.copyToClipText, input#team_invite_link").map_err(|error| {
+            KagiError::Parse(format!("failed to build API token selector: {error}"))
+        })?;
+
+    if let Some(token) = document
+        .select(&selector)
+        .filter_map(|element| element.value().attr("value"))
+        .map(str::trim)
+        .find(|value| value.len() >= 32 && value.chars().all(is_api_token_char))
+        .map(str::to_string)
+    {
+        return Ok(Some(token));
+    }
+
+    if body.contains("API access is restricted for family members") {
+        return Err(KagiError::Auth(
+            "Kagi API portal rejected this session because API access is restricted for family members"
+                .to_string(),
+        ));
+    }
+
+    Ok(None)
+}
+
+const fn is_api_token_char(character: char) -> bool {
+    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '+' | '/' | '=')
 }
 
 /// Summarizes a URL or text using the subscriber web Summarizer with session-token auth.

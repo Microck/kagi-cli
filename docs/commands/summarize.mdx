@@ -19,7 +19,7 @@ kagi summarize [OPTIONS]
 
 The `kagi summarize` command provides access to two different summarization systems:
 
-1. **Public API Mode** - Uses Kagi's paid Universal Summarizer API (requires `KAGI_API_TOKEN`)
+1. **Public API Mode** - Uses Kagi's legacy paid Universal Summarizer API (requires `KAGI_API_TOKEN`)
 2. **Subscriber Mode** - Uses your Kagi subscription's web-based Summarizer (requires `KAGI_SESSION_TOKEN`)
 
 The two modes have different capabilities, pricing models, and output options. Choose the mode that best fits your use case.
@@ -30,7 +30,7 @@ The two modes have different capabilities, pricing models, and output options. C
 
 **Requires:** `KAGI_API_TOKEN`
 
-Uses the documented Universal Summarizer API endpoint. This is a paid service that consumes API credit.
+Uses the legacy `/api/v0` Universal Summarizer API endpoint with `Bot` auth. This is a paid service that consumes API credit.
 
 **Features:**
 - Multiple summary engines (cecil, agnes, etc.)

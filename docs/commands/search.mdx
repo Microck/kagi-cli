@@ -38,7 +38,7 @@ This matters because the Kagi Search API is still base-search only in this CLI. 
 Plain base search keeps the existing repo behavior:
 
 - default session-first search when a session token is available
-- API-first only when you explicitly configure `[auth.preferred_auth] = "api"`
+- API-first only when you configure `[auth.preferred_auth] = "api"` and provide `KAGI_API_KEY`
 - session fallback only when the API path was selected first and rejected
 
 ### Filtered Search

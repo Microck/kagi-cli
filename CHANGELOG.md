@@ -7,11 +7,20 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added `KAGI_API_KEY`, `[auth].api_key`, and `kagi auth set --api-key` for current `/api/v1` Search and Extract API credentials.
+
+### Changed
+
+- Breaking: split current API keys from legacy API tokens. `KAGI_API_TOKEN` and `[auth].api_token` now represent legacy `/api/v0` credentials only, while base Search API mode requires `KAGI_API_KEY` or `[auth].api_key`.
+
 ## [0.6.2]
 
 ### Added
 
 - Added `kagi_extract` to the built-in MCP server tool list, matching the existing paid Extract API command behavior.
+- `kagi extract` and MCP `kagi_extract` now reject session-only Extract on Kagi accounts whose API portal disallows Extract API access, avoiding legacy token regeneration loops.
 
 ## [0.6.1]
 

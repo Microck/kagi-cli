@@ -18,9 +18,9 @@ This reference provides a complete mapping of which commands require which authe
 | `auth status` | None | None | Reads config only |
 | `auth check` | Primary credential | None | Tests selected token |
 | `auth set` | None | None | Saves credentials |
-| `summarize` | `KAGI_API_TOKEN` | None | Paid public API |
+| `summarize` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
-| `extract` | `KAGI_API_TOKEN` | None | Paid public API |
+| `extract` | `KAGI_API_KEY` | Session-derived key when API portal allows it | Current `/api/v1` Extract API |
 | `news` | None | None | Public endpoint |
 | `quick` | `KAGI_SESSION_TOKEN` | None | Quick Answer web product |
 | `ask-page` | `KAGI_SESSION_TOKEN` | None | Subscriber feature |
@@ -30,9 +30,9 @@ This reference provides a complete mapping of which commands require which authe
 | `bang custom` | `KAGI_SESSION_TOKEN` | None | Custom bang settings |
 | `redirect` | `KAGI_SESSION_TOKEN` | None | Redirect rule settings |
 | `translate` | `KAGI_SESSION_TOKEN` | None | Text mode only; bootstraps `translate_session` over HTTP |
-| `fastgpt` | `KAGI_API_TOKEN` | None | Paid public API |
-| `enrich web` | `KAGI_API_TOKEN` | None | Paid public API |
-| `enrich news` | `KAGI_API_TOKEN` | None | Paid public API |
+| `fastgpt` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
+| `enrich web` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
+| `enrich news` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
 | `smallweb` | None | None | Public feed |
 
 ## Detailed Breakdown
@@ -48,12 +48,12 @@ flowchart TD
     Pref -->|No or unset| CheckSession{KAGI_SESSION_TOKEN configured?}
     CheckSession -->|Yes| TryWeb[Try web product]
     TryWeb -->|Success| ReturnResults1[Return results ✓]
-    CheckSession -->|No| CheckAPI1{KAGI_API_TOKEN configured?}
+    CheckSession -->|No| CheckAPI1{KAGI_API_KEY configured?}
     CheckAPI1 -->|Yes| TryAPI1[Try Search API]
     TryAPI1 -->|Success| ReturnResults2[Return results ✓]
     CheckAPI1 -->|No| Error1[Error: missing credentials]
 
-    Pref -->|Yes| CheckAPI2{KAGI_API_TOKEN configured?}
+    Pref -->|Yes| CheckAPI2{KAGI_API_KEY configured?}
     CheckAPI2 -->|Yes| TryAPI2[Try Search API]
     TryAPI2 -->|Success| ReturnResults3[Return results ✓]
     TryAPI2 -->|Auth error| CheckSession2{KAGI_SESSION_TOKEN configured?}
@@ -133,7 +133,7 @@ flowchart TD
 
 | Mode | Token | Notes |
 |------|-------|-------|
-| Public API (default) | `KAGI_API_TOKEN` | Uses Universal Summarizer API |
+| Public API (default) | `KAGI_API_TOKEN` | Uses legacy Universal Summarizer API |
 | Subscriber (`--subscriber`) | `KAGI_SESSION_TOKEN` | Uses web product summarizer |
 
 **Important:** These are mutually exclusive. You cannot use `--subscriber` with API-only options like `--engine`.
@@ -147,8 +147,8 @@ flowchart TD
 | `assistant` | `KAGI_SESSION_TOKEN` | Conversational AI with threads |
 | `assistant custom` | `KAGI_SESSION_TOKEN` | Create and manage saved assistants |
 | `translate` | `KAGI_SESSION_TOKEN` | Kagi Translate text mode |
-| `fastgpt` | `KAGI_API_TOKEN` | Quick factual answers |
-| `extract` | `KAGI_API_TOKEN` | Full-page markdown extraction |
+| `fastgpt` | `KAGI_API_TOKEN` | Quick factual answers through legacy `/api/v0` |
+| `extract` | `KAGI_API_KEY` | Full-page markdown extraction through current `/api/v1` |
 
 #### Settings Commands
 
@@ -162,7 +162,7 @@ flowchart TD
 
 #### Enrichment
 
-Both `enrich web` and `enrich news` require `KAGI_API_TOKEN`:
+Both `enrich web` and `enrich news` require legacy `KAGI_API_TOKEN`:
 
 - **Teclis** (web) - Enhanced web search
 - **TinyGem** (news) - Enhanced news search
@@ -195,7 +195,14 @@ Requires `KAGI_SESSION_TOKEN`:
 - ✅ Subscriber Summarizer (`summarize --subscriber`)
 - ✅ Base search (fallback)
 
-### API Token Features
+### API Key Features
+
+Requires `KAGI_API_KEY`:
+
+- ✅ Current Search API (`search` when `[auth.preferred_auth] = "api"`)
+- ✅ Extract API (`extract`)
+
+### Legacy API Token Features
 
 Requires `KAGI_API_TOKEN`:
 
@@ -203,7 +210,6 @@ Requires `KAGI_API_TOKEN`:
 - ✅ Public Summarizer (`summarize`)
 - ✅ Web Enrichment (`enrich web`)
 - ✅ News Enrichment (`enrich news`)
-- ✅ Base search when `[auth.preferred_auth] = "api"`
 
 ### No Token Required
 
@@ -218,7 +224,7 @@ Works without authentication:
 ### Resolution Order
 
 ```
-1. Environment Variables (KAGI_API_TOKEN, KAGI_SESSION_TOKEN)
+1. Environment Variables (KAGI_API_KEY, KAGI_API_TOKEN, KAGI_SESSION_TOKEN)
    ↓ (if not set)
 2. Configuration File (`./.kagi.toml`)
    ↓ (if not set)
@@ -227,11 +233,12 @@ Works without authentication:
 
 ### Example Scenarios
 
-**Scenario 1: Both tokens in file**
+**Scenario 1: Multiple credentials in file**
 ```toml
 # ./.kagi.toml
 [auth]
 api_token = "api123"
+api_key = "key123"
 session_token = "session456"
 ```
 - `search`: Uses the configured base-search preference (session by default)
@@ -242,12 +249,12 @@ session_token = "session456"
 
 **Scenario 2: Mixed sources**
 ```bash
-export KAGI_API_TOKEN="api789"
+export KAGI_API_KEY="key789"
 # ./.kagi.toml has session_token only
 ```
-- `search`: Uses env API token (takes precedence)
+- `search`: Uses env API key when `[auth.preferred_auth] = "api"`
 - `summarize --subscriber`: Uses file session token
-- `fastgpt`: Uses env API token
+- `fastgpt`: Requires `KAGI_API_TOKEN` or `[auth].api_token`
 
 **Scenario 3: Environment overrides file**
 ```bash
@@ -288,7 +295,7 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 - ❌ `kagi summarize --url ...` (without --subscriber) - requires API token
 - ❌ `kagi enrich web` - requires API token
 
-### API Token Only
+### Legacy API Token Only
 
 **Setup:**
 ```bash
@@ -296,7 +303,6 @@ kagi auth set --api-token 'your_api_token'
 ```
 
 **Working commands:**
-- ✅ `kagi search "query"` (uses API path)
 - ✅ `kagi summarize --url ...`
 - ✅ `kagi fastgpt "query"`
 - ✅ `kagi enrich web "query"`
@@ -304,6 +310,7 @@ kagi auth set --api-token 'your_api_token'
 - ✅ `kagi smallweb`
 
 **Non-working:**
+- ❌ `kagi search "query"` with `[auth.preferred_auth] = "api"` - requires API key or session token
 - ❌ `kagi search --lens 2` - requires session token
 - ❌ `kagi quick` - requires session token
 - ❌ `kagi search --region us "query"` - requires session token
@@ -316,19 +323,20 @@ kagi auth set --api-token 'your_api_token'
 - ❌ `kagi redirect list` - requires session token
 - ❌ `kagi summarize --subscriber` - requires session token
 
-### Both Tokens
+### Session Token, API Key, and Legacy API Token
 
 **Setup:**
 ```bash
-kagi auth set --session-token '...' --api-token '...'
+kagi auth set --session-token '...' --api-key '...' --api-token '...'
 ```
 
 **All commands work:**
 - ✅ Everything listed above
 
 **Smart behavior:**
-- `search`: Uses session (default), or API if `[auth.preferred_auth = "api"]` is set
-- `summarize` without `--subscriber`: Uses API
+- `search`: Uses session (default), or API key if `[auth.preferred_auth = "api"]` is set
+- `extract`: Uses API key directly, or session only when Kagi's API portal allows Extract access
+- `summarize` without `--subscriber`: Uses legacy API token
 - `summarize --subscriber`: Uses session
 - `quick`: Uses session
 - `ask-page`: Uses session
@@ -337,7 +345,7 @@ kagi auth set --session-token '...' --api-token '...'
 - `lens`: Uses session
 - `bang custom`: Uses session
 - `redirect`: Uses session
-- `fastgpt`: Uses API
+- `fastgpt`: Uses legacy API token
 
 ## Troubleshooting Matrix
 
@@ -345,10 +353,11 @@ kagi auth set --session-token '...' --api-token '...'
 |---------|-------|----------|
 | "missing credentials" | `kagi auth status` | Set appropriate token |
 | "requires KAGI_SESSION_TOKEN" | Token type | Use `--subscriber` or set session token |
-| "requires KAGI_API_TOKEN" | Token type | Remove `--subscriber` or set API token |
+| "requires KAGI_API_KEY" | Token type | Set API key for current Search API or Extract |
+| "requires KAGI_API_TOKEN" | Token type | Remove `--subscriber` or set legacy API token |
 | "auth check failed" | Token validity | Regenerate token in Kagi settings |
 | `search --lens` fails | Session token | Verify session token configured |
-| `fastgpt` fails | API token + credit | Check API credit balance |
+| `fastgpt` fails | Legacy API token + credit | Check API credit balance |
 
 ## Security Considerations
 
@@ -363,7 +372,8 @@ kagi auth set --session-token '...' --api-token '...'
 ### Scope of Access
 
 - **Session Token:** Full subscriber access (search, assistant, summarizer)
-- **API Token:** API-only access (fastgpt, enrich, public summarizer)
+- **API Key:** Current `/api/v1` API-only access (search, extract)
+- **Legacy API Token:** Older `/api/v0` API-only access (fastgpt, enrich, public summarizer)
 
 **Principle:** Use least-privilege tokens for specific workflows.
 

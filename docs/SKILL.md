@@ -47,7 +47,7 @@ kagi auth
 ```
 
 Opens a guided TTY wizard that walks through:
-- Choosing Session Link (subscriber, free) or API Token (paid)
+- Choosing Session Link, API Key, or Legacy API Token
 - Pasting credentials
 - Saving to `./.kagi.toml`
 - Immediate validation
@@ -61,7 +61,10 @@ kagi auth set --session-token 'https://kagi.com/search?token=...'
 # Or via environment variable
 export KAGI_SESSION_TOKEN='...'
 
-# API token (from https://kagi.com/settings/api)
+# API key for current /api/v1 endpoints (from https://kagi.com/api/keys)
+export KAGI_API_KEY='...'
+
+# Legacy API token for /api/v0 endpoints (from https://kagi.com/settings/api)
 export KAGI_API_TOKEN='...'
 ```
 
@@ -70,10 +73,11 @@ export KAGI_API_TOKEN='...'
 | Credential | What It Unlocks |
 |------------|-----------------|
 | `KAGI_SESSION_TOKEN` | base search fallback, `search --lens`, `search --news`, filtered search, `quick`, `ask-page`, `assistant`, `translate`, `summarize --subscriber` |
+| `KAGI_API_KEY` | search API, extract |
 | `KAGI_API_TOKEN` | summarize, fastgpt, enrich web, enrich news |
 | none | news, smallweb, auth status, --help |
 
-Environment variables override `./.kagi.toml`. When both tokens are present, base `kagi search` defaults to session token; set `[auth] preferred_auth = "api"` in config to prefer API.
+Environment variables override `./.kagi.toml`. When a session token and API key are both present, base `kagi search` defaults to the session token; set `[auth] preferred_auth = "api"` in config to prefer the API key.
 
 ## Commands
 
