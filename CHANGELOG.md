@@ -22,7 +22,6 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 ### Added
 
 - Added `kagi_extract` to the built-in MCP server tool list, matching the existing paid Extract API command behavior.
-- `kagi extract` and MCP `kagi_extract` now reject session-only Extract on Kagi accounts whose API portal disallows Extract API access, avoiding legacy token regeneration loops.
 
 ## [0.6.1]
 
