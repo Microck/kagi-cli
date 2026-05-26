@@ -17,7 +17,8 @@ use clap::{CommandFactory, Parser};
 use clap_complete::{generate, shells};
 
 use crate::api::{
-    NewsFilterRequest, execute_ask_page, execute_assistant_prompt, execute_assistant_thread_delete,
+    NewsFilterRequest, execute_ask_page, execute_assistant_model_catalog, execute_assistant_prompt,
+    execute_assistant_prompt_stream, execute_assistant_thread_delete,
     execute_assistant_thread_export, execute_assistant_thread_get, execute_assistant_thread_list,
     execute_custom_assistant_create, execute_custom_assistant_delete, execute_custom_assistant_get,
     execute_custom_assistant_list, execute_custom_assistant_update, execute_custom_bang_create,
@@ -60,7 +61,7 @@ use std::fs;
 use std::future::Future;
 use std::io::{self, BufRead, Read, Write};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 use tracing::error;
 use tracing_subscriber::EnvFilter;
@@ -321,6 +322,10 @@ async fn run() -> Result<(), KagiError> {
                             }
                         },
                     },
+                    AssistantSubcommand::Models => {
+                        let response = execute_assistant_model_catalog(&token).await?;
+                        print_json(&response)
+                    }
                     AssistantSubcommand::Repl(repl_args) => {
                         run_assistant_repl(repl_args, &token).await
                     }
@@ -411,8 +416,24 @@ async fn run() -> Result<(), KagiError> {
                         _ => None,
                     },
                 };
-                let response = execute_assistant_prompt(&request, &token).await?;
-                print_assistant_response(&response, args.format, !args.no_color)
+                if args.once {
+                    let response =
+                        execute_once_assistant_prompt(&request, args.stream, &token).await?;
+                    if args.stream {
+                        Ok(())
+                    } else {
+                        print_assistant_response(&response, args.format, !args.no_color)
+                    }
+                } else if args.stream {
+                    execute_assistant_prompt_stream(&request, &token, |event| {
+                        print_compact_json(event)
+                    })
+                    .await?;
+                    Ok(())
+                } else {
+                    let response = execute_assistant_prompt(&request, &token).await?;
+                    print_assistant_response(&response, args.format, !args.no_color)
+                }
             }
         }
         Commands::AskPage(args) => {
@@ -1043,6 +1064,69 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
         .map_err(|error| KagiError::Parse(format!("failed to serialize JSON output: {error}")))?;
     println!("{output}");
     Ok(())
+}
+
+async fn execute_once_assistant_prompt(
+    request: &AssistantPromptRequest,
+    stream: bool,
+    token: &str,
+) -> Result<crate::types::AssistantPromptResponse, KagiError> {
+    let model = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| KagiError::Config("--once requires --model".to_string()))?;
+    if request
+        .profile_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(KagiError::Config(
+            "--once cannot be combined with --assistant".to_string(),
+        ));
+    }
+
+    let created = execute_custom_assistant_create(
+        &AssistantProfileCreateRequest {
+            name: temporary_assistant_name(),
+            bang_trigger: None,
+            internet_access: request.internet_access,
+            selected_lens: request.lens_id.map(|lens_id| lens_id.to_string()),
+            personalizations: request.personalizations,
+            base_model: Some(model.to_string()),
+            custom_instructions: None,
+        },
+        token,
+    )
+    .await?;
+
+    let delete_target = created.profile_id.clone().unwrap_or(created.name.clone());
+    let mut prompt_request = request.clone();
+    prompt_request.profile_id = Some(delete_target.clone());
+    prompt_request.model = None;
+
+    let prompt_result = if stream {
+        execute_assistant_prompt_stream(&prompt_request, token, |event| print_compact_json(event))
+            .await
+    } else {
+        execute_assistant_prompt(&prompt_request, token).await
+    };
+
+    let delete_result = execute_custom_assistant_delete(&delete_target, token).await;
+    match (prompt_result, delete_result) {
+        (Ok(response), Ok(_)) => Ok(response),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
+
+fn temporary_assistant_name() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    format!("kagi-cli-once-{millis}-{}", std::process::id())
 }
 
 fn print_compact_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {

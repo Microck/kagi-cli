@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use reqwest::multipart;
 use reqwest::{Client, StatusCode, Url, header};
 use scraper::{Html, Selector};
@@ -21,28 +22,28 @@ use crate::error::KagiError;
 use crate::http::{self, map_transport_error};
 use crate::local;
 use crate::parser::{
-    parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
-    parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
-    parse_redirect_form, parse_redirect_list,
+    parse_assistant_model_catalog, parse_assistant_profile_form, parse_assistant_profile_list,
+    parse_assistant_thread_list, parse_custom_bang_form, parse_custom_bang_list, parse_lens_form,
+    parse_lens_list, parse_redirect_form, parse_redirect_list,
 };
 #[cfg(test)]
 use crate::types::ApiMeta;
 use crate::types::{
     AlternativeTranslationsResponse, AskPageRequest, AskPageResponse, AskPageSource,
-    AssistantMessage, AssistantMeta, AssistantProfileCreateRequest, AssistantProfileDetails,
-    AssistantProfileSummary, AssistantProfileUpdateRequest, AssistantPromptRequest,
-    AssistantPromptResponse, AssistantThread, AssistantThreadDeleteResponse,
-    AssistantThreadExportResponse, AssistantThreadListResponse, AssistantThreadOpenResponse,
-    AssistantThreadPagination, CustomBangCreateRequest, CustomBangDetails, CustomBangSummary,
-    CustomBangUpdateRequest, DeletedResourceResponse, EnrichResponse, ExtractPageInput,
-    ExtractRequest, ExtractResponse, FastGptRequest, FastGptResponse, LensCreateRequest,
-    LensDetails, LensSummary, LensUpdateRequest, NewsBatchCategories, NewsBatchCategory,
-    NewsCategoriesResponse, NewsCategoryMetadata, NewsCategoryMetadataList, NewsChaos,
-    NewsChaosResponse, NewsContentFilterSummary, NewsFilterPresetListEntry,
-    NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload,
-    NewsStoriesResponse, NewsStoryContentFilterSummary, RedirectRuleCreateRequest,
-    RedirectRuleDetails, RedirectRuleSummary, RedirectRuleUpdateRequest, SmallWebFeed,
-    SubscriberSummarization, SubscriberSummarizeMeta, SubscriberSummarizeRequest,
+    AssistantMessage, AssistantMeta, AssistantModelCatalog, AssistantProfileCreateRequest,
+    AssistantProfileDetails, AssistantProfileSummary, AssistantProfileUpdateRequest,
+    AssistantPromptRequest, AssistantPromptResponse, AssistantPromptStreamEvent, AssistantThread,
+    AssistantThreadDeleteResponse, AssistantThreadExportResponse, AssistantThreadListResponse,
+    AssistantThreadOpenResponse, AssistantThreadPagination, CustomBangCreateRequest,
+    CustomBangDetails, CustomBangSummary, CustomBangUpdateRequest, DeletedResourceResponse,
+    EnrichResponse, ExtractPageInput, ExtractRequest, ExtractResponse, FastGptRequest,
+    FastGptResponse, LensCreateRequest, LensDetails, LensSummary, LensUpdateRequest,
+    NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata,
+    NewsCategoryMetadataList, NewsChaos, NewsChaosResponse, NewsContentFilterSummary,
+    NewsFilterPresetListEntry, NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory,
+    NewsStoriesPayload, NewsStoriesResponse, NewsStoryContentFilterSummary,
+    RedirectRuleCreateRequest, RedirectRuleDetails, RedirectRuleSummary, RedirectRuleUpdateRequest,
+    SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta, SubscriberSummarizeRequest,
     SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse, TextAlignmentsResponse,
     ToggleResourceResponse, TranslateBootstrapMetadata, TranslateCommandRequest,
     TranslateDetectedLanguage, TranslateOptionState, TranslateResponse, TranslateTextResponse,
@@ -779,6 +780,53 @@ pub async fn execute_assistant_prompt(
     };
 
     parse_assistant_prompt_stream(&body)
+}
+
+/// Sends a prompt to Kagi Assistant and calls `on_event` for every message update.
+///
+/// The returned value is the same final response produced by [`execute_assistant_prompt`].
+pub async fn execute_assistant_prompt_stream<F>(
+    request: &AssistantPromptRequest,
+    token: &str,
+    mut on_event: F,
+) -> Result<AssistantPromptResponse, KagiError>
+where
+    F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
+{
+    let response = match build_assistant_prompt_payload(request)? {
+        AssistantPromptPayload::Json(state) => {
+            send_assistant_stream_request(
+                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
+                &state,
+                token,
+            )
+            .await?
+        }
+        AssistantPromptPayload::Multipart { state, attachments } => {
+            send_assistant_multipart_stream_request(
+                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
+                &state,
+                &attachments,
+                token,
+            )
+            .await?
+        }
+    };
+
+    handle_assistant_prompt_stream_response(response, "Assistant prompt", &mut on_event).await
+}
+
+/// Lists Assistant base models exposed by the custom assistant form.
+pub async fn execute_assistant_model_catalog(
+    token: &str,
+) -> Result<AssistantModelCatalog, KagiError> {
+    let html = fetch_authenticated_html(
+        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH),
+        token,
+        "custom assistant form",
+    )
+    .await?;
+    parse_assistant_model_catalog(&html)
 }
 
 /// Lists all Kagi Assistant threads for the authenticated user.
@@ -3437,6 +3485,15 @@ async fn execute_assistant_stream(
     token: &str,
     surface: &str,
 ) -> Result<String, KagiError> {
+    let response = send_assistant_stream_request(url, payload, token).await?;
+    handle_assistant_stream_response(response, surface).await
+}
+
+async fn send_assistant_stream_request(
+    url: &str,
+    payload: &Value,
+    token: &str,
+) -> Result<reqwest::Response, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
             "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
@@ -3444,7 +3501,7 @@ async fn execute_assistant_stream(
     }
 
     let client = http::client_assistant_stream()?;
-    let response = client
+    client
         .post(url)
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::CONTENT_TYPE, "application/json")
@@ -3452,9 +3509,7 @@ async fn execute_assistant_stream(
         .json(payload)
         .send()
         .await
-        .map_err(map_transport_error)?;
-
-    handle_assistant_stream_response(response, surface).await
+        .map_err(map_transport_error)
 }
 
 async fn execute_assistant_multipart_stream(
@@ -3464,6 +3519,16 @@ async fn execute_assistant_multipart_stream(
     token: &str,
     surface: &str,
 ) -> Result<String, KagiError> {
+    let response = send_assistant_multipart_stream_request(url, state, attachments, token).await?;
+    handle_assistant_stream_response(response, surface).await
+}
+
+async fn send_assistant_multipart_stream_request(
+    url: &str,
+    state: &Value,
+    attachments: &[AssistantAttachmentPayload],
+    token: &str,
+) -> Result<reqwest::Response, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
             "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
@@ -3498,16 +3563,14 @@ async fn execute_assistant_multipart_stream(
         form = form.part("file", file_part);
     }
 
-    let response = client
+    client
         .post(url)
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::ACCEPT, "application/vnd.kagi.stream")
         .multipart(form)
         .send()
         .await
-        .map_err(map_transport_error)?;
-
-    handle_assistant_stream_response(response, surface).await
+        .map_err(map_transport_error)
 }
 
 async fn handle_assistant_stream_response(
@@ -3569,14 +3632,105 @@ async fn handle_assistant_stream_response(
     }
 }
 
+async fn handle_assistant_prompt_stream_response<F>(
+    response: reqwest::Response,
+    surface: &str,
+    on_event: &mut F,
+) -> Result<AssistantPromptResponse, KagiError>
+where
+    F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
+{
+    match response.status() {
+        StatusCode::OK => {
+            let mut parser = AssistantPromptStreamParser::default();
+            let mut pending = String::new();
+            let mut stream = response.bytes_stream();
+
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|error| {
+                    KagiError::Network(format!("failed to read {surface} response body: {error}"))
+                })?;
+                pending.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(index) = pending.find("\0\n") {
+                    let frame = pending[..index].to_string();
+                    pending.drain(..index + 2);
+                    if let Some(event) = parser.process_frame(&frame)? {
+                        on_event(&event)?;
+                    }
+                }
+            }
+
+            if looks_like_html_document(&pending) {
+                return Err(KagiError::Auth(
+                    "invalid or expired Kagi session token".to_string(),
+                ));
+            }
+
+            if !pending.trim().is_empty()
+                && let Some(event) = parser.process_frame(&pending)?
+            {
+                on_event(&event)?;
+            }
+
+            parser.finish()
+        }
+        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status if status.is_client_error() => {
+            let body = http::read_error_body(response, surface).await;
+            Err(KagiError::Config(format!(
+                "Kagi {surface} request rejected: HTTP {status}{}",
+                format_client_error_suffix(&body)
+            )))
+        }
+        status if status.is_server_error() => Err(KagiError::Network(format!(
+            "Kagi {surface} server error: HTTP {status}{}",
+            {
+                let body = http::read_error_body(response, surface).await;
+                if body.trim().is_empty() {
+                    String::new()
+                } else {
+                    format_client_error_suffix(&body)
+                }
+            }
+        ))),
+        status => Err(KagiError::Network(format!(
+            "unexpected Kagi {surface} response status: HTTP {status}"
+        ))),
+    }
+}
+
 fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, KagiError> {
-    let mut meta = AssistantMeta::default();
-    let mut thread = None;
-    let mut message = None;
+    let mut parser = AssistantPromptStreamParser::default();
 
     for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
+        parser.process_frame(frame)?;
+    }
+
+    parser.finish()
+}
+
+#[derive(Default)]
+struct AssistantPromptStreamParser {
+    meta: AssistantMeta,
+    thread: Option<AssistantThread>,
+    message: Option<AssistantMessage>,
+    previous_markdown: String,
+}
+
+impl AssistantPromptStreamParser {
+    fn process_frame(
+        &mut self,
+        frame: &str,
+    ) -> Result<Option<AssistantPromptStreamEvent>, KagiError> {
         let Some((tag, payload)) = frame.split_once(':') else {
-            continue;
+            return Ok(None);
         };
 
         match tag {
@@ -3584,15 +3738,17 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
                 let hello: AssistantHello = serde_json::from_str(payload).map_err(|error| {
                     KagiError::Parse(format!("failed to parse assistant hello frame: {error}"))
                 })?;
-                meta.version = hello.v;
-                meta.trace = hello.trace;
+                self.meta.version = hello.v;
+                self.meta.trace = hello.trace;
+                Ok(None)
             }
             "thread.json" => {
                 let payload: AssistantThreadPayload =
                     serde_json::from_str(payload).map_err(|error| {
                         KagiError::Parse(format!("failed to parse assistant thread frame: {error}"))
                     })?;
-                thread = Some(AssistantThread::from(payload));
+                self.thread = Some(AssistantThread::from(payload));
+                Ok(None)
             }
             "new_message.json" => {
                 let payload: AssistantMessagePayload =
@@ -3601,50 +3757,67 @@ fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, 
                             "failed to parse assistant message frame: {error}"
                         ))
                     })?;
-                message = Some(assistant_message_from_payload(payload));
+                let message = assistant_message_from_payload(payload);
+                let markdown = message.markdown.as_deref().unwrap_or("");
+                let md_delta = markdown
+                    .strip_prefix(&self.previous_markdown)
+                    .unwrap_or(markdown)
+                    .to_string();
+                self.previous_markdown = markdown.to_string();
+                self.message = Some(message.clone());
+
+                Ok(Some(AssistantPromptStreamEvent {
+                    meta: self.meta.clone(),
+                    thread: self.thread.clone(),
+                    message,
+                    md_delta,
+                }))
             }
             "limit_notice.html" => {
                 let detail = strip_html_to_text(payload);
-                return Err(KagiError::Config(if detail.is_empty() {
+                Err(KagiError::Config(if detail.is_empty() {
                     "Kagi Assistant rate limited this request".to_string()
                 } else {
                     detail
-                }));
+                }))
             }
-            "unauthorized" => {
-                return Err(KagiError::Auth(
-                    "invalid or expired Kagi session token".to_string(),
-                ));
-            }
+            "unauthorized" => Err(KagiError::Auth(
+                "invalid or expired Kagi session token".to_string(),
+            )),
             _ => {
                 debug!(tag, "ignoring unknown assistant prompt stream frame");
+                Ok(None)
             }
         }
     }
 
-    let thread = thread.ok_or_else(|| {
-        KagiError::Parse("assistant response did not include a thread.json frame".to_string())
-    })?;
-    let message = message.ok_or_else(|| {
-        KagiError::Parse("assistant response did not include a new_message.json frame".to_string())
-    })?;
+    fn finish(self) -> Result<AssistantPromptResponse, KagiError> {
+        let thread = self.thread.ok_or_else(|| {
+            KagiError::Parse("assistant response did not include a thread.json frame".to_string())
+        })?;
+        let message = self.message.ok_or_else(|| {
+            KagiError::Parse(
+                "assistant response did not include a new_message.json frame".to_string(),
+            )
+        })?;
 
-    if message.state == "error" {
-        return Err(KagiError::Network(
-            message
-                .markdown
-                .as_deref()
-                .or(message.reply_html.as_deref())
-                .unwrap_or("Kagi Assistant returned an error state")
-                .to_string(),
-        ));
+        if message.state == "error" {
+            return Err(KagiError::Network(
+                message
+                    .markdown
+                    .as_deref()
+                    .or(message.reply_html.as_deref())
+                    .unwrap_or("Kagi Assistant returned an error state")
+                    .to_string(),
+            ));
+        }
+
+        Ok(AssistantPromptResponse {
+            meta: self.meta,
+            thread,
+            message,
+        })
     }
-
-    Ok(AssistantPromptResponse {
-        meta,
-        thread,
-        message,
-    })
 }
 
 fn parse_assistant_thread_open_stream(
@@ -4697,8 +4870,8 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, AssistantPromptPayload, KagiEnvelope, NewsFilterRequest,
-        TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR, TranslateSuggestionContext,
+        ApiErrorBody, AssistantPromptPayload, AssistantPromptStreamParser, KagiEnvelope,
+        NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR, TranslateSuggestionContext,
         apply_news_content_filters, build_ask_page_prompt, build_assistant_prompt_payload,
         build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
@@ -5188,6 +5361,34 @@ mod tests {
             vec!["00000000-0000-4000-0000-000000000000".to_string()]
         );
         assert_eq!(parsed.message.trace_id.as_deref(), Some("trace-message-1"));
+    }
+
+    #[test]
+    fn assistant_prompt_stream_events_include_markdown_delta() {
+        let mut parser = AssistantPromptStreamParser::default();
+        parser
+            .process_frame("hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}")
+            .expect("hello should parse");
+        parser
+            .process_frame("thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}")
+            .expect("thread should parse");
+
+        let first = parser
+            .process_frame("new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}")
+            .expect("first message should parse")
+            .expect("first message should emit");
+        let second = parser
+            .process_frame("new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}")
+            .expect("second message should parse")
+            .expect("second message should emit");
+
+        assert_eq!(first.md_delta, "Hel");
+        assert_eq!(second.md_delta, "lo");
+        assert_eq!(second.meta.trace.as_deref(), Some("trace-stream"));
+        assert_eq!(
+            second.thread.as_ref().map(|thread| thread.id.as_str()),
+            Some("thread-1")
+        );
     }
 
     #[test]
