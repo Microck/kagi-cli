@@ -457,6 +457,30 @@ pub struct AssistantPromptResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// One incremental Assistant message update emitted by `assistant --stream`.
+pub struct AssistantPromptStreamEvent {
+    pub meta: AssistantMeta,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread: Option<AssistantThread>,
+    pub message: AssistantMessage,
+    pub md_delta: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// One model option from the Assistant custom-profile form.
+pub struct AssistantModelOption {
+    pub id: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Stable JSON shape for Assistant model catalog output.
+pub struct AssistantModelCatalog {
+    pub models: Vec<AssistantModelOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Source information for an "ask about a page" query.
 pub struct AskPageSource {
     pub url: String,

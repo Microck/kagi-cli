@@ -749,6 +749,10 @@ pub struct AssistantArgs {
     #[arg(long, value_name = "FORMAT", default_value_t = AssistantOutputFormat::Json)]
     pub format: AssistantOutputFormat,
 
+    /// Emit prompt updates as newline-delimited JSON
+    #[arg(long, conflicts_with = "export")]
+    pub stream: bool,
+
     /// Disable colored terminal output (only affects pretty format)
     #[arg(long)]
     pub no_color: bool,
@@ -756,6 +760,10 @@ pub struct AssistantArgs {
     /// Override the Assistant model slug for this prompt
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
+
+    /// Create a temporary custom assistant for --model and delete it after this prompt
+    #[arg(long, requires = "model")]
+    pub once: bool,
 
     /// Override the Assistant lens id for this prompt
     #[arg(long, value_name = "LENS_ID")]
@@ -787,6 +795,8 @@ pub struct AssistantArgs {
 pub enum AssistantSubcommand {
     /// Manage Assistant threads
     Thread(AssistantThreadArgs),
+    /// List Assistant base-model slugs available to custom assistants
+    Models,
     /// Manage custom assistants
     Custom(AssistantCustomArgs),
     /// Start an interactive Assistant REPL with automatic thread continuity

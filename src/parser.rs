@@ -10,9 +10,9 @@ use scraper::{Html, Selector};
 
 use crate::error::KagiError;
 use crate::types::{
-    AssistantProfileDetails, AssistantProfileSummary, AssistantThreadSummary, CustomBangDetails,
-    CustomBangSummary, LensDetails, LensSummary, NewsSearchCluster, NewsSearchResult,
-    RedirectRuleDetails, RedirectRuleSummary, SearchResult,
+    AssistantModelCatalog, AssistantModelOption, AssistantProfileDetails, AssistantProfileSummary,
+    AssistantThreadSummary, CustomBangDetails, CustomBangSummary, LensDetails, LensSummary,
+    NewsSearchCluster, NewsSearchResult, RedirectRuleDetails, RedirectRuleSummary, SearchResult,
 };
 
 /// Parse Kagi search results from HTML.
@@ -378,6 +378,46 @@ pub fn parse_assistant_profile_form(html: &str) -> Result<AssistantProfileDetail
         custom_instructions,
         delete_supported,
     })
+}
+
+/// Parses Assistant base-model options from the custom assistant form.
+///
+/// # Arguments
+/// * `html` - The HTML content of the assistant profile form.
+///
+/// # Returns
+/// A stable model catalog containing every `base_model` radio option.
+///
+/// # Errors
+/// Returns `KagiError::Parse` if the model selector cannot be built.
+pub fn parse_assistant_model_catalog(html: &str) -> Result<AssistantModelCatalog, KagiError> {
+    let document = Html::parse_document(html);
+    let selector = selector(r#"input[type="radio"][name="base_model"]"#)?;
+    let models = document
+        .select(&selector)
+        .filter_map(|node| {
+            let id = node.value().attr("value")?.trim();
+            if id.is_empty() {
+                return None;
+            }
+
+            let label = node
+                .value()
+                .attr("aria-label")
+                .or_else(|| node.value().attr("title"))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(id);
+
+            Some(AssistantModelOption {
+                id: id.to_string(),
+                label: label.to_string(),
+                selected: node.value().attr("checked").is_some(),
+            })
+        })
+        .collect();
+
+    Ok(AssistantModelCatalog { models })
 }
 
 /// Parses a list of Kagi lenses from the settings HTML.
@@ -769,9 +809,10 @@ fn parse_query_value(href: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
-        parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
-        parse_news_search_results, parse_redirect_form, parse_redirect_list, parse_search_results,
+        parse_assistant_model_catalog, parse_assistant_profile_form, parse_assistant_profile_list,
+        parse_assistant_thread_list, parse_custom_bang_form, parse_custom_bang_list,
+        parse_lens_form, parse_lens_list, parse_news_search_results, parse_redirect_form,
+        parse_redirect_list, parse_search_results,
     };
     use crate::error::KagiError;
 
@@ -971,6 +1012,27 @@ mod tests {
         assert_eq!(details.base_model, "");
         assert!(details.internet_access);
         assert_eq!(details.selected_lens, "0");
+    }
+
+    #[test]
+    fn parses_assistant_model_catalog_from_base_model_radios() {
+        let html = r#"
+        <form class="s-form" action="/settings/ast/profiles/update" method="POST">
+          <input type="radio" name="base_model" value="gpt-5-5" aria-label="GPT 5.5" checked>
+          <input type="radio" name="base_model" value="claude-4-7-opus" title="Claude Opus">
+          <input type="radio" name="base_model" value="">
+        </form>
+        "#;
+
+        let catalog = parse_assistant_model_catalog(html).expect("catalog should parse");
+
+        assert_eq!(catalog.models.len(), 2);
+        assert_eq!(catalog.models[0].id, "gpt-5-5");
+        assert_eq!(catalog.models[0].label, "GPT 5.5");
+        assert!(catalog.models[0].selected);
+        assert_eq!(catalog.models[1].id, "claude-4-7-opus");
+        assert_eq!(catalog.models[1].label, "Claude Opus");
+        assert!(!catalog.models[1].selected);
     }
 
     #[test]
