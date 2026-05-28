@@ -7,6 +7,18 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Added
+
+- Added `kagi completion generate` and `kagi completion install` to generate or install shell completions for Bash, Zsh, Fish, and PowerShell.
+- Added configurable Assistant streaming output. `kagi assistant --stream` now writes incremental text deltas by default, and `--stream-output json` keeps structured newline-delimited JSON events.
+
+### Changed
+
+- Base search in API-first mode now falls back to the session-token path when the Search API rejects the API key, including rate-limit and quota-style failures.
+- Updated README and Mintlify docs for auth routing, completion installation, and Assistant streaming behavior.
+
 ## [0.8.1]
 
 ### Added
