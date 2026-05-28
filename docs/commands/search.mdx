@@ -39,7 +39,7 @@ Plain base search keeps the existing repo behavior:
 
 - default session-first search when a session token is available
 - API-first only when you configure `[auth.preferred_auth] = "api"` and provide `KAGI_API_KEY`
-- session fallback only when the API path was selected first and rejected
+- session fallback only when the API path was selected first and rejected, including `429 Too Many Requests` and quota-style API failures
 
 ### Session-Only Search Options
 

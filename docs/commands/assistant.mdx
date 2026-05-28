@@ -13,6 +13,7 @@ Prompt Kagi Assistant, continue an existing thread, use a saved assistant profil
 
 ```bash
 kagi assistant [OPTIONS] <QUERY>
+kagi assistant --stream [--stream-output text|json] <QUERY>
 kagi assistant thread list
 kagi assistant thread get <THREAD_ID>
 kagi assistant thread delete <THREAD_ID>
@@ -78,6 +79,29 @@ kagi assistant --format markdown "Write a release summary"
 #### `--no-color`
 
 Disable ANSI colors in `--format pretty`.
+
+#### `--stream`
+
+Stream Assistant output as it arrives instead of waiting for the final response. By default this writes incremental markdown deltas to stdout and flushes after each update:
+
+```bash
+kagi assistant --stream "Write a 3-line release note"
+```
+
+Use JSON mode when a script needs structured stream events:
+
+```bash
+kagi assistant --stream --stream-output json "Write a 3-line release note"
+```
+
+#### `--stream-output <MODE>`
+
+Select the streamed output mode. This option requires `--stream`.
+
+Possible values:
+
+- `text` - default, prints only incremental markdown deltas
+- `json` - newline-delimited compact JSON events with `md_delta`, `thread`, `message`, and `meta`
 
 #### `--model <MODEL>`
 

@@ -16,6 +16,7 @@
 
 - [search](https://kagi.micr.dev/commands/search): Complete reference for *kagi* search command - syntax, flags, authentication, output formats, and real-world examples.
 - [auth](https://kagi.micr.dev/commands/auth): Complete reference for *kagi* auth command - credential management, validation, and configuration.
+- [completion](https://kagi.micr.dev/commands/completion): Complete reference for *kagi* completion command - generate and install shell completion scripts.
 - [summarize](https://kagi.micr.dev/commands/summarize): Complete reference for *kagi* summarize command - summarize URLs and text using subscriber or public API modes.
 - [news](https://kagi.micr.dev/commands/news): Complete reference for *kagi* news command - fetch Kagi News from public JSON endpoints with category filtering.
 - [smallweb](https://kagi.micr.dev/commands/smallweb): Complete reference for *kagi* smallweb command - fetch the Kagi Small Web feed of independent websites.

@@ -23,6 +23,9 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_CACHE_DIR",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "SHELL",
     ] {
         command.env_remove(key);
     }
@@ -51,6 +54,9 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_CACHE_DIR",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "SHELL",
     ] {
         command.env_remove(key);
     }
@@ -166,6 +172,17 @@ fn search_payload(title: &str, url: &str, snippet: &str) -> Value {
             ]
         }
     })
+}
+
+fn search_html_fixture() -> &'static str {
+    r#"
+    <html><body>
+      <div class="search-result">
+        <a class="__sri_title_link" href="https://example.com/session">Session Result</a>
+        <div class="__sri-desc">Served by session fallback.</div>
+      </div>
+    </body></html>
+    "#
 }
 
 fn news_latest_batch() -> Value {
@@ -417,6 +434,54 @@ fn search_command_limit_truncates_results() {
     assert_eq!(data.len(), 2);
     assert_eq!(data[0]["title"], "A");
     assert_eq!(data[1]["title"], "B");
+}
+
+#[test]
+fn search_command_falls_back_to_session_when_api_is_rate_limited() {
+    let server = MockServer::start();
+    let api_search = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust programming" }))
+            .header("authorization", "Bearer test-api-key");
+        then.status(429)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "error": [{ "msg": "rate limit exceeded" }]
+            }));
+    });
+    let session_search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/html/search")
+            .query_param("q", "rust programming")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    fs::write(
+        tempdir.path().join(".kagi.toml"),
+        "[auth]\npreferred_auth = \"api\"\n",
+    )
+    .expect("config should write");
+    let env = vec![
+        ("KAGI_API_KEY", API_KEY.to_string()),
+        ("KAGI_SESSION_TOKEN", "test-session".to_string()),
+        ("KAGI_BASE_URL", server.base_url()),
+    ];
+    let output = run_kagi(
+        &["search", "rust programming", "--format", "json"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    api_search.assert_calls(1);
+    session_search.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["data"][0]["title"], "Session Result");
 }
 
 #[test]
@@ -1044,7 +1109,7 @@ fn assistant_models_prints_json_catalog() {
 }
 
 #[test]
-fn assistant_stream_prints_ndjson_updates() {
+fn assistant_stream_prints_text_deltas_by_default() {
     let server = MockServer::start();
     let _prompt = server.mock(|when, then| {
         when.method(POST)
@@ -1071,6 +1136,37 @@ fn assistant_stream_prints_ndjson_updates() {
     );
 
     assert_success(&output);
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "Hello\n");
+}
+
+#[test]
+fn assistant_stream_can_print_ndjson_updates() {
+    let server = MockServer::start();
+    let _prompt = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/prompt")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json");
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(concat!(
+                "hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}\0\n",
+                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}\0\n",
+                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}\0\n"
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &["assistant", "--stream", "--stream-output", "json", "Hello"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
     let lines = String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).expect("line should parse as json"))
@@ -1079,6 +1175,31 @@ fn assistant_stream_prints_ndjson_updates() {
     assert_eq!(lines[0]["md_delta"], "Hel");
     assert_eq!(lines[1]["md_delta"], "lo");
     assert_eq!(lines[1]["message"]["state"], "done");
+}
+
+#[test]
+fn completion_install_detects_fish_and_writes_completion_file() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let config_home = tempdir.path().join("config");
+    let config_home_value = config_home.to_string_lossy().to_string();
+    let env = vec![
+        ("SHELL", "/usr/bin/fish".to_string()),
+        ("XDG_CONFIG_HOME", config_home_value),
+    ];
+
+    let output = run_kagi(&["completion", "install"], &env_refs(&env), tempdir.path());
+
+    assert_success(&output);
+    let target = config_home
+        .join("fish")
+        .join("completions")
+        .join("kagi.fish");
+    let completion = fs::read_to_string(&target).expect("completion file should exist");
+    assert!(
+        completion.contains("complete"),
+        "expected fish completion script, got:\n{completion}"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains(target.to_string_lossy().as_ref()));
 }
 
 #[test]

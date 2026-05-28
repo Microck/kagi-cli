@@ -164,6 +164,8 @@ Subscriber mode:
 }
 ```
 
+`kagi assistant --stream` writes incremental markdown deltas to stdout and flushes after each update. `kagi assistant --stream --stream-output json` writes the same stream as newline-delimited compact JSON events with an `md_delta` field plus the current `meta`, `thread`, and `message` snapshot.
+
 ### `kagi assistant custom`
 
 `list` returns an array of assistant summaries:
