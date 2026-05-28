@@ -18,6 +18,15 @@ pub enum CompletionShell {
 }
 
 #[derive(Debug, Clone, ValueEnum)]
+/// Output mode for streamed assistant prompt updates.
+pub enum AssistantStreamOutput {
+    /// Write only incremental markdown deltas to stdout.
+    Text,
+    /// Write each stream update as one compact JSON object per line.
+    Json,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
 /// Output format for assistant thread exports.
 pub enum AssistantThreadExportFormat {
     Markdown,
@@ -251,6 +260,8 @@ pub enum Commands {
     History(HistoryCommand),
     /// Manage local domain preferences used by CLI search output
     SitePref(SitePrefCommand),
+    /// Generate or install shell completion scripts
+    Completion(CompletionCommand),
     /// Manage Kagi search lenses
     Lens(LensCommand),
     /// Manage custom bangs
@@ -552,6 +563,42 @@ pub struct AuthSetArgs {
 }
 
 #[derive(Debug, Args)]
+/// Arguments for the `completion` command group.
+pub struct CompletionCommand {
+    #[command(subcommand)]
+    pub command: CompletionSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+/// Subcommands for shell completion management.
+pub enum CompletionSubcommand {
+    /// Print a completion script to stdout
+    Generate(CompletionGenerateArgs),
+    /// Install a completion script for the active shell
+    Install(CompletionInstallArgs),
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `completion generate`.
+pub struct CompletionGenerateArgs {
+    /// Shell to generate completions for
+    #[arg(value_name = "SHELL", value_enum)]
+    pub shell: CompletionShell,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `completion install`.
+pub struct CompletionInstallArgs {
+    /// Shell to install completions for; detected from SHELL when omitted
+    #[arg(long, value_name = "SHELL", value_enum)]
+    pub shell: Option<CompletionShell>,
+
+    /// Override the completion directory
+    #[arg(long, value_name = "DIR")]
+    pub dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 /// Arguments for the `summarize` subcommand.
 pub struct SummarizeArgs {
     /// URL to summarize
@@ -755,9 +802,13 @@ pub struct AssistantArgs {
     #[arg(long, value_name = "FORMAT", default_value_t = AssistantOutputFormat::Json)]
     pub format: AssistantOutputFormat,
 
-    /// Emit prompt updates as newline-delimited JSON
+    /// Stream prompt updates as text deltas or newline-delimited JSON
     #[arg(long, conflicts_with = "export")]
     pub stream: bool,
+
+    /// Stream output mode used with --stream
+    #[arg(long, value_name = "MODE", value_enum, default_value_t = AssistantStreamOutput::Text, requires = "stream")]
+    pub stream_output: AssistantStreamOutput,
 
     /// Disable colored terminal output (only affects pretty format)
     #[arg(long)]

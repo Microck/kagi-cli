@@ -1,0 +1,69 @@
+---
+title: "completion"
+description: "Complete reference for *kagi* completion command - generate and install shell completion scripts."
+---
+
+# `kagi completion`
+
+Generate or install shell completion scripts for `kagi`.
+
+## Synopsis
+
+```bash
+kagi completion generate <SHELL>
+kagi completion install [--shell <SHELL>] [--dir <DIR>]
+```
+
+Supported shells:
+
+- `bash`
+- `zsh`
+- `fish`
+- `powershell`
+
+## `kagi completion install`
+
+Install a completion script for your active shell. When `--shell` is omitted, `kagi` detects the shell from environment variables such as `SHELL`.
+
+```bash
+kagi completion install
+```
+
+Choose the shell explicitly when detection is unavailable or when installing for a different shell:
+
+```bash
+kagi completion install --shell bash
+kagi completion install --shell zsh
+kagi completion install --shell fish
+kagi completion install --shell powershell
+```
+
+Default install targets:
+
+| Shell | Target |
+| --- | --- |
+| bash | `$XDG_DATA_HOME/bash-completion/completions/kagi`, or `~/.local/share/bash-completion/completions/kagi` |
+| zsh | `~/.zsh/completions/_kagi` |
+| fish | `$XDG_CONFIG_HOME/fish/completions/kagi.fish`, or `~/.config/fish/completions/kagi.fish` |
+| powershell | `$XDG_CONFIG_HOME/powershell/kagi-completions.ps1`, or `~/.config/powershell/kagi-completions.ps1` |
+
+For zsh, the installer also adds the completion directory to `~/.zshrc` and ensures `compinit` is loaded. For PowerShell, it adds a dot-source line to the standard profile path under the same config directory.
+
+Use `--dir` to write the completion file somewhere else:
+
+```bash
+kagi completion install --shell fish --dir ./completions
+```
+
+## `kagi completion generate`
+
+Print a completion script to stdout without changing any files:
+
+```bash
+kagi completion generate bash > ~/.local/share/bash-completion/completions/kagi
+kagi completion generate zsh > ~/.zsh/completions/_kagi
+kagi completion generate fish > ~/.config/fish/completions/kagi.fish
+kagi completion generate powershell >> $PROFILE
+```
+
+`kagi --generate-completion <SHELL>` is still available as a shortcut for script generation.

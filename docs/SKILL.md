@@ -180,6 +180,12 @@ kagi assistant --thread-id "<thread-id>" "Give me an example"
 # Use a saved assistant profile with prompt overrides
 kagi assistant --assistant research --model gpt-5-mini --web-access --no-personalized "Summarize the latest Rust release"
 
+# Stream markdown deltas as they arrive
+kagi assistant --stream "Explain quantum computing"
+
+# Stream structured events for scripts
+kagi assistant --stream --stream-output json "Explain quantum computing"
+
 # List threads
 kagi assistant thread list
 
@@ -344,20 +350,27 @@ kagi search "query" --format csv > results.csv
 
 ## Shell Completions
 
+Install completions for the detected shell:
+
+```bash
+kagi completion install
+kagi completion install --shell fish
+```
+
 Generate completion scripts for Bash, Zsh, Fish, and PowerShell:
 
 ```bash
 # Bash
-kagi --generate-completion bash > ~/.local/share/bash-completion/completions/kagi
+kagi completion generate bash > ~/.local/share/bash-completion/completions/kagi
 
 # Zsh
-kagi --generate-completion zsh > ~/.zsh/completion/_kagi
+kagi completion generate zsh > ~/.zsh/completions/_kagi
 
 # Fish
-kagi --generate-completion fish > ~/.config/fish/completions/kagi.fish
+kagi completion generate fish > ~/.config/fish/completions/kagi.fish
 
 # PowerShell
-kagi --generate-completion powershell >> $PROFILE
+kagi completion generate powershell >> $PROFILE
 ```
 
 ## Common Workflows

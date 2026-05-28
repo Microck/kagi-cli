@@ -369,18 +369,30 @@ The binary is statically linked and has no runtime dependencies beyond the Linux
 
 **Shell Completion:**
 
-To enable tab completion, add to your shell configuration:
+To enable tab completion, install a generated completion script for your detected shell:
 
 ```bash
-# Bash (~/.bashrc)
-eval "$(kagi --generate-completion bash)"
-
-# Zsh (~/.zshrc)
-eval "$(kagi --generate-completion zsh)"
-
-# Fish (~/.config/fish/config.fish)
-kagi --generate-completion fish | source
+kagi completion install
 ```
+
+You can also choose the shell explicitly:
+
+```bash
+kagi completion install --shell bash
+kagi completion install --shell zsh
+kagi completion install --shell fish
+kagi completion install --shell powershell
+```
+
+For manual installs, write the generated script yourself:
+
+```bash
+kagi completion generate bash > ~/.local/share/bash-completion/completions/kagi
+kagi completion generate zsh > ~/.zsh/completions/_kagi
+kagi completion generate fish > ~/.config/fish/completions/kagi.fish
+```
+
+The older `kagi --generate-completion <shell>` shortcut still prints the generated script to stdout.
 
 ### Windows
 

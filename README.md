@@ -157,6 +157,7 @@ notes:
 - environment variables override `.kagi.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
+- API-first base search falls back to the session-token path when the API key is rejected, including quota and rate-limit failures
 - `search --lens`, `--time`, `--order`, `--verbatim`, and personalization flags require `KAGI_SESSION_TOKEN`
 - `search --region`, `--from-date`, and `--to-date` use V1 API filters when routed through `KAGI_API_KEY`
 - `auth check` validates the selected primary credential without using search fallback logic
@@ -170,6 +171,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi search` | search Kagi with `json` by default, or render as `toon`, `pretty`, `compact`, `markdown`, or `csv` |
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
+| `kagi completion` | generate or install shell completions for bash, zsh, fish, or PowerShell |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly |
 | `kagi watch` | rerun a search on an interval and emit added/removed result URLs |
@@ -193,21 +195,30 @@ for automation, stdout stays JSON by default. Use `--format toon` for token-effi
 
 ## shell completion
 
-generate a completion script and install it with your shell of choice:
+install completions automatically for your detected shell:
+
+```bash
+kagi completion install
+kagi completion install --shell fish
+```
+
+or generate a completion script and install it yourself:
 
 ```bash
 # bash
-kagi --generate-completion bash > ~/.local/share/bash-completion/completions/kagi
+kagi completion generate bash > ~/.local/share/bash-completion/completions/kagi
 
 # zsh
-kagi --generate-completion zsh > ~/.zsh/completion/_kagi
+kagi completion generate zsh > ~/.zsh/completions/_kagi
 
 # fish
-kagi --generate-completion fish > ~/.config/fish/completions/kagi.fish
+kagi completion generate fish > ~/.config/fish/completions/kagi.fish
 
 # powershell
-kagi --generate-completion powershell >> $PROFILE
+kagi completion generate powershell >> $PROFILE
 ```
+
+`kagi --generate-completion <shell>` remains available as a shortcut for script generation.
 
 see the [installation guide](https://kagi.micr.dev/guides/installation) for platform-specific setup details.
 
@@ -296,6 +307,8 @@ continue research with assistant:
 
 ```bash
 kagi assistant "plan a focused research session in the terminal"
+kagi assistant --stream "write a short implementation plan"
+kagi assistant --stream --stream-output json "write a short implementation plan"
 ```
 
 run assistant with a saved assistant profile and markdown output:

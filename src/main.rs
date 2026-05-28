@@ -37,9 +37,10 @@ use crate::auth::{
 };
 use crate::auth_wizard::{run_auth_wizard, supports_interactive_auth, validate_credential};
 use crate::cli::{
-    AssistantCustomSubcommand, AssistantOutputFormat, AssistantReplArgs, AssistantSubcommand,
-    AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs, AuthSubcommand,
-    BangSubcommand, Cli, Commands, CompletionShell, CustomBangSubcommand, EnrichSubcommand,
+    AssistantCustomSubcommand, AssistantOutputFormat, AssistantReplArgs, AssistantStreamOutput,
+    AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
+    AuthSubcommand, BangSubcommand, Cli, Commands, CompletionCommand, CompletionInstallArgs,
+    CompletionShell, CompletionSubcommand, CustomBangSubcommand, EnrichSubcommand,
     HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs, SearchOrder, SearchTime,
     SitePrefMode, SitePrefSubcommand, TranslateArgs, WatchArgs,
 };
@@ -60,6 +61,7 @@ use std::env;
 use std::fs;
 use std::future::Future;
 use std::io::{self, BufRead, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
@@ -192,6 +194,7 @@ async fn run() -> Result<(), KagiError> {
             AuthSubcommand::Check => run_auth_check(profile.as_deref()).await,
             AuthSubcommand::Set(args) => run_auth_set(args, profile.as_deref()),
         },
+        Commands::Completion(args) => run_completion(args),
         Commands::Summarize(args) => {
             args.validate().map_err(KagiError::Config)?;
 
@@ -419,18 +422,20 @@ async fn run() -> Result<(), KagiError> {
                     },
                 };
                 if args.once {
-                    let response =
-                        execute_once_assistant_prompt(&request, args.stream, &token).await?;
+                    let response = execute_once_assistant_prompt(
+                        &request,
+                        args.stream.then_some(args.stream_output),
+                        &token,
+                    )
+                    .await?;
                     if args.stream {
                         Ok(())
                     } else {
                         print_assistant_response(&response, args.format, !args.no_color)
                     }
                 } else if args.stream {
-                    execute_assistant_prompt_stream(&request, &token, |event| {
-                        print_compact_json(event)
-                    })
-                    .await?;
+                    execute_streaming_assistant_prompt(&request, &token, args.stream_output)
+                        .await?;
                     Ok(())
                 } else {
                     let response = execute_assistant_prompt(&request, &token).await?;
@@ -795,16 +800,193 @@ fn is_bare_auth_invocation_from(args: &[&str]) -> bool {
 }
 
 fn print_completion(shell: CompletionShell) {
+    let output = completion_script(shell);
+    print!("{output}");
+}
+
+fn run_completion(args: CompletionCommand) -> Result<(), KagiError> {
+    match args.command {
+        CompletionSubcommand::Generate(args) => {
+            print_completion(args.shell);
+            Ok(())
+        }
+        CompletionSubcommand::Install(args) => install_completion(args),
+    }
+}
+
+fn completion_script(shell: CompletionShell) -> String {
     let mut cmd = Cli::command();
+    let mut buffer = Vec::new();
 
     match shell {
-        CompletionShell::Bash => generate(shells::Bash, &mut cmd, "kagi", &mut std::io::stdout()),
-        CompletionShell::Zsh => generate(shells::Zsh, &mut cmd, "kagi", &mut std::io::stdout()),
-        CompletionShell::Fish => generate(shells::Fish, &mut cmd, "kagi", &mut std::io::stdout()),
+        CompletionShell::Bash => generate(shells::Bash, &mut cmd, "kagi", &mut buffer),
+        CompletionShell::Zsh => generate(shells::Zsh, &mut cmd, "kagi", &mut buffer),
+        CompletionShell::Fish => generate(shells::Fish, &mut cmd, "kagi", &mut buffer),
         CompletionShell::PowerShell => {
-            generate(shells::PowerShell, &mut cmd, "kagi", &mut std::io::stdout());
+            generate(shells::PowerShell, &mut cmd, "kagi", &mut buffer);
         }
     }
+
+    String::from_utf8(buffer).expect("clap completion scripts are valid UTF-8")
+}
+
+fn install_completion(args: CompletionInstallArgs) -> Result<(), KagiError> {
+    let shell = args.shell.or_else(detect_completion_shell).ok_or_else(|| {
+        KagiError::Config(
+            "could not detect shell; rerun with `kagi completion install --shell <bash|zsh|fish|powershell>`"
+                .to_string(),
+        )
+    })?;
+    let target_dir = args.dir.unwrap_or_else(|| default_completion_dir(&shell));
+    let target_path = target_dir.join(completion_filename(&shell));
+
+    fs::create_dir_all(&target_dir).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to create completion directory {}: {error}",
+            target_dir.display()
+        ))
+    })?;
+    fs::write(&target_path, completion_script(shell.clone())).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to write completion file {}: {error}",
+            target_path.display()
+        ))
+    })?;
+
+    maybe_update_zshrc(&shell, &target_dir)?;
+    maybe_update_powershell_profile(&shell, &target_path)?;
+
+    println!(
+        "installed {shell_name} completions to {}",
+        target_path.display(),
+        shell_name = completion_shell_name(&shell)
+    );
+    Ok(())
+}
+
+fn detect_completion_shell() -> Option<CompletionShell> {
+    let shell = env::var("SHELL")
+        .ok()
+        .or_else(|| env::var("ComSpec").ok())
+        .or_else(|| env::var("PSModulePath").ok())?;
+    let name = Path::new(&shell)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(shell.as_str())
+        .to_ascii_lowercase();
+
+    match name.as_str() {
+        "bash" => Some(CompletionShell::Bash),
+        "zsh" => Some(CompletionShell::Zsh),
+        "fish" => Some(CompletionShell::Fish),
+        "pwsh" | "powershell" | "powershell.exe" | "pwsh.exe" => Some(CompletionShell::PowerShell),
+        _ => None,
+    }
+}
+
+fn default_completion_dir(shell: &CompletionShell) -> PathBuf {
+    match shell {
+        CompletionShell::Bash => xdg_data_home().join("bash-completion").join("completions"),
+        CompletionShell::Zsh => home_dir().join(".zsh").join("completions"),
+        CompletionShell::Fish => xdg_config_home().join("fish").join("completions"),
+        CompletionShell::PowerShell => xdg_config_home().join("powershell"),
+    }
+}
+
+fn completion_filename(shell: &CompletionShell) -> &'static str {
+    match shell {
+        CompletionShell::Bash => "kagi",
+        CompletionShell::Zsh => "_kagi",
+        CompletionShell::Fish => "kagi.fish",
+        CompletionShell::PowerShell => "kagi-completions.ps1",
+    }
+}
+
+fn completion_shell_name(shell: &CompletionShell) -> &'static str {
+    match shell {
+        CompletionShell::Bash => "bash",
+        CompletionShell::Zsh => "zsh",
+        CompletionShell::Fish => "fish",
+        CompletionShell::PowerShell => "powershell",
+    }
+}
+
+fn maybe_update_zshrc(shell: &CompletionShell, target_dir: &Path) -> Result<(), KagiError> {
+    if !matches!(shell, CompletionShell::Zsh) {
+        return Ok(());
+    }
+
+    let zshrc = home_dir().join(".zshrc");
+    let line = format!("fpath=({} $fpath)", target_dir.display());
+    append_line_if_missing(&zshrc, &line)?;
+    append_line_if_missing(&zshrc, "autoload -Uz compinit && compinit")?;
+    Ok(())
+}
+
+fn maybe_update_powershell_profile(
+    shell: &CompletionShell,
+    target_path: &Path,
+) -> Result<(), KagiError> {
+    if !matches!(shell, CompletionShell::PowerShell) {
+        return Ok(());
+    }
+
+    let profile = xdg_config_home()
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let line = format!(". '{}'", target_path.display());
+    append_line_if_missing(&profile, &line)
+}
+
+fn append_line_if_missing(path: &Path, line: &str) -> Result<(), KagiError> {
+    let existing = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            return Err(KagiError::Config(format!(
+                "failed to read {}: {error}",
+                path.display()
+            )));
+        }
+    };
+
+    if existing.lines().any(|existing_line| existing_line == line) {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            KagiError::Config(format!("failed to create {}: {error}", parent.display()))
+        })?;
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(line);
+    updated.push('\n');
+    fs::write(path, updated)
+        .map_err(|error| KagiError::Config(format!("failed to update {}: {error}", path.display())))
+}
+
+fn xdg_data_home() -> PathBuf {
+    env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".local").join("share"))
+}
+
+fn xdg_config_home() -> PathBuf {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".config"))
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn run_auth_status(profile: Option<&str>) -> Result<(), KagiError> {
@@ -1070,7 +1252,7 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
 
 async fn execute_once_assistant_prompt(
     request: &AssistantPromptRequest,
-    stream: bool,
+    stream_output: Option<AssistantStreamOutput>,
     token: &str,
 ) -> Result<crate::types::AssistantPromptResponse, KagiError> {
     let model = request
@@ -1108,8 +1290,8 @@ async fn execute_once_assistant_prompt(
     prompt_request.profile_id = Some(delete_target.clone());
     prompt_request.model = None;
 
-    let prompt_result = if stream {
-        execute_assistant_prompt_stream(&prompt_request, token, print_compact_json).await
+    let prompt_result = if let Some(stream_output) = stream_output {
+        execute_streaming_assistant_prompt(&prompt_request, token, stream_output).await
     } else {
         execute_assistant_prompt(&prompt_request, token).await
     };
@@ -1128,6 +1310,38 @@ fn temporary_assistant_name() -> String {
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
     format!("kagi-cli-once-{millis}-{}", std::process::id())
+}
+
+async fn execute_streaming_assistant_prompt(
+    request: &AssistantPromptRequest,
+    token: &str,
+    stream_output: AssistantStreamOutput,
+) -> Result<crate::types::AssistantPromptResponse, KagiError> {
+    let response = match stream_output {
+        AssistantStreamOutput::Text => {
+            let mut saw_text = false;
+            let response = execute_assistant_prompt_stream(request, token, |event| {
+                if !event.md_delta.is_empty() {
+                    saw_text = true;
+                    print!("{}", event.md_delta);
+                    io::stdout().flush().map_err(|error| {
+                        KagiError::Network(format!("failed to flush assistant stream: {error}"))
+                    })?;
+                }
+                Ok(())
+            })
+            .await?;
+            if saw_text {
+                println!();
+            }
+            response
+        }
+        AssistantStreamOutput::Json => {
+            execute_assistant_prompt_stream(request, token, print_compact_json).await?
+        }
+    };
+
+    Ok(response)
 }
 
 fn print_compact_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
