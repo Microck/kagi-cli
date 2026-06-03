@@ -326,7 +326,7 @@ kagi assistant --attach ./a.jpg --attach ./b.pdf "tell me everything about this 
 use assistant as a terminal chat client:
 
 ```bash
-kagi assistant repl --model gpt-5-mini --export ./assistant-transcript.json
+kagi assistant repl --model gpt-5-4-nano --export ./assistant-transcript.json
 ```
 
 ask assistant about a page directly:
@@ -349,7 +349,7 @@ manage custom assistants:
 ```bash
 kagi assistant custom list
 kagi assistant custom get "Release Notes"
-kagi assistant custom create "Release Notes" --model gpt-5-mini --web-access --lens 2 --instructions "Focus on release diffs and migration notes."
+kagi assistant custom create "Release Notes" --model gpt-5-4-nano --web-access --lens 2 --instructions "Focus on release diffs and migration notes."
 kagi assistant custom update "Release Notes" --bang-trigger relnotes --no-personalized
 ```
 

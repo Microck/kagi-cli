@@ -178,7 +178,7 @@ kagi assistant "Explain quantum computing"
 kagi assistant --thread-id "<thread-id>" "Give me an example"
 
 # Use a saved assistant profile with prompt overrides
-kagi assistant --assistant research --model gpt-5-mini --web-access --no-personalized "Summarize the latest Rust release"
+kagi assistant --assistant research --model gpt-5-4-nano --web-access --no-personalized "Summarize the latest Rust release"
 
 # Stream markdown deltas as they arrive
 kagi assistant --stream "Explain quantum computing"
@@ -211,7 +211,7 @@ kagi assistant custom list
 kagi assistant custom get "Release Notes"
 
 # Create a custom assistant
-kagi assistant custom create "Release Notes" --model gpt-5-mini --web-access --lens 2 --instructions "Focus on release diffs and migrations."
+kagi assistant custom create "Release Notes" --model gpt-5-4-nano --web-access --lens 2 --instructions "Focus on release diffs and migrations."
 
 # Update an existing custom assistant
 kagi assistant custom update "Release Notes" --bang-trigger relnotes --no-personalized

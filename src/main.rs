@@ -165,20 +165,13 @@ async fn run() -> Result<(), KagiError> {
                 no_personalized: args.no_personalized,
             };
             let request = build_search_request(args.query, &options);
-            let format_str = match args.format {
-                cli::OutputFormat::Json => "json",
-                cli::OutputFormat::Toon => "toon",
-                cli::OutputFormat::Pretty => "pretty",
-                cli::OutputFormat::Compact => "compact",
-                cli::OutputFormat::Markdown => "markdown",
-                cli::OutputFormat::Csv => "csv",
-            };
+            let format_str = args.format.to_string();
             if let Some(follow_count) = args.follow {
                 run_search_follow(request, follow_count, args.limit, profile.as_deref()).await
             } else {
                 run_search(
                     request,
-                    format_str.to_string(),
+                    format_str,
                     !args.no_color,
                     args.template,
                     args.local_cache,
@@ -460,13 +453,7 @@ async fn run() -> Result<(), KagiError> {
             } else {
                 request
             };
-            let format_str = match args.format {
-                cli::QuickOutputFormat::Json => "json",
-                cli::QuickOutputFormat::Toon => "toon",
-                cli::QuickOutputFormat::Pretty => "pretty",
-                cli::QuickOutputFormat::Compact => "compact",
-                cli::QuickOutputFormat::Markdown => "markdown",
-            };
+            let format_str = args.format.to_string();
             let response = cached_json(
                 args.local_cache,
                 args.cache_ttl.unwrap_or(900),
@@ -475,7 +462,7 @@ async fn run() -> Result<(), KagiError> {
                 || async { execute_quick(&request, &token).await },
             )
             .await?;
-            print_quick_response(&response, format_str, !args.no_color)
+            print_quick_response(&response, &format_str, !args.no_color)
         }
         Commands::Translate(args) => {
             let token = resolve_session_token(profile.as_deref())?;
@@ -753,19 +740,12 @@ async fn run() -> Result<(), KagiError> {
             }
             args.validate().map_err(KagiError::Config)?;
 
-            let format_str = match args.format {
-                cli::OutputFormat::Json => "json",
-                cli::OutputFormat::Toon => "toon",
-                cli::OutputFormat::Pretty => "pretty",
-                cli::OutputFormat::Compact => "compact",
-                cli::OutputFormat::Markdown => "markdown",
-                cli::OutputFormat::Csv => "csv",
-            };
+            let format_str = args.format.to_string();
             run_batch_search(BatchSearchConfig {
                 queries: args.queries,
                 concurrency: args.concurrency,
                 rate_limit: args.rate_limit,
-                format: format_str.to_string(),
+                format: format_str,
                 use_color: !args.no_color,
                 options: SearchRequestOptions {
                     snap: args.snap,
@@ -1555,22 +1535,23 @@ async fn run_search(
         response.data.truncate(n);
     }
 
-    let output = match format.as_str() {
-        _ if template.is_some() => {
-            format_template_response(&response, template.as_deref().unwrap())
+    let output = if let Some(template) = template.as_deref() {
+        format_template_response(&response, template)
+    } else {
+        match format.as_str() {
+            "pretty" => format_pretty_response(&response, use_color),
+            "toon" => {
+                return print_toon(&response);
+            }
+            "compact" => serde_json::to_string(&response).map_err(|error| {
+                KagiError::Parse(format!("failed to serialize search response: {error}"))
+            })?,
+            "markdown" => format_markdown_response(&response),
+            "csv" => format_csv_response(&response),
+            _ => serde_json::to_string_pretty(&response).map_err(|error| {
+                KagiError::Parse(format!("failed to serialize search response: {error}"))
+            })?,
         }
-        "pretty" => format_pretty_response(&response, use_color),
-        "toon" => {
-            return print_toon(&response);
-        }
-        "compact" => serde_json::to_string(&response).map_err(|error| {
-            KagiError::Parse(format!("failed to serialize search response: {error}"))
-        })?,
-        "markdown" => format_markdown_response(&response),
-        "csv" => format_csv_response(&response),
-        _ => serde_json::to_string_pretty(&response).map_err(|error| {
-            KagiError::Parse(format!("failed to serialize search response: {error}"))
-        })?,
     };
 
     println!("{output}");
@@ -2034,16 +2015,17 @@ async fn run_batch_search(config: BatchSearchConfig<'_>) -> Result<(), KagiError
     } else {
         // For human-readable formats, output with headers
         for (query, response) in results {
-            let output = match format.as_str() {
-                _ if template.is_some() => {
-                    format_template_response(&response, template.as_deref().unwrap())
+            let output = if let Some(template) = template.as_deref() {
+                format_template_response(&response, template)
+            } else {
+                match format.as_str() {
+                    "pretty" => format_pretty_response(&response, use_color),
+                    "markdown" => format_markdown_response(&response),
+                    "csv" => format_csv_response(&response),
+                    _ => serde_json::to_string_pretty(&response).map_err(|error| {
+                        KagiError::Parse(format!("failed to serialize search response: {error}"))
+                    })?,
                 }
-                "pretty" => format_pretty_response(&response, use_color),
-                "markdown" => format_markdown_response(&response),
-                "csv" => format_csv_response(&response),
-                _ => serde_json::to_string_pretty(&response).map_err(|error| {
-                    KagiError::Parse(format!("failed to serialize search response: {error}"))
-                })?,
             };
             println!("=== Results for: {query} ===");
             println!("{output}");

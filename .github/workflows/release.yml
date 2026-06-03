@@ -326,7 +326,7 @@ jobs:
             end
 
             test do
-              assert_match "Usage: kagi <COMMAND>", shell_output("#{bin}/kagi --help")
+              assert_match "Usage: kagi [OPTIONS] [COMMAND]", shell_output("#{bin}/kagi --help")
             end
           end
           EOF

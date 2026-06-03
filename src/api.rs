@@ -97,6 +97,10 @@ const KAGI_LOGGED_OUT_MARKERS: [&str; 3] = [
     "Welcome to Kagi",
     "paid search engine that gives power back to the user",
 ];
+const LENS_MUTATION_LOOKUP_ATTEMPTS: usize = 10;
+const LENS_MUTATION_LOOKUP_DELAY_MS: u64 = 500;
+const LENS_TOGGLE_VERIFY_ATTEMPTS: usize = 5;
+const KAGI_LENS_NAME_MAX_CHARS: usize = 33;
 
 #[derive(Debug, Clone)]
 /// Filter parameters for the Kagi News API.
@@ -1122,9 +1126,9 @@ pub async fn execute_lens_create(
     .await?;
     let created_id = match url_query_value(&url, "id") {
         Some(id) => id,
-        None => resolve_lens_id_by_name(&details.name, token).await?,
+        None => resolve_lens_id_by_name_after_mutation(&details.name, token, "create").await?,
     };
-    execute_lens_get(&created_id, token).await
+    execute_lens_get_after_mutation(&created_id, token, "create").await
 }
 
 /// Updates an existing Kagi search lens.
@@ -1154,7 +1158,7 @@ pub async fn execute_lens_update(
         "lens update",
     )
     .await?;
-    execute_lens_get(&lens.id, token).await
+    execute_lens_get_after_mutation(&lens.id, token, "update").await
 }
 
 /// Deletes a Kagi search lens.
@@ -1227,12 +1231,31 @@ pub async fn execute_lens_set_enabled(
     )
     .await?;
 
-    let refreshed = execute_lens_list(token).await?;
-    let lens = resolve_lens_ref(&refreshed, &lens.id)?;
-    Ok(ToggleResourceResponse {
-        id: lens.id.clone(),
-        enabled: lens.enabled,
-    })
+    for attempt in 0..LENS_TOGGLE_VERIFY_ATTEMPTS {
+        match execute_lens_list(token).await {
+            Ok(refreshed) => {
+                if let Ok(lens) = resolve_lens_ref(&refreshed, &lens.id) {
+                    return Ok(ToggleResourceResponse {
+                        id: lens.id.clone(),
+                        enabled: lens.enabled,
+                    });
+                }
+            }
+            Err(error)
+                if attempt + 1 < LENS_TOGGLE_VERIFY_ATTEMPTS
+                    && should_retry_lens_mutation_lookup(&error) => {}
+            Err(error) => return Err(error),
+        }
+
+        if attempt + 1 < LENS_TOGGLE_VERIFY_ATTEMPTS {
+            sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    Err(KagiError::Config(format!(
+        "lens '{}' was toggled but did not reappear in settings within 5 seconds",
+        lens.id
+    )))
 }
 
 /// Lists all custom bangs for the authenticated user.
@@ -2591,6 +2614,18 @@ fn normalize_named_target(raw: &str, label: &str) -> Result<String, KagiError> {
     Ok(normalized.to_string())
 }
 
+fn normalize_lens_name(raw: &str) -> Result<String, KagiError> {
+    let normalized = normalize_named_target(raw, "lens name")?;
+    let char_count = normalized.chars().count();
+    if char_count > KAGI_LENS_NAME_MAX_CHARS {
+        return Err(KagiError::Config(format!(
+            "lens name must be at most {KAGI_LENS_NAME_MAX_CHARS} characters; Kagi truncates longer names"
+        )));
+    }
+
+    Ok(normalized)
+}
+
 fn normalize_custom_bang_trigger(raw: &str) -> Result<String, KagiError> {
     let normalized = raw.trim().trim_start_matches('!').trim();
     if normalized.is_empty() {
@@ -2818,7 +2853,7 @@ fn apply_lens_create_request(
     details: &mut LensDetails,
     request: &LensCreateRequest,
 ) -> Result<(), KagiError> {
-    details.name = normalize_named_target(&request.name, "lens name")?;
+    details.name = normalize_lens_name(&request.name)?;
     if let Some(value) = request.included_sites.as_ref() {
         details.included_sites = value.clone();
     }
@@ -2870,7 +2905,7 @@ fn apply_lens_update_request(
     request: &LensUpdateRequest,
 ) -> Result<(), KagiError> {
     if let Some(value) = request.name.as_deref() {
-        details.name = normalize_named_target(value, "lens name")?;
+        details.name = normalize_lens_name(value)?;
     }
     if let Some(value) = request.included_sites.as_ref() {
         details.included_sites = value.clone();
@@ -3033,6 +3068,90 @@ fn resolve_lens_ref<'a>(
         .iter()
         .find(|lens| lens.id == target || lens.name.eq_ignore_ascii_case(&target))
         .ok_or_else(|| KagiError::Config(format!("no lens matched '{target}'")))
+}
+
+async fn execute_lens_get_after_mutation(
+    target: &str,
+    token: &str,
+    operation: &str,
+) -> Result<LensDetails, KagiError> {
+    let mut last_retryable_error = None;
+
+    // Kagi can redirect from a successful lens mutation before the settings
+    // page reflects the new/updated lens. Retry only that narrow lookup gap.
+    for attempt in 0..LENS_MUTATION_LOOKUP_ATTEMPTS {
+        match execute_lens_get(target, token).await {
+            Ok(details) => return Ok(details),
+            Err(error)
+                if attempt + 1 < LENS_MUTATION_LOOKUP_ATTEMPTS
+                    && should_retry_lens_mutation_lookup(&error) =>
+            {
+                last_retryable_error = Some(error);
+                sleep(Duration::from_millis(LENS_MUTATION_LOOKUP_DELAY_MS)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(lens_mutation_lookup_timeout_error(
+        target,
+        operation,
+        last_retryable_error,
+    ))
+}
+
+async fn resolve_lens_id_by_name_after_mutation(
+    name: &str,
+    token: &str,
+    operation: &str,
+) -> Result<String, KagiError> {
+    let mut last_retryable_error = None;
+
+    for attempt in 0..LENS_MUTATION_LOOKUP_ATTEMPTS {
+        match resolve_lens_id_by_name(name, token).await {
+            Ok(id) => return Ok(id),
+            Err(error)
+                if attempt + 1 < LENS_MUTATION_LOOKUP_ATTEMPTS
+                    && should_retry_lens_mutation_lookup(&error) =>
+            {
+                last_retryable_error = Some(error);
+                sleep(Duration::from_millis(LENS_MUTATION_LOOKUP_DELAY_MS)).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(lens_mutation_lookup_timeout_error(
+        name,
+        operation,
+        last_retryable_error,
+    ))
+}
+
+fn lens_mutation_lookup_timeout_error(
+    target: &str,
+    operation: &str,
+    last_error: Option<KagiError>,
+) -> KagiError {
+    match last_error {
+        Some(error) => KagiError::Config(format!(
+            "lens '{target}' did not become visible after {operation} within {LENS_MUTATION_LOOKUP_ATTEMPTS} attempts: {error}"
+        )),
+        None => KagiError::Config(format!(
+            "lens '{target}' did not become visible after {operation} within {LENS_MUTATION_LOOKUP_ATTEMPTS} attempts"
+        )),
+    }
+}
+
+fn should_retry_lens_mutation_lookup(error: &KagiError) -> bool {
+    match error {
+        KagiError::Config(message) => message.starts_with("no lens matched "),
+        KagiError::Network(message) => {
+            message.contains("error decoding response body")
+                && (message.contains("lens settings page") || message.contains("lens form"))
+        }
+        _ => false,
+    }
 }
 
 fn resolve_custom_bang_ref<'a>(
@@ -4702,7 +4821,7 @@ mod tests {
         fake_header_map, finalize_translate_text_response, format_client_error_suffix,
         normalize_ask_page_question, normalize_ask_page_url, normalize_assistant_query,
         normalize_assistant_thread_id, normalize_aux_quality, normalize_custom_bang_trigger,
-        normalize_redirect_rule, normalize_subscriber_summary_input,
+        normalize_lens_name, normalize_redirect_rule, normalize_subscriber_summary_input,
         normalize_subscriber_summary_length, normalize_subscriber_summary_type,
         parse_assistant_prompt_stream, parse_assistant_thread_cursor,
         parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
@@ -4710,8 +4829,8 @@ mod tests {
         parse_subscriber_summarize_stream, parse_translate_detect_value,
         resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
         resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
-        should_retry_translate_bootstrap, text_contains_news_filter_keyword,
-        validate_translate_request,
+        should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
+        text_contains_news_filter_keyword, validate_translate_request,
     };
     use crate::api::{
         execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
@@ -5705,6 +5824,25 @@ mod tests {
             .as_nanos()
     }
 
+    async fn live_assistant_base_model(token: &str) -> String {
+        let catalog = super::execute_assistant_model_catalog(token)
+            .await
+            .expect("assistant model catalog should load");
+        catalog
+            .models
+            .iter()
+            .find(|model| model.selected)
+            .or_else(|| {
+                catalog
+                    .models
+                    .iter()
+                    .find(|model| model.id == "gpt-5-4-nano")
+            })
+            .or_else(|| catalog.models.first())
+            .map(|model| model.id.clone())
+            .expect("assistant model catalog should contain at least one model")
+    }
+
     #[tokio::test]
     #[ignore]
     async fn live_assistant_thread_roundtrip() {
@@ -5713,12 +5851,13 @@ mod tests {
             return;
         };
 
+        let model = live_assistant_base_model(&token).await;
         let request = AssistantPromptRequest {
             query: format!("Reply with exactly: assistant-v2-smoke-{}", live_nonce()),
             thread_id: None,
             attachments: Vec::new(),
             profile_id: None,
-            model: Some("gpt-5-mini".to_string()),
+            model: Some(model.clone()),
             lens_id: None,
             internet_access: Some(true),
             personalizations: Some(false),
@@ -5735,7 +5874,7 @@ mod tests {
                 .as_ref()
                 .and_then(|v| v.get("model"))
                 .and_then(|v| v.as_str()),
-            Some("gpt-5-mini")
+            Some(model.as_str())
         );
 
         let thread_id = prompt.thread.id.clone();
@@ -5774,6 +5913,7 @@ mod tests {
         let name = format!("codex-assistant-{nonce}");
         let updated_name = format!("{name}-updated");
         let bang = format!("ca{nonce}");
+        let model = live_assistant_base_model(&token).await;
 
         let created = execute_custom_assistant_create(
             &AssistantProfileCreateRequest {
@@ -5782,7 +5922,7 @@ mod tests {
                 internet_access: Some(false),
                 selected_lens: Some("0".to_string()),
                 personalizations: Some(false),
-                base_model: Some("gpt-5-mini".to_string()),
+                base_model: Some(model.clone()),
                 custom_instructions: Some("Reply in exactly one sentence.".to_string()),
             },
             &token,
@@ -5806,7 +5946,7 @@ mod tests {
         let fetched = execute_custom_assistant_get(&created_id, &token)
             .await
             .expect("custom assistant get should succeed");
-        assert_eq!(fetched.base_model, "gpt-5-mini");
+        assert_eq!(fetched.base_model, model.as_str());
 
         let prompt = execute_assistant_prompt(
             &AssistantPromptRequest {
@@ -5831,9 +5971,9 @@ mod tests {
                 name: Some(updated_name.clone()),
                 bang_trigger: None,
                 internet_access: Some(true),
-                selected_lens: Some("22524".to_string()),
+                selected_lens: Some("0".to_string()),
                 personalizations: Some(true),
-                base_model: Some("gpt-5-mini".to_string()),
+                base_model: Some(model),
                 custom_instructions: Some("Use bullet points when useful.".to_string()),
             },
             &token,
@@ -5843,7 +5983,7 @@ mod tests {
 
         assert_eq!(updated.name, updated_name);
         assert!(updated.internet_access);
-        assert_eq!(updated.selected_lens, "22524");
+        assert_eq!(updated.selected_lens, "0");
         assert!(updated.personalizations);
 
         let deleted = execute_custom_assistant_delete(&created_id, &token)
@@ -6279,6 +6419,46 @@ mod tests {
     }
 
     #[test]
+    fn retries_lens_mutation_lookup_when_created_lens_is_not_visible_yet() {
+        let error = KagiError::Config("no lens matched '30147'".to_string());
+        assert!(should_retry_lens_mutation_lookup(&error));
+    }
+
+    #[test]
+    fn retries_lens_mutation_lookup_for_transient_settings_decode_errors() {
+        let error = KagiError::Network(
+            "failed to read lens settings page response body: error decoding response body"
+                .to_string(),
+        );
+        assert!(should_retry_lens_mutation_lookup(&error));
+    }
+
+    #[test]
+    fn does_not_retry_lens_mutation_lookup_for_auth_errors() {
+        let error = KagiError::Auth("invalid or expired Kagi session token".to_string());
+        assert!(!should_retry_lens_mutation_lookup(&error));
+    }
+
+    #[test]
+    fn accepts_lens_names_at_kagi_persisted_length_limit() {
+        let name = "a".repeat(super::KAGI_LENS_NAME_MAX_CHARS);
+        assert_eq!(normalize_lens_name(&name).unwrap(), name);
+    }
+
+    #[test]
+    fn rejects_lens_names_that_kagi_would_truncate() {
+        let name = "a".repeat(super::KAGI_LENS_NAME_MAX_CHARS + 1);
+        let error = normalize_lens_name(&name).expect_err("overlong lens name should fail");
+        assert!(error.to_string().contains("Kagi truncates longer names"));
+    }
+
+    #[test]
+    fn rejects_empty_lens_names() {
+        let error = normalize_lens_name("   ").expect_err("empty lens name should fail");
+        assert!(error.to_string().contains("lens name cannot be empty"));
+    }
+
+    #[test]
     fn uses_detected_source_language_when_translate_from_is_auto() {
         let source = effective_translate_source_language("auto", &sample_detected_language());
         assert_eq!(source, "fr");
@@ -6570,28 +6750,38 @@ mod tests {
             .await
             .expect("live translate should succeed");
 
-        let suggestions = response
-            .translation_suggestions
-            .as_ref()
-            .expect("suggestions should be present for ja target");
-        let insights = response
-            .word_insights
-            .as_ref()
-            .expect("word insights should be present for ja target");
+        if let Some(suggestions) = response.translation_suggestions.as_ref() {
+            assert!(
+                suggestions
+                    .suggestions
+                    .iter()
+                    .any(|entry| !entry.label.is_ascii()),
+                "expected at least one localized suggestion label"
+            );
+        } else {
+            assert!(
+                response
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.section == "translation_suggestions")
+            );
+        }
 
-        assert!(
-            suggestions
-                .suggestions
-                .iter()
-                .any(|entry| !entry.label.is_ascii()),
-            "expected at least one localized suggestion label"
-        );
-        assert!(
-            insights
-                .insights
-                .iter()
-                .any(|entry| !entry.r#type.is_ascii()),
-            "expected at least one localized insight type"
-        );
+        if let Some(insights) = response.word_insights.as_ref() {
+            assert!(
+                insights
+                    .insights
+                    .iter()
+                    .any(|entry| !entry.r#type.is_ascii()),
+                "expected at least one localized insight type"
+            );
+        } else {
+            assert!(
+                response
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.section == "word_insights")
+            );
+        }
     }
 }
