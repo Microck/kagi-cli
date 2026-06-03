@@ -192,11 +192,11 @@ impl NewsFilterScope {
     long_about = "Search Kagi from the command line with JSON-first output for agents.
 
 Features:
-• Shell completion generation (bash, zsh, fish, powershell)
-• Multiple output formats (json, toon, pretty, compact, markdown, csv)
-• Parallel batch searches with rate limiting
-• Colorized terminal output (disable with --no-color)
-• Full Kagi API coverage with session token support",
+- Shell completion generation (bash, zsh, fish, powershell)
+- Multiple output formats (json, toon, pretty, compact, markdown, csv)
+- Parallel batch searches with rate limiting
+- Colorized terminal output (disable with --no-color)
+- Full Kagi API coverage with session token support",
     propagate_version = true
 )]
 #[command(disable_help_subcommand = true)]
@@ -223,10 +223,10 @@ pub enum Commands {
     /// Example: kagi search "rust programming" --format pretty
     ///
     /// Features:
-    /// • Multiple output formats: json (default), toon, pretty, compact, markdown, csv
-    /// • Colorized pretty output (disable with --no-color)
-    /// • Lens support for scoped searches
-    /// • Region, time, date, order, verbatim, and personalization filters
+    /// - Multiple output formats: json (default), toon, pretty, compact, markdown, csv
+    /// - Colorized pretty output (disable with --no-color)
+    /// - Lens support for scoped searches
+    /// - Region, time, date, order, verbatim, and personalization filters
     Search(SearchArgs),
     /// Launch the auth setup wizard or use credential management subcommands
     Auth(AuthCommand),
@@ -273,12 +273,12 @@ pub enum Commands {
     /// Example: kagi batch "rust" "python" "go" --concurrency 5 --rate-limit 120
     ///
     /// Features:
-    /// • Parallel execution with configurable concurrency
-    /// • Token bucket rate limiting to respect API limits
-    /// • All output formats supported (json, toon, pretty, compact, markdown, csv)
-    /// • Lens support for scoped searches
-    /// • Shared region, time, date, order, verbatim, and personalization filters
-    /// • Color output control with --no-color
+    /// - Parallel execution with configurable concurrency
+    /// - Token bucket rate limiting to respect API limits
+    /// - All output formats supported (json, toon, pretty, compact, markdown, csv)
+    /// - Lens support for scoped searches
+    /// - Shared region, time, date, order, verbatim, and personalization filters
+    /// - Color output control with --no-color
     Batch(BatchSearchArgs),
 }
 

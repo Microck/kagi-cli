@@ -49,4 +49,4 @@ jobs:
       - name: Publish package
         if: vars.NPM_PUBLISH_ENABLED == 'true'
         working-directory: npm
-        run: npm publish --access public --provenance=false
+        run: npm publish --access public --provenance

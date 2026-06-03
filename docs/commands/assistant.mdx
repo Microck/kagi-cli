@@ -108,7 +108,7 @@ Possible values:
 Override the model slug for a single prompt.
 
 ```bash
-kagi assistant --model gpt-5-mini "reply with only the model name"
+kagi assistant --model gpt-5-4-nano "reply with only the model name"
 ```
 
 #### `--lens <LENS_ID>`
@@ -132,7 +132,7 @@ Force Kagi personalizations on or off for a single prompt.
 `kagi assistant repl` starts a terminal chat loop that keeps the latest Assistant thread id and sends each prompt back into the same conversation.
 
 ```bash
-kagi assistant repl --model gpt-5-mini --export ./assistant-transcript.json
+kagi assistant repl --model gpt-5-4-nano --export ./assistant-transcript.json
 ```
 
 REPL commands:
@@ -224,7 +224,7 @@ Supported options:
 ```bash
 kagi assistant custom create "Release Notes" \
   --bang-trigger release \
-  --model gpt-5-mini \
+  --model gpt-5-4-nano \
   --web-access \
   --instructions "Summarize release posts with a changelog-first bias."
 ```
@@ -328,7 +328,7 @@ Prompt mode returns:
     "id": "assistant-1",
     "name": "Research",
     "invoke_profile": "research",
-    "model": "gpt-5-mini",
+    "model": "gpt-5-4-nano",
     "bang_trigger": "research",
     "internet_access": true,
     "built_in": false,
@@ -342,7 +342,7 @@ Prompt mode returns:
 Start a thread, capture the id, continue it, then export it:
 
 ```bash
-RESPONSE=$(kagi assistant --model gpt-5-mini "plan a calm terminal research session in 3 bullets")
+RESPONSE=$(kagi assistant --model gpt-5-4-nano "plan a calm terminal research session in 3 bullets")
 THREAD_ID=$(printf '%s' "$RESPONSE" | jq -r '.thread.id')
 
 printf '%s\n' "$RESPONSE" | jq -r '.message.markdown'

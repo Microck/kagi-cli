@@ -180,7 +180,7 @@ impl CredentialInventory {
                 if let Some(session_token) = self.session_token.clone() {
                     return Ok(SearchCredentials {
                         primary: session_token,
-                        fallback_session: self.api_key.clone(),
+                        fallback_session: None,
                     });
                 }
 
@@ -951,7 +951,7 @@ mod tests {
     }
 
     #[test]
-    fn base_search_keeps_api_key_as_fallback_when_session_is_preferred() {
+    fn base_search_has_no_fallback_when_session_is_preferred() {
         let inventory = CredentialInventory {
             api_key: Some(Credential {
                 kind: CredentialKind::ApiKey,
@@ -973,13 +973,7 @@ mod tests {
             .resolve_for_search(SearchAuthRequirement::Base)
             .expect("base search resolves credential");
         assert_eq!(credentials.primary.kind, CredentialKind::SessionToken);
-        assert_eq!(
-            credentials
-                .fallback_session
-                .expect("api fallback exists")
-                .kind,
-            CredentialKind::ApiKey
-        );
+        assert!(credentials.fallback_session.is_none());
     }
 
     #[test]
