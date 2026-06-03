@@ -7,6 +7,15 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.1]
+
+### Changed
+
+- Search auth routing now preserves session-preferred fallback behavior when API credentials are unavailable or rejected.
+- Lens create, update, enable, and disable flows now validate lens names more consistently and behave more reliably against live Kagi accounts.
+- Assistant examples and live-test coverage now use the current model catalog.
+- Release and package metadata were updated for the current GitHub Actions workflow shapes.
+
 ## [0.9.0]
 
 ### Added
