@@ -62,15 +62,25 @@ archive="${APP_NAME}-${version}-${target}.tar.gz"
 url="https://github.com/${REPO}/releases/download/${version}/${archive}"
 
 tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT INT TERM
+install_tmp=""
+cleanup() {
+  rm -rf "$tmpdir"
+  if [ -n "$install_tmp" ]; then
+    rm -f "$install_tmp"
+  fi
+}
+trap cleanup EXIT INT TERM
 
 echo "Downloading $archive"
 curl -fL "$url" -o "$tmpdir/$archive"
 
 tar -xzf "$tmpdir/$archive" -C "$tmpdir"
 mkdir -p "$BINDIR"
-cp "$tmpdir/$APP_NAME" "$BINDIR/$APP_NAME"
-chmod +x "$BINDIR/$APP_NAME"
+install_tmp="$(mktemp "$BINDIR/$APP_NAME.XXXXXX")"
+cp "$tmpdir/$APP_NAME" "$install_tmp"
+chmod +x "$install_tmp"
+mv "$install_tmp" "$BINDIR/$APP_NAME"
+install_tmp=""
 
 echo "Installed $APP_NAME to $BINDIR/$APP_NAME"
 

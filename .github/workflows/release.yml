@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -44,7 +44,7 @@ jobs:
         run: |
           cargo fmt --check
           cargo clippy --all-targets --all-features -- -D warnings
-          cargo test -q --locked
+          cargo test --workspace --all-targets --locked
 
   build:
     needs: verify

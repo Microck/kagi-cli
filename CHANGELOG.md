@@ -7,6 +7,16 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.3]
+
+### Fixed
+
+- Hardened demo scripts so they no longer use a predictable shared `/tmp` PATH shim before running authenticated `kagi` commands.
+- Made Unix and PowerShell installers replace existing binaries through staged same-directory writes instead of overwriting the installed binary directly.
+- Tightened release, publish, security, coverage, CI, and Makefile checks for more reproducible and complete release validation.
+- Isolated integration test home and XDG directories so local user config cannot leak into test runs.
+- Reduced default CLI failure output to a single user-facing diagnostic.
+
 ## [0.9.2]
 
 ### Added

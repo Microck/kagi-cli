@@ -30,6 +30,8 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         command.env_remove(key);
     }
 
+    isolate_command_home(&mut command, cwd);
+
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -61,6 +63,8 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         command.env_remove(key);
     }
 
+    isolate_command_home(&mut command, cwd);
+
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -73,6 +77,13 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         .write_all(stdin.as_bytes())
         .expect("stdin should write");
     child.wait_with_output().expect("command should run")
+}
+
+fn isolate_command_home(command: &mut Command, cwd: &Path) {
+    command
+        .env("HOME", cwd)
+        .env("XDG_CONFIG_HOME", cwd.join(".config"))
+        .env("XDG_DATA_HOME", cwd.join(".local").join("share"));
 }
 
 fn assert_success(output: &Output) {
@@ -103,6 +114,31 @@ fn help_points_agents_to_agent_guide() {
     assert!(
         stdout.contains("skills [list]"),
         "expected help to mention skills [list], got:\n{stdout}"
+    );
+}
+
+#[test]
+fn default_failure_stderr_has_single_user_facing_error() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["search", "rust"], &[], tempdir.path());
+
+    assert!(
+        !output.status.success(),
+        "expected search without auth to fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing credentials"),
+        "expected missing credentials error, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("kagi exited with error"),
+        "expected no tracing duplicate in default stderr, got:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("missing credentials").count(),
+        1,
+        "expected one user-facing missing credentials error, got:\n{stderr}"
     );
 }
 

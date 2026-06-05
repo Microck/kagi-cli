@@ -4,7 +4,7 @@ build:
 	cargo build --release
 
 test:
-	cargo test -q --locked
+	cargo test --workspace --all-targets --locked
 
 fmt:
 	cargo fmt --check
@@ -16,7 +16,7 @@ check: fmt lint test
 
 coverage:
 	rustup component add llvm-tools-preview
-	cargo install cargo-llvm-cov --locked
+	cargo install cargo-llvm-cov --version 0.8.7 --locked
 	cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
 setup-hooks:

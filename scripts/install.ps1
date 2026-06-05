@@ -34,6 +34,8 @@ $Target = Get-Target
 $Archive = "$AppName-$Version-$Target.zip"
 $Url = "https://github.com/$Repo/releases/download/$Version/$Archive"
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("kagi-install-" + [System.Guid]::NewGuid().ToString("N"))
+$InstallPath = Join-Path $BinDir "$AppName.exe"
+$InstallTemp = Join-Path $BinDir ("$AppName." + [System.Guid]::NewGuid().ToString("N") + ".tmp")
 
 New-Item -ItemType Directory -Path $TempDir | Out-Null
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
@@ -44,9 +46,10 @@ try {
     Invoke-WebRequest -Uri $Url -OutFile $ArchivePath
 
     Expand-Archive -Path $ArchivePath -DestinationPath $TempDir -Force
-    Copy-Item (Join-Path $TempDir "$AppName.exe") (Join-Path $BinDir "$AppName.exe") -Force
+    Copy-Item (Join-Path $TempDir "$AppName.exe") $InstallTemp
+    [System.IO.File]::Move($InstallTemp, $InstallPath, $true)
 
-    Write-Host "Installed $AppName to $(Join-Path $BinDir "$AppName.exe")"
+    Write-Host "Installed $AppName to $InstallPath"
     Write-Host ""
     Write-Host "Add $BinDir to your PATH if it is not already there."
     Write-Host ""
@@ -55,4 +58,5 @@ try {
 }
 finally {
     Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $InstallTemp -Force -ErrorAction SilentlyContinue
 }

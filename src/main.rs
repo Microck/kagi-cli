@@ -88,7 +88,6 @@ struct SearchRequestOptions {
 async fn main() {
     init_tracing();
     if let Err(error) = run().await {
-        error!(error = %error, "kagi exited with error");
         eprintln!("{error}");
         std::process::exit(1);
     }

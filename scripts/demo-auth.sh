@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. ./scripts/demo-common.sh
 
 : "${KAGI_SESSION_TOKEN:?set KAGI_SESSION_TOKEN before running this demo}"
 
@@ -9,10 +10,7 @@ export DEMO_SESSION_TOKEN="$KAGI_SESSION_TOKEN"
 unset KAGI_SESSION_TOKEN
 unset KAGI_API_TOKEN
 
-cargo build --quiet
-mkdir -p /tmp/kagi-demo-bin
-ln -sf "$PWD/target/debug/kagi" /tmp/kagi-demo-bin/kagi
-export PATH="/tmp/kagi-demo-bin:$PATH"
+build_demo_kagi
 
 WORKDIR=$(mktemp -d /tmp/kagi-auth-demo.XXXXXX)
 export DEMO_AUTH_WORKDIR="$WORKDIR"
@@ -34,13 +32,14 @@ import time
 
 token = os.environ["DEMO_SESSION_TOKEN"]
 workdir = os.environ["DEMO_AUTH_WORKDIR"]
+kagi_bin = os.environ["KAGI_DEMO_BIN"]
 env = os.environ.copy()
 env.pop("KAGI_SESSION_TOKEN", None)
 env.pop("KAGI_API_TOKEN", None)
 
 master_fd, slave_fd = pty.openpty()
 process = subprocess.Popen(
-    ["kagi", "auth"],
+    [kagi_bin, "auth"],
     cwd=workdir,
     stdin=slave_fd,
     stdout=slave_fd,
@@ -57,8 +56,24 @@ steps = [
     ("Paste your Session Link or raw session token", token + "\n", 0.4),
 ]
 step_index = 0
+deadline = time.monotonic() + 30.0
 
 while True:
+    if step_index < len(steps) and time.monotonic() > deadline:
+        missing_prompt = steps[step_index][0]
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        print(
+            f"\nerror: timed out waiting for auth prompt: {missing_prompt}\n"
+            f"captured output:\n{buffer}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     ready, _, _ = select.select([master_fd], [], [], 0.1)
     if master_fd in ready:
         try:
@@ -79,6 +94,7 @@ while True:
             os.write(master_fd, payload.encode("utf-8"))
             buffer = ""
             step_index += 1
+            deadline = time.monotonic() + 30.0
 
     if process.poll() is not None and master_fd not in ready:
         break

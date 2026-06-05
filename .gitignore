@@ -1,5 +1,7 @@
 
 # ── local workflow / agent state ──
+.clawpatch/
+.workflow/
 .gsd/
 .artifacts/
 .bg-shell/

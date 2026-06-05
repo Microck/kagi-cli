@@ -3,19 +3,17 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. ./scripts/demo-common.sh
 
 : "${KAGI_SESSION_TOKEN:?set KAGI_SESSION_TOKEN before running this demo}"
 
-cargo build --quiet
-mkdir -p /tmp/kagi-demo-bin
-ln -sf "$PWD/target/debug/kagi" /tmp/kagi-demo-bin/kagi
-export PATH="/tmp/kagi-demo-bin:$PATH"
+build_demo_kagi
 
 printf '\033c'
 sleep 1.2
 printf '$ kagi translate "Hello, how are you today?" --to es | jq -M ...\n'
 sleep 0.4
-kagi translate "Hello, how are you today?" --to es \
+"$KAGI_DEMO_BIN" translate "Hello, how are you today?" --to es \
   | jq -M '{
       detected_language: .detected_language.label,
       translation: .translation.translation,

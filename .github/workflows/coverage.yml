@@ -29,7 +29,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
 
       - name: Generate coverage report
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info

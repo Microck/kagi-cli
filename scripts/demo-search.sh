@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
-
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+. ./scripts/demo-common.sh
 
 : "${KAGI_SESSION_TOKEN:?set KAGI_SESSION_TOKEN before running this demo}"
 unset KAGI_API_TOKEN
 
-cargo build --quiet
-mkdir -p /tmp/kagi-demo-bin
-ln -sf "$PWD/target/debug/kagi" /tmp/kagi-demo-bin/kagi
-export PATH="/tmp/kagi-demo-bin:$PATH"
+build_demo_kagi
 
 printf '\033c'
 sleep 1.2
 printf '$ kagi search --format pretty --region us --time year --order recency "rust release notes"\n'
 sleep 0.4
-kagi search --format pretty --region us --time year --order recency "rust release notes" | sed -n '1,12p'
+"$KAGI_DEMO_BIN" search --format pretty --region us --time year --order recency "rust release notes" | sed -n '1,12p'
 sleep 2
