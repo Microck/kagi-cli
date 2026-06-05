@@ -7,6 +7,13 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.2]
+
+### Added
+
+- Added `kagi skills` and `kagi agent` so agents can load embedded, version-matched CLI usage guidance directly from the installed binary.
+- Added Mintlify command documentation for the new embedded skill workflow.
+
 ## [0.9.1]
 
 ### Changed
