@@ -1,0 +1,77 @@
+---
+title: "skills"
+description: "Reference for kagi skills - embedded, version-matched guidance for agents and automation."
+---
+
+# `kagi skills`
+
+Load embedded, version-matched usage guidance for agents and automation.
+
+The top-level help points agents here first:
+
+```bash
+kagi skills get kagi
+```
+
+Skills ship with the installed CLI binary, so their command examples and
+credential guidance match that exact `kagi` version.
+
+## Synopsis
+
+```bash
+kagi skills
+kagi skills list
+kagi skills get <NAME> [--full]
+kagi skills path [NAME]
+kagi agent
+```
+
+`kagi agent` is a convenience alias for `kagi skills get kagi`.
+
+## `kagi skills`
+
+List available embedded skills. This is the default when no subcommand is
+provided.
+
+```bash
+kagi skills
+kagi skills list
+```
+
+## `kagi skills get`
+
+Print an embedded skill guide to stdout with frontmatter stripped.
+
+```bash
+kagi skills get kagi
+```
+
+The `kagi` skill covers the core CLI workflow, credential selection, output
+formats, search, extraction, summarization, Assistant workflows, News, MCP, and
+agent-safe usage patterns.
+
+`--full` is accepted for Harbor-style compatibility. Kagi currently ships only
+the core skill body, so `--full` prints the same body until extra embedded
+references are added.
+
+```bash
+kagi skills get kagi --full
+```
+
+## `kagi skills path`
+
+Print the embedded skill locator.
+
+```bash
+kagi skills path
+kagi skills path kagi
+```
+
+Because Kagi embeds skills into the Rust binary instead of installing a
+filesystem skill directory, this returns `embedded://skills` or
+`embedded://skills/kagi`.
+
+## Authentication
+
+`kagi skills` and `kagi agent` do not require Kagi credentials and never touch
+the network.

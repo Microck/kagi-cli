@@ -169,6 +169,8 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | command | purpose |
 | --- | --- |
 | `kagi search` | search Kagi with `json` by default, or render as `toon`, `pretty`, `compact`, `markdown`, or `csv` |
+| `kagi agent` | print the embedded agent skill guide for choosing commands, auth paths, and output formats |
+| `kagi skills` | list and load embedded, version-matched agent skills with `skills get kagi` as the agent starting point |
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
 | `kagi completion` | generate or install shell completions for bash, zsh, fish, or PowerShell |

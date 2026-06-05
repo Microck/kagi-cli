@@ -85,6 +85,114 @@ fn assert_success(output: &Output) {
     );
 }
 
+#[test]
+fn help_points_agents_to_agent_guide() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["--help"], &[], tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Agent usage:"),
+        "expected agent help section, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("kagi skills get kagi"),
+        "expected help to mention kagi skills get kagi, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("skills [list]"),
+        "expected help to mention skills [list], got:\n{stdout}"
+    );
+}
+
+#[test]
+fn agent_command_prints_embedded_skill_guide_without_auth() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["agent"], &[], tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("# Kagi CLI"),
+        "expected markdown skill guide, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("kagi auth status"),
+        "expected auth discovery guidance, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--format toon"),
+        "expected structured output guidance, got:\n{stdout}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "expected no stderr, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn skills_get_prints_core_guide_without_auth() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["skills", "get", "kagi"], &[], tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("# Kagi CLI"),
+        "expected markdown skill guide, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("kagi skills get kagi"),
+        "expected skills command guidance, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn skills_list_and_path_are_auth_free() {
+    let tempdir = TempDir::new().expect("tempdir");
+
+    let list = run_kagi(&["skills"], &[], tempdir.path());
+    assert_success(&list);
+    assert!(
+        String::from_utf8_lossy(&list.stdout).contains("kagi                 Core CLI usage guide"),
+        "expected core skill listing, got:\n{}",
+        String::from_utf8_lossy(&list.stdout)
+    );
+
+    let path = run_kagi(&["skills", "path"], &[], tempdir.path());
+    assert_success(&path);
+    assert_eq!(
+        String::from_utf8_lossy(&path.stdout).trim(),
+        "embedded://skills"
+    );
+
+    let skill_path = run_kagi(&["skills", "path", "kagi"], &[], tempdir.path());
+    assert_success(&skill_path);
+    assert_eq!(
+        String::from_utf8_lossy(&skill_path.stdout).trim(),
+        "embedded://skills/kagi"
+    );
+}
+
+#[test]
+fn skills_get_full_prints_body_without_frontmatter() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["skills", "get", "kagi", "--full"], &[], tempdir.path());
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("# Kagi CLI"),
+        "expected skill body without frontmatter, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.starts_with("---"),
+        "expected frontmatter to be stripped, got:\n{stdout}"
+    );
+}
+
 fn test_env(server: &MockServer) -> Vec<(&'static str, String)> {
     vec![
         ("KAGI_API_KEY", API_KEY.to_string()),

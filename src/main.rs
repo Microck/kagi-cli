@@ -1,3 +1,4 @@
+mod agent;
 mod api;
 mod auth;
 mod auth_wizard;
@@ -42,7 +43,7 @@ use crate::cli::{
     AuthSubcommand, BangSubcommand, Cli, Commands, CompletionCommand, CompletionInstallArgs,
     CompletionShell, CompletionSubcommand, CustomBangSubcommand, EnrichSubcommand,
     HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs, SearchOrder, SearchTime,
-    SitePrefMode, SitePrefSubcommand, TranslateArgs, WatchArgs,
+    SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand, TranslateArgs, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -187,6 +188,14 @@ async fn run() -> Result<(), KagiError> {
             AuthSubcommand::Check => run_auth_check(profile.as_deref()).await,
             AuthSubcommand::Set(args) => run_auth_set(args, profile.as_deref()),
         },
+        Commands::Agent => {
+            let content = agent::skill_content(agent::KAGI_SKILL).ok_or_else(|| {
+                KagiError::Config("embedded kagi skill is unavailable".to_string())
+            })?;
+            println!("{content}");
+            Ok(())
+        }
+        Commands::Skills(args) => run_skills(args),
         Commands::Completion(args) => run_completion(args),
         Commands::Summarize(args) => {
             args.validate().map_err(KagiError::Config)?;
@@ -765,6 +774,42 @@ async fn run() -> Result<(), KagiError> {
                 profile: profile.as_deref(),
             })
             .await
+        }
+    }
+}
+
+fn run_skills(args: SkillsCommand) -> Result<(), KagiError> {
+    match args.command.unwrap_or(SkillsSubcommand::List) {
+        SkillsSubcommand::List => {
+            for skill in agent::skills() {
+                println!("  {:<20} {}", skill.name, skill.description);
+            }
+            Ok(())
+        }
+        SkillsSubcommand::Get(args) => {
+            let content = if args.full {
+                agent::skill_full_content(&args.name)
+            } else {
+                agent::skill_content(&args.name)
+            }
+            .ok_or_else(|| {
+                KagiError::Config(format!(
+                    "unknown skill `{}`; run `kagi skills list` to see available skills",
+                    args.name
+                ))
+            })?;
+            println!("{content}");
+            Ok(())
+        }
+        SkillsSubcommand::Path(args) => {
+            let locator = agent::skill_locator(args.name.as_deref()).ok_or_else(|| {
+                KagiError::Config(format!(
+                    "unknown skill `{}`; run `kagi skills list` to see available skills",
+                    args.name.as_deref().unwrap_or_default()
+                ))
+            })?;
+            println!("{locator}");
+            Ok(())
         }
     }
 }

@@ -196,7 +196,19 @@ Features:
 - Multiple output formats (json, toon, pretty, compact, markdown, csv)
 - Parallel batch searches with rate limiting
 - Colorized terminal output (disable with --no-color)
-- Full Kagi API coverage with session token support",
+- Full Kagi API coverage with session token support
+
+Agent usage:
+    kagi skills get kagi
+
+    Skills ship with the CLI and are always version-matched. They include
+    workflow patterns, credential guidance, and copy-paste examples. Prefer
+    this over guessing commands from flag docs alone.
+
+    skills [list]            List available skills
+    skills get kagi          Core CLI usage guide
+    skills get <name>        Load a specialized skill
+    skills path [name]       Print the embedded skill locator",
     propagate_version = true
 )]
 #[command(disable_help_subcommand = true)]
@@ -228,6 +240,10 @@ pub enum Commands {
     /// - Lens support for scoped searches
     /// - Region, time, date, order, verbatim, and personalization filters
     Search(SearchArgs),
+    /// Print the embedded agent skill guide for using kagi-cli
+    Agent,
+    /// List and load embedded agent skills
+    Skills(SkillsCommand),
     /// Launch the auth setup wizard or use credential management subcommands
     Auth(AuthCommand),
     /// Summarize a URL or text with Kagi's public API or subscriber web Summarizer
@@ -280,6 +296,44 @@ pub enum Commands {
     /// - Shared region, time, date, order, verbatim, and personalization filters
     /// - Color output control with --no-color
     Batch(BatchSearchArgs),
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `skills` command group.
+pub struct SkillsCommand {
+    #[command(subcommand)]
+    pub command: Option<SkillsSubcommand>,
+}
+
+#[derive(Debug, Subcommand)]
+/// Subcommands for embedded agent skills.
+pub enum SkillsSubcommand {
+    /// List available embedded skills
+    List,
+    /// Print an embedded skill guide
+    Get(SkillGetArgs),
+    /// Print the embedded skill locator
+    Path(SkillPathArgs),
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `skills get`.
+pub struct SkillGetArgs {
+    /// Skill name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+
+    /// Include all embedded reference material for this skill
+    #[arg(long)]
+    pub full: bool,
+}
+
+#[derive(Debug, Args)]
+/// Arguments for `skills path`.
+pub struct SkillPathArgs {
+    /// Skill name; defaults to kagi
+    #[arg(value_name = "NAME")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Args)]
