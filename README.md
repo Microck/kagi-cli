@@ -479,6 +479,8 @@ contributions are welcome. please open an issue or pull request on [github](http
 
 this project is unofficial and not affiliated with, endorsed by, or connected to Kagi Inc. it is an independent, community-built tool.
 
+Kagi staff have stated that automated usage should go through the supported API. Session auth uses internal, unsupported endpoints; those endpoints can change without notice, and automated use may risk blocking, refused service, or terminated service. Use session auth at your own risk.
+
 ## license
 
 [mit license](LICENSE)
