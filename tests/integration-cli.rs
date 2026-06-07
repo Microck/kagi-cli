@@ -252,6 +252,47 @@ fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
     ]
 }
 
+#[test]
+fn assistant_prompt_stream_reads_query_from_stdin() {
+    let server = MockServer::start();
+    let prompt = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/prompt")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .json_body(json!({
+                "focus": {
+                    "thread_id": null,
+                    "branch_id": "00000000-0000-4000-0000-000000000000",
+                    "prompt": "do a little dance",
+                    "message_id": null,
+                },
+                "profile": {},
+            }));
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(concat!(
+                "hi:{\"v\":\"test\",\"trace\":\"trace-stdin\"}\0\n",
+                "thread.json:{\"id\":\"thread-stdin\",\"title\":\"Stdin test\",\"ack\":\"2026-06-07T00:00:00Z\",\"created_at\":\"2026-06-07T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"streaming\",\"prompt\":\"do a little dance\",\"md\":\"dance\",\"documents\":[]}\0\n",
+                "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"done\",\"prompt\":\"do a little dance\",\"md\":\"dance-ok\",\"documents\":[]}\0\n",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi_with_stdin(
+        &["assistant", "--stream"],
+        "do a little dance\n",
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    prompt.assert_calls(1);
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "dance-ok\n");
+}
+
 fn api_meta() -> Value {
     json!({
         "id": "req-1",

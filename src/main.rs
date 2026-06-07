@@ -398,12 +398,7 @@ async fn run() -> Result<(), KagiError> {
                     },
                 }
             } else {
-                let query = args.query.ok_or_else(|| {
-                    KagiError::Config(
-                        "assistant prompt mode requires a QUERY unless a thread subcommand is used"
-                            .to_string(),
-                    )
-                })?;
+                let query = read_assistant_prompt_query(args.query)?;
                 let request = AssistantPromptRequest {
                     query,
                     thread_id: args.thread_id,
@@ -1163,6 +1158,21 @@ fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandReques
         fetch_suggestions: !args.no_suggestions,
         fetch_alignments: !args.no_alignments,
     })
+}
+
+fn read_assistant_prompt_query(query: Option<String>) -> Result<String, KagiError> {
+    let query = match query {
+        Some(query) => query,
+        None => read_stdin_to_string()?.trim().to_string(),
+    };
+    if query.trim().is_empty() {
+        return Err(KagiError::Config(
+            "assistant prompt mode requires a QUERY or non-empty stdin unless a thread subcommand is used"
+                .to_string(),
+        ));
+    }
+
+    Ok(query.trim().to_string())
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
