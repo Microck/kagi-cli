@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.4]
+
+### Fixed
+
+- `kagi assistant` prompt mode now reads a missing `QUERY` from non-empty stdin, including streamed prompts such as `echo "hello" | kagi assistant --stream`.
+
 ## [0.9.3]
 
 ### Fixed
