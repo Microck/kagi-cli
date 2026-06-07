@@ -477,7 +477,7 @@ contributions are welcome. please open an issue or pull request on [github](http
 
 ## disclaimer
 
-this project is unofficial and not affiliated with, endorsed by, or connected to Kagi Inc. it is an independent, community-built tool.
+this project is unofficial and not affiliated with, endorsed by, or connected to *Kagi Inc.* it is an independent, community-built tool.
 
 kagi discourages automated use of unsupported interfaces through session auth. using kagi through this auth may be considered unsupported, and kagi reserves the right to refuse, restrict, or terminate service for clients automating unsupported interfaces.
 
