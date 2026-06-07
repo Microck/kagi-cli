@@ -479,9 +479,9 @@ contributions are welcome. please open an issue or pull request on [github](http
 
 this project is unofficial and not affiliated with, endorsed by, or connected to Kagi Inc. it is an independent, community-built tool.
 
-Kagi discourages automated use of unsupported interfaces through session auth. Using Kagi through this auth may be considered unsupported, and Kagi reserves the right to refuse, restrict, or terminate service for clients automating unsupported interfaces.
+kagi discourages automated use of unsupported interfaces through session auth. using kagi through this auth may be considered unsupported, and kagi reserves the right to refuse, restrict, or terminate service for clients automating unsupported interfaces.
 
-Use this project at your own risk, and make sure your usage complies with Kagi's terms of service and any applicable policies. Where possible, prefer officially supported APIs or documented integration methods.
+use this project at your own risk, and make sure your usage complies with kagi's terms of service and any applicable policies. where possible, prefer officially supported apis or documented integration methods.
 
 ## license
 
