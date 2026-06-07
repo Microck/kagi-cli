@@ -479,7 +479,7 @@ contributions are welcome. please open an issue or pull request on [github](http
 
 this project is unofficial and not affiliated with, endorsed by, or connected to Kagi Inc. it is an independent, community-built tool.
 
-Kagi staff have stated that automated usage should go through the supported API. Session auth uses internal, unsupported endpoints; those endpoints can change without notice, and automated use may risk blocking, refused service, or terminated service. Use session auth at your own risk.
+Session auth is included for subscriber-only features, but it relies on internal Kagi web endpoints rather than the supported public API. Kagi discourages automated use of unsupported interfaces. These endpoints may change or stop working without notice, and automation through session auth may put your account or service access at risk. Prefer `KAGI_API_KEY` for automated workflows whenever the API supports what you need.
 
 ## license
 
