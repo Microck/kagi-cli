@@ -433,7 +433,7 @@ Rust 1.86 added...
 Errors are plain text on stderr. Typical examples:
 
 ```text
-Config error: missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env), or add [auth] api_key/session_token to .kagi.toml
+configuration error: missing credentials: search was not sent. Set KAGI_API_KEY or KAGI_SESSION_TOKEN, or run `kagi auth set --api-key <key>` or `kagi auth set --session-token <token>`
 Auth error: invalid or expired Kagi session token
 Network error: request to Kagi timed out
 ```

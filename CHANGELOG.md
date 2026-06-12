@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.5]
+
+### Fixed
+
+- Improved CLI error messages so authentication, validation, and network failures explain what was not completed and how to recover.
+
 ## [0.9.4]
 
 ### Fixed

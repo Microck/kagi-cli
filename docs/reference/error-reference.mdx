@@ -37,7 +37,7 @@ Error: Network error: request to https://kagi.com/api/v1/search timed out after 
 
 **Message:**
 ```
-Config error: missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env), or add [auth] api_key/session_token to .kagi.toml
+configuration error: missing credentials: search was not sent. Set KAGI_API_KEY or KAGI_SESSION_TOKEN, or run `kagi auth set --api-key <key>` or `kagi auth set --session-token <token>`
 ```
 
 **Meaning:** No authentication token is configured.
@@ -61,7 +61,7 @@ kagi auth check
 
 **Message:**
 ```
-Config error: this command requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+configuration error: this command requires KAGI_SESSION_TOKEN. Set it in the environment or run `kagi auth set --session-token <token>`
 ```
 
 **Meaning:** Command needs a session token, but you may have only an API key or legacy API token configured.
@@ -86,7 +86,7 @@ kagi assistant "Explain Rust ownership"
 
 **Message:**
 ```
-Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_token])
+configuration error: this command requires KAGI_API_TOKEN. Set it in the environment or run `kagi auth set --api-token <token>`
 ```
 
 **Meaning:** Command needs API token, but you may have only session token configured.
@@ -218,7 +218,7 @@ kagi translate "Bonjour tout le monde"
 
 **Message:**
 ```
-Config error: this search option requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])
+configuration error: this search option requires KAGI_SESSION_TOKEN. Set it in the environment or run `kagi auth set --session-token <token>`
 ```
 
 **Meaning:** You used a session-only search option like `--lens`, `--time`, `--order`, `--verbatim`, or personalization flags without a configured session token. `--region`, `--from-date`, and `--to-date` can use the V1 Search API when `KAGI_API_KEY` is configured.

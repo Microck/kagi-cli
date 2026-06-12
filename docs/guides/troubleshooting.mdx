@@ -145,7 +145,7 @@ sh install-kagi.sh
 
 **Symptoms:**
 ```
-Config error: missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env), or add [auth] api_key/session_token to .kagi.toml
+configuration error: missing credentials: search was not sent. Set KAGI_API_KEY or KAGI_SESSION_TOKEN, or run `kagi auth set --api-key <key>` or `kagi auth set --session-token <token>`
 ```
 
 **Diagnostic:**
@@ -225,7 +225,7 @@ Error: Auth error: Kagi Search API request rejected: HTTP 403 Forbidden
 
 **Symptoms:**
 ```
-Config error: this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_token])
+configuration error: this command requires KAGI_API_TOKEN. Set it in the environment or run `kagi auth set --api-token <token>`
 ```
 
 **Cause:** Trying to use paid API commands without API token
@@ -728,7 +728,7 @@ kagi auth check 2>&1 || echo "Auth check failed"
 | `command not found` | Not in PATH | Reload shell or add to PATH |
 | `Permission denied` | Not executable | `chmod +x *kagi*` |
 | `missing credentials` | No credential set | Set KAGI_SESSION_TOKEN, KAGI_API_KEY, or KAGI_API_TOKEN depending on the command |
-| `kagi auth is interactive on TTYs` | Bare `kagi auth` was run in CI, a pipe, or another non-interactive environment | Use `kagi auth set`, `kagi auth status`, or `kagi auth check` instead |
+| `` `kagi auth` needs an interactive terminal `` | Bare `kagi auth` was run in CI, a pipe, or another non-interactive environment | Use `kagi auth set`, `kagi auth status`, or `kagi auth check` instead |
 | `auth check failed` | Invalid token | Regenerate token in Kagi settings |
 | `403 Forbidden` | Auth issue | Check token validity |
 | `No results found` | Empty query result | Try different query |
@@ -762,7 +762,7 @@ If you've tried the solutions above and still have issues:
 **Symptom:**
 
 ```text
-configuration error: kagi auth is interactive on TTYs; use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments
+configuration error: `kagi auth` needs an interactive terminal. Use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments
 ```
 
 **Cause:**

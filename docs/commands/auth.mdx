@@ -79,7 +79,7 @@ It accepts:
 Bare `kagi auth` is intentionally interactive. In non-interactive environments it fails fast instead of hanging:
 
 ```text
-configuration error: kagi auth is interactive on TTYs; use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments
+configuration error: `kagi auth` needs an interactive terminal. Use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments
 ```
 
 That keeps CI, shell scripts, and other automation explicit.
