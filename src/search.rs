@@ -212,7 +212,7 @@ impl SearchRequest {
 
         if time_filter.is_some() && (from_date.is_some() || to_date.is_some()) {
             return Err(KagiError::Config(
-                "search --time cannot be combined with --from-date or --to-date".to_string(),
+                "search was not started because --time cannot be combined with --from-date or --to-date. Use either a relative time window or explicit dates".to_string(),
             ));
         }
 
@@ -226,14 +226,14 @@ impl SearchRequest {
             && from_date > to_date
         {
             return Err(KagiError::Config(
-                "search --from-date cannot be after --to-date".to_string(),
+                "search was not started because --from-date cannot be after --to-date. Move the start date before the end date".to_string(),
             ));
         }
         if let Some(limit) = self.limit
             && !(1..=1024).contains(&limit)
         {
             return Err(KagiError::Config(
-                "search --limit must be between 1 and 1024".to_string(),
+                "search was not started because --limit must be between 1 and 1024".to_string(),
             ));
         }
 
@@ -702,10 +702,10 @@ const fn is_leap_year(year: u32) -> bool {
 
 fn api_session_requirement_message(request: &SearchRequest) -> String {
     if request.lens.is_some() {
-        "lens search requires KAGI_SESSION_TOKEN; numeric lens indices are a subscriber web-product option"
+        "lens search requires KAGI_SESSION_TOKEN. Numeric lens indices are only available through subscriber web auth"
             .to_string()
     } else {
-        "this search option requires KAGI_SESSION_TOKEN; the Kagi Search API path only supports the V1 fields exposed by this CLI"
+        "this search option requires KAGI_SESSION_TOKEN. The Kagi API search path does not support this web-product option"
             .to_string()
     }
 }

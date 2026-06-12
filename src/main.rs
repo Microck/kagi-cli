@@ -110,7 +110,7 @@ async fn run() -> Result<(), KagiError> {
         }
 
         return Err(KagiError::Config(
-            "kagi auth is interactive on TTYs; use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments"
+            "`kagi auth` needs an interactive terminal. Use `kagi auth set`, `kagi auth status`, or `kagi auth check` in non-interactive environments"
                 .to_string(),
         ));
     }
@@ -119,7 +119,7 @@ async fn run() -> Result<(), KagiError> {
 
     if cli.generate_completion.is_some() && cli.command.is_some() {
         return Err(KagiError::Config(
-            "--generate-completion cannot be used with a command".to_string(),
+            "completion was not generated because --generate-completion cannot be used with a command. Run `kagi --generate-completion <shell>` by itself".to_string(),
         ));
     }
 
@@ -129,10 +129,11 @@ async fn run() -> Result<(), KagiError> {
     }
     let profile = cli.profile;
 
-    match cli
-        .command
-        .ok_or_else(|| KagiError::Config("missing command".to_string()))?
-    {
+    match cli.command.ok_or_else(|| {
+        KagiError::Config(
+            "missing command. Run `kagi --help` to see available commands".to_string(),
+        )
+    })? {
         Commands::Search(args) => {
             args.validate().map_err(KagiError::Config)?;
 
@@ -1030,7 +1031,7 @@ async fn run_auth_check(profile: Option<&str>) -> Result<(), KagiError> {
     let inventory = load_credential_inventory_for_profile(profile)?;
     let credential = inventory.preferred_for_status().cloned().ok_or_else(|| {
         KagiError::Config(
-            "missing credentials: set KAGI_API_KEY, KAGI_API_TOKEN, or KAGI_SESSION_TOKEN (env), or add [auth] api_key/api_token/session_token to .kagi.toml"
+            "missing credentials: auth check could not verify an account. Set KAGI_API_KEY, KAGI_API_TOKEN, or KAGI_SESSION_TOKEN, or run `kagi auth set` with the credential you want to save"
                 .to_string(),
         )
     })?;
@@ -1071,7 +1072,7 @@ async fn execute_primary_search_request(
     match credential.kind {
         CredentialKind::ApiKey => search::execute_api_search(request, &credential.value).await,
         CredentialKind::ApiToken => Err(KagiError::Config(
-            "base search requires KAGI_API_KEY for API-first mode; legacy KAGI_API_TOKEN only works with /api/v0 commands"
+            "base search was not sent because API-first mode requires KAGI_API_KEY. Use a Kagi API key, switch preferred_auth to `session`, or use KAGI_API_TOKEN only with /api/v0 commands"
                 .to_string(),
         )),
         CredentialKind::SessionToken => search::execute_search(request, &credential.value).await,
@@ -1089,7 +1090,7 @@ fn resolve_api_token(profile: Option<&str>) -> Result<String, KagiError> {
         .map(|credential| credential.value)
         .ok_or_else(|| {
             KagiError::Config(
-                "this command requires KAGI_API_TOKEN (env or .kagi.toml [auth.api_token])"
+                "this command requires KAGI_API_TOKEN. Set it in the environment or run `kagi auth set --api-token <token>`"
                     .to_string(),
             )
         })
@@ -1102,7 +1103,7 @@ fn resolve_session_token(profile: Option<&str>) -> Result<String, KagiError> {
         .map(|credential| credential.value)
         .ok_or_else(|| {
             KagiError::Config(
-                "this command requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                "this command requires KAGI_SESSION_TOKEN. Set it in the environment or run `kagi auth set --session-token <token>`"
                     .to_string(),
             )
         })
@@ -1118,7 +1119,7 @@ async fn execute_extract_with_available_auth(
     }
 
     Err(KagiError::Config(
-        "extract requires KAGI_API_KEY (env or .kagi.toml [auth.api_key])".to_string(),
+        "extract requires KAGI_API_KEY. Set it in the environment or run `kagi auth set --api-key <key>`".to_string(),
     ))
 }
 

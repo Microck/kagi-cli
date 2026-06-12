@@ -431,10 +431,10 @@ impl SearchArgs {
     /// Returns an error if `--limit` is set to zero.
     pub fn validate(&self) -> Result<(), String> {
         if matches!(self.limit, Some(0)) {
-            return Err("limit must be at least 1".to_string());
+            return Err("--limit must be at least 1. Choose a value from 1 to 1024".to_string());
         }
         if self.limit.is_some_and(|limit| limit > 1024) {
-            return Err("limit must be at most 1024".to_string());
+            return Err("--limit must be at most 1024. Choose a value from 1 to 1024".to_string());
         }
         Ok(())
     }
@@ -448,36 +448,36 @@ impl SearchArgs {
             return Ok(());
         }
         if self.lens.is_some() {
-            return Err("--news cannot be combined with --lens".to_string());
+            return Err("--news cannot be combined with --lens. Remove --lens or run a regular search instead".to_string());
         }
         if self.snap.is_some() {
-            return Err("--news cannot be combined with --snap".to_string());
+            return Err("--news cannot be combined with --snap. Remove --snap or run a regular search instead".to_string());
         }
         if self.from_date.is_some() || self.to_date.is_some() {
-            return Err("--news cannot be combined with --from-date or --to-date".to_string());
+            return Err("--news cannot be combined with --from-date or --to-date. Use --time day, --time week, or --time month for news recency".to_string());
         }
         if self.verbatim {
-            return Err("--news cannot be combined with --verbatim".to_string());
+            return Err("--news cannot be combined with --verbatim. Remove --verbatim or run a regular search instead".to_string());
         }
         if self.personalized || self.no_personalized {
             return Err(
-                "--news cannot be combined with --personalized or --no-personalized".to_string(),
+                "--news cannot be combined with --personalized or --no-personalized. Remove the personalization flag for news search".to_string(),
             );
         }
         if self.follow.is_some() {
-            return Err("--news cannot be combined with --follow".to_string());
+            return Err("--news cannot be combined with --follow. Remove --follow or summarize result URLs after the news search".to_string());
         }
         if self.template.is_some() {
-            return Err("--news cannot be combined with --template".to_string());
+            return Err("--news cannot be combined with --template. Remove --template or use regular search output".to_string());
         }
         if matches!(self.time, Some(SearchTime::Year)) {
             return Err(
-                "--time year is not supported with --news (only day, week, or month)".to_string(),
+                "--time year is not supported with --news. Use day, week, or month".to_string(),
             );
         }
         if matches!(self.order, Some(SearchOrder::Trackers)) {
             return Err(
-                "--order trackers is not supported with --news (use default, recency, or website)"
+                "--order trackers is not supported with --news. Use default, recency, or website"
                     .to_string(),
             );
         }
@@ -564,19 +564,25 @@ impl BatchSearchArgs {
     /// Returns an error if concurrency or rate-limit is zero.
     pub fn validate(&self) -> Result<(), String> {
         if self.concurrency == 0 {
-            return Err("concurrency must be at least 1".to_string());
+            return Err(
+                "--concurrency must be at least 1. Choose the number of parallel searches to run"
+                    .to_string(),
+            );
         }
         if self.rate_limit == 0 {
-            return Err("rate-limit must be at least 1".to_string());
+            return Err(
+                "--rate-limit must be at least 1. Choose the maximum requests per minute"
+                    .to_string(),
+            );
         }
         if self.queries.is_empty() {
-            return Err("batch requires at least one query argument or stdin line".to_string());
+            return Err("batch was not started because no queries were provided. Pass query arguments or pipe one query per stdin line".to_string());
         }
         if matches!(self.limit, Some(0)) {
-            return Err("limit must be at least 1".to_string());
+            return Err("--limit must be at least 1. Choose a value from 1 to 1024".to_string());
         }
         if self.limit.is_some_and(|limit| limit > 1024) {
-            return Err("limit must be at most 1024".to_string());
+            return Err("--limit must be at most 1024. Choose a value from 1 to 1024".to_string());
         }
         Ok(())
     }
@@ -707,10 +713,13 @@ impl SummarizeArgs {
     /// Returns an error when neither `--url` nor `--text` is provided.
     pub fn validate(&self) -> Result<(), String> {
         if !self.filter && self.url.is_none() && self.text.is_none() {
-            return Err("summarize requires exactly one of --url or --text".to_string());
+            return Err("summarize requires exactly one of --url or --text. No input was provided. Pass --url, pass --text, or use --filter to read from stdin".to_string());
         }
         if self.filter && (self.url.is_some() || self.text.is_some()) {
-            return Err("summarize --filter reads from stdin; omit --url and --text".to_string());
+            return Err(
+                "summarize --filter reads from stdin. Omit --url and --text, or remove --filter"
+                    .to_string(),
+            );
         }
 
         Ok(())
@@ -808,14 +817,14 @@ impl NewsArgs {
             && (has_filter_inputs || has_non_default_filter_options)
         {
             return Err(
-                "news filters are not supported with --list-categories, --chaos, or --list-filter-presets"
+                "news filters are not supported with --list-categories, --chaos, or --list-filter-presets because those modes only print metadata. Remove filters or run a story query instead"
                     .to_string(),
             );
         }
 
         if !has_filter_inputs && has_non_default_filter_options {
             return Err(
-                "--filter-mode and --filter-scope require at least one --filter-preset or --filter-keyword"
+                "--filter-mode and --filter-scope require at least one --filter-preset or --filter-keyword. Add a filter input or remove the filter options"
                     .to_string(),
             );
         }

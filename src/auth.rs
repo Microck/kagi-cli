@@ -75,7 +75,7 @@ impl SearchAuthPreference {
             "session" => Ok(Self::Session),
             "api" => Ok(Self::Api),
             other => Err(KagiError::Config(format!(
-                "invalid [auth.preferred_auth] value `{other}`; expected `session` or `api`"
+                "invalid [auth.preferred_auth] value `{other}`; expected `session` or `api`. Use `session` for subscriber web auth or `api` for Kagi API-key auth"
             ))),
         }
     }
@@ -156,11 +156,11 @@ impl CredentialInventory {
                 let session = self.session_token.clone().ok_or_else(|| {
                     KagiError::Config(match requirement {
                         SearchAuthRequirement::Lens => {
-                            "lens search requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                            "lens search requires KAGI_SESSION_TOKEN. Set it in the environment or run `kagi auth set --session-token <token>`"
                                 .to_string()
                         }
                         SearchAuthRequirement::Filtered => {
-                            "this search option requires KAGI_SESSION_TOKEN (env or .kagi.toml [auth.session_token])"
+                            "this search option requires KAGI_SESSION_TOKEN. Set it in the environment or run `kagi auth set --session-token <token>`"
                                 .to_string()
                         }
                         SearchAuthRequirement::Base => unreachable!(),
@@ -209,7 +209,7 @@ impl CredentialInventory {
         }
 
         Err(KagiError::Config(
-            "missing credentials: set KAGI_API_KEY or KAGI_SESSION_TOKEN (env), or add [auth] api_key/session_token to .kagi.toml".to_string(),
+            "missing credentials: search was not sent. Set KAGI_API_KEY or KAGI_SESSION_TOKEN, or run `kagi auth set --api-key <key>` or `kagi auth set --session-token <token>`".to_string(),
         ))
     }
 
@@ -442,7 +442,7 @@ fn normalize_profile_name(profile: Option<&str>) -> Result<Option<String>, KagiE
         .map(|value| {
             if value.contains(char::is_whitespace) {
                 return Err(KagiError::Config(format!(
-                    "profile name `{value}` cannot contain whitespace"
+                    "profile `{value}` cannot be used because profile names cannot contain whitespace. Choose a single word or use hyphens"
                 )));
             }
             Ok(value.to_string())
@@ -463,7 +463,9 @@ fn select_auth_config<'a>(
         .as_ref()
         .and_then(|profiles| profiles.get(profile))
         .ok_or_else(|| {
-            KagiError::Config(format!("profile `{profile}` was not found in .kagi.toml"))
+            KagiError::Config(format!(
+                "profile `{profile}` was not found in .kagi.toml. Run `kagi auth status --profile {profile}` to confirm the name, or add [profiles.{profile}.auth]"
+            ))
         })?;
 
     Ok(profile_config.auth.as_ref())
@@ -507,7 +509,9 @@ fn build_session_credential(
 pub fn normalize_api_key(input: &str) -> Result<String, KagiError> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return Err(KagiError::Config("api key cannot be empty".to_string()));
+        return Err(KagiError::Config(
+            "api key cannot be empty. Pass a Kagi API key after `--api-key`".to_string(),
+        ));
     }
 
     Ok(trimmed.to_string())

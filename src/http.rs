@@ -57,7 +57,11 @@ pub fn client_assistant_stream() -> Result<Client, KagiError> {
         .connect_timeout(Duration::from_secs(20))
         .read_timeout(Duration::from_secs(120))
         .build()
-        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))?;
+        .map_err(|error| {
+            KagiError::Network(format!(
+                "could not prepare the HTTP client, so no request was sent. Details: {error}"
+            ))
+        })?;
 
     let _ = CLIENT_ASSISTANT_STREAM.set(client.clone());
     Ok(client)
@@ -75,15 +79,19 @@ pub fn map_transport_error(error: reqwest::Error) -> KagiError {
 
     if error.is_timeout() {
         return KagiError::Network(format!(
-            "request to {target} timed out after the configured timeout"
+            "request to {target} timed out before Kagi responded. Try again, or check your network connection"
         ));
     }
 
     if error.is_connect() {
-        return KagiError::Network(format!("failed to connect to {target}: {error}"));
+        return KagiError::Network(format!(
+            "could not connect to {target}. Check your network connection or KAGI_BASE_URL override. Details: {error}"
+        ));
     }
 
-    KagiError::Network(format!("request to {target} failed: {error}"))
+    KagiError::Network(format!(
+        "request to {target} failed before Kagi returned a usable response. Try again. Details: {error}"
+    ))
 }
 
 /// Reads the response body text, returning a diagnostic placeholder on failure.
@@ -173,7 +181,11 @@ fn cached_client(slot: &OnceLock<Client>, timeout: Duration) -> Result<Client, K
         .user_agent(USER_AGENT)
         .timeout(timeout)
         .build()
-        .map_err(|error| KagiError::Network(format!("failed to build HTTP client: {error}")))?;
+        .map_err(|error| {
+            KagiError::Network(format!(
+                "could not prepare the HTTP client, so no request was sent. Details: {error}"
+            ))
+        })?;
 
     let _ = slot.set(client.clone());
     Ok(client)
