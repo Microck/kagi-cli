@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.9.6]
+
+### Fixed
+
+- MCP tool discovery now declares each tool's input schema, including required parameters, so clients can populate `kagi_search`, `kagi_extract`, `kagi_news_search`, and other tool calls correctly.
+
 ## [0.9.5]
 
 ### Fixed

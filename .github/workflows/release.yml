@@ -374,10 +374,147 @@ jobs:
             push_with_token "$BUCKET_DIR"
           fi
 
+      - name: Sync AUR package
+        id: sync_aur_package
+        continue-on-error: true
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${AUR_SSH_PRIVATE_KEY:-}" ]; then
+            echo "AUR_SSH_PRIVATE_KEY is not configured; skipping AUR sync."
+            exit 0
+          fi
+
+          # GitHub-generated tag archives can resolve to different bytes across
+          # clients, which breaks AUR validity checks. Pin the VCS source to the
+          # release commit instead.
+          VERSION="${RELEASE_TAG#v}"
+          SOURCE_COMMIT="$(git ls-remote https://github.com/Microck/kagi-cli.git "refs/tags/v${VERSION}^{}" | awk '{print $1}')"
+          if [ -z "$SOURCE_COMMIT" ]; then
+            SOURCE_COMMIT="$(git ls-remote https://github.com/Microck/kagi-cli.git "refs/tags/v${VERSION}" | awk '{print $1}')"
+          fi
+
+          if [ -z "$SOURCE_COMMIT" ]; then
+            echo "Could not resolve release commit for v${VERSION}" >&2
+            exit 1
+          fi
+
+          AUR_DIR="$(mktemp -d)"
+          SSH_DIR="$(mktemp -d)"
+          chmod 700 "$SSH_DIR"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$SSH_DIR/aur"
+          chmod 600 "$SSH_DIR/aur"
+          ssh-keyscan aur.archlinux.org > "$SSH_DIR/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $SSH_DIR/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$SSH_DIR/known_hosts"
+
+          git clone "ssh://aur@aur.archlinux.org/kagi-cli.git" "$AUR_DIR"
+
+          cat > "$AUR_DIR/PKGBUILD" <<'EOF'
+          # Maintainer: Microck <contact@micr.dev>
+
+          pkgname=kagi-cli
+          pkgver=__VERSION__
+          pkgrel=1
+          pkgdesc="Agent-native CLI for Kagi subscribers with JSON-first search output"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/Microck/kagi-cli"
+          license=('MIT')
+          depends=('gcc-libs')
+          makedepends=('cargo' 'git')
+          provides=('kagi')
+          conflicts=('kagi')
+          source=("$pkgname-$pkgver::git+$url.git#commit=__SOURCE_COMMIT__")
+          sha256sums=('SKIP')
+
+          _set_arch_lto_compatible_cflags() {
+            # Arch makepkg can add -flto through CFLAGS. ring's C/assembly static objects
+            # need fat LTO objects so the final Rust binary can link under those flags.
+            CFLAGS+=" -ffat-lto-objects"
+            export CFLAGS
+          }
+
+          prepare() {
+            cd "$pkgname-$pkgver"
+            cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+          }
+
+          build() {
+            cd "$pkgname-$pkgver"
+            _set_arch_lto_compatible_cflags
+            cargo build --frozen --release
+
+            # Generate shell completions
+            ./target/release/kagi --generate-completion bash > completions.bash
+            ./target/release/kagi --generate-completion zsh > completions.zsh
+            ./target/release/kagi --generate-completion fish > completions.fish
+          }
+
+          check() {
+            cd "$pkgname-$pkgver"
+            _set_arch_lto_compatible_cflags
+            cargo test --frozen --release
+          }
+
+          package() {
+            cd "$pkgname-$pkgver"
+
+            # Binary
+            install -Dm755 target/release/kagi "$pkgdir/usr/bin/kagi"
+
+            # License
+            install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+            # Completions
+            install -Dm644 completions.bash "$pkgdir/usr/share/bash-completion/completions/kagi"
+            install -Dm644 completions.zsh "$pkgdir/usr/share/zsh/site-functions/_kagi"
+            install -Dm644 completions.fish "$pkgdir/usr/share/fish/vendor_completions.d/kagi.fish"
+          }
+          EOF
+
+          sed -i \
+            -e "s/__VERSION__/${VERSION}/g" \
+            -e "s/__SOURCE_COMMIT__/${SOURCE_COMMIT}/g" \
+            "$AUR_DIR/PKGBUILD"
+
+          cat > "$AUR_DIR/.SRCINFO" <<EOF
+          pkgbase = kagi-cli
+          	pkgdesc = Agent-native CLI for Kagi subscribers with JSON-first search output
+          	pkgver = ${VERSION}
+          	pkgrel = 1
+          	url = https://github.com/Microck/kagi-cli
+          	arch = x86_64
+          	arch = aarch64
+          	license = MIT
+          	makedepends = cargo
+          	makedepends = git
+          	depends = gcc-libs
+          	provides = kagi
+          	conflicts = kagi
+          	source = kagi-cli-${VERSION}::git+https://github.com/Microck/kagi-cli.git#commit=${SOURCE_COMMIT}
+          	sha256sums = SKIP
+
+          pkgname = kagi-cli
+          EOF
+
+          git -C "$AUR_DIR" config user.name "Microck"
+          git -C "$AUR_DIR" config user.email "contact@micr.dev"
+          if ! git -C "$AUR_DIR" diff --quiet; then
+            git -C "$AUR_DIR" add PKGBUILD .SRCINFO
+            git -C "$AUR_DIR" commit -m "chore: update kagi-cli for ${RELEASE_TAG}"
+            git -C "$AUR_DIR" push origin master
+          fi
+
       - name: Report package index sync warning
         if: steps.sync_package_indexes.outcome == 'failure'
         run: |
           echo "::warning title=Package index sync failed::GitHub release assets were published, but Homebrew/Scoop sync did not complete. Check the release job logs."
+
+      - name: Report AUR package sync warning
+        if: steps.sync_aur_package.outcome == 'failure'
+        run: |
+          echo "::warning title=AUR package sync failed::GitHub release assets were published, but the AUR package was not updated. Check the release job logs."
 
       - name: Report Mintlify deployment warning
         if: steps.trigger_mintlify_docs.outcome == 'failure'

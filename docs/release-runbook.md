@@ -15,6 +15,7 @@ Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebr
    - `NPM_TOKEN` GitHub Actions secret
    - `NPM_PUBLISH_ENABLED=true` repository variable
    - `REPO_SYNC_TOKEN` GitHub Actions secret for `Microck/homebrew-kagi` and `Microck/scoop-kagi`
+   - `AUR_SSH_PRIVATE_KEY` GitHub Actions secret for `ssh://aur@aur.archlinux.org/kagi-cli.git`
    - `MINTLIFY_DEPLOY_COOKIE` GitHub Actions secret for the private Mintlify deployment trigger
 5. Confirm `CHANGELOG.md` has a complete user-facing entry ready to publish. The release workflow extracts notes from the `## [X.Y.Z]` section, so the heading must exist before the tag is pushed.
 
@@ -70,6 +71,7 @@ git push origin vX.Y.Z
 - creates or refreshes the GitHub release
 - calls Mintlify's private deployment update endpoint when `MINTLIFY_DEPLOY_COOKIE` is configured
 - syncs `Microck/homebrew-kagi` and `Microck/scoop-kagi`
+- syncs the `kagi-cli` AUR package when `AUR_SSH_PRIVATE_KEY` is configured
 
 `.github/workflows/npm-publish.yml` runs after a successful `Release` workflow and publishes `npm/package.json` to npm when `NPM_PUBLISH_ENABLED=true`.
 
@@ -94,11 +96,10 @@ Verify all public release surfaces after the workflows finish:
    - confirm `Microck/scoop-kagi` was updated to the new version and hash
    - if the sync step was skipped or failed, update that repo manually and push `bucket/kagi.json`
 6. AUR
-   - update `ssh://aur@aur.archlinux.org/kagi-cli.git`
-   - bump `pkgver` in `PKGBUILD`
-   - refresh `sha256sums` for `https://github.com/Microck/kagi-cli/archive/refs/tags/vX.Y.Z.tar.gz`
-   - regenerate `.SRCINFO`
-   - push the AUR repo and confirm the package page shows `X.Y.Z`
+   - confirm the release workflow updated `ssh://aur@aur.archlinux.org/kagi-cli.git`
+   - confirm `PKGBUILD` and `.SRCINFO` use the release commit as a `git+https` source
+   - if the sync step was skipped or failed, update that repo manually and push `PKGBUILD` and `.SRCINFO`
+   - verify a fresh `makepkg -Csf --noconfirm` or AUR helper build succeeds on Arch
 7. Mintlify docs
    - confirm `https://kagi.micr.dev` reflects the committed docs changes from `docs/`
    - if the site still shows old content, inspect the `Trigger Mintlify docs deployment` release step
@@ -128,11 +129,15 @@ The authoritative manifest lives in the companion bucket repo `Microck/scoop-kag
 
 ### AUR
 
-There is no AUR automation in this repo and no AUR package metadata tracked here. The maintained package is `kagi-cli` at `ssh://aur@aur.archlinux.org/kagi-cli.git`. Update it manually after the GitHub release:
+The maintained package is `kagi-cli` at `ssh://aur@aur.archlinux.org/kagi-cli.git`. The release workflow updates it automatically when `AUR_SSH_PRIVATE_KEY` is configured.
+
+The AUR package intentionally uses a commit-pinned `git+https` source instead of GitHub's generated tag archives. The generated archives are not reliable as checksum-addressed AUR sources because different clients can receive different archive bytes for the same tag URL.
+
+If the workflow skips or fails the AUR sync, update the AUR repo manually after the GitHub release:
 
 1. clone or update `ssh://aur@aur.archlinux.org/kagi-cli.git`
-2. bump `pkgver` in `PKGBUILD`
-3. refresh `sha256sums` for `https://github.com/Microck/kagi-cli/archive/refs/tags/vX.Y.Z.tar.gz`
+2. resolve the release commit for `vX.Y.Z`
+3. bump `pkgver` in `PKGBUILD`
 4. regenerate `.SRCINFO`
 5. commit and push the AUR repo
 6. verify the package page or a fresh `paru` or `yay` install resolves the new version
@@ -143,12 +148,12 @@ Example flow:
 git clone ssh://aur@aur.archlinux.org/kagi-cli.git
 cd kagi-cli
 
-# update PKGBUILD for X.Y.Z first
-curl -L -o kagi-cli-vX.Y.Z.tar.gz \
-  https://github.com/Microck/kagi-cli/archive/refs/tags/vX.Y.Z.tar.gz
-sha256sum kagi-cli-vX.Y.Z.tar.gz
+SOURCE_COMMIT="$(git ls-remote https://github.com/Microck/kagi-cli.git 'refs/tags/vX.Y.Z^{}' | awk '{print $1}')"
+if [ -z "$SOURCE_COMMIT" ]; then
+  SOURCE_COMMIT="$(git ls-remote https://github.com/Microck/kagi-cli.git 'refs/tags/vX.Y.Z' | awk '{print $1}')"
+fi
 
-# write the new checksum into PKGBUILD, then regenerate metadata
+# update pkgver and the source commit in PKGBUILD, then regenerate metadata
 makepkg --printsrcinfo > .SRCINFO
 
 git status

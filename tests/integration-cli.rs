@@ -1570,8 +1570,15 @@ fn mcp_initialize_returns_server_info() {
     assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
 }
 
+fn tool_named<'a>(tools: &'a [Value], name: &str) -> &'a Value {
+    tools
+        .iter()
+        .find(|tool| tool["name"] == name)
+        .unwrap_or_else(|| panic!("expected {name} in tools list, got {tools:?}"))
+}
+
 #[test]
-fn mcp_tools_list_includes_news_and_extract() {
+fn mcp_tools_list_declares_input_schemas() {
     let tempdir = TempDir::new().expect("tempdir");
     let output = run_kagi_with_stdin(
         &["mcp"],
@@ -1583,13 +1590,42 @@ fn mcp_tools_list_includes_news_and_extract() {
     assert_success(&output);
     let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
     let tools = response["result"]["tools"].as_array().expect("tools array");
-    assert!(
-        tools.iter().any(|tool| tool["name"] == "kagi_news"),
-        "expected kagi_news in tools list, got {tools:?}"
+
+    for tool in tools {
+        let schema = &tool["inputSchema"];
+        assert_eq!(schema["type"], "object", "schema type for {tool:?}");
+        let properties = schema["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("expected schema properties for {tool:?}"));
+        assert!(
+            !properties.is_empty(),
+            "expected non-empty schema properties for {tool:?}"
+        );
+    }
+
+    assert_eq!(
+        tool_named(tools, "kagi_search")["inputSchema"]["required"],
+        json!(["query"])
     );
-    assert!(
-        tools.iter().any(|tool| tool["name"] == "kagi_extract"),
-        "expected kagi_extract in tools list, got {tools:?}"
+    assert_eq!(
+        tool_named(tools, "kagi_quick")["inputSchema"]["required"],
+        json!(["query"])
+    );
+    assert_eq!(
+        tool_named(tools, "kagi_extract")["inputSchema"]["required"],
+        json!(["url"])
+    );
+    assert_eq!(
+        tool_named(tools, "kagi_news_search")["inputSchema"]["required"],
+        json!(["query"])
+    );
+    assert_eq!(
+        tool_named(tools, "kagi_summarize")["inputSchema"]["anyOf"],
+        json!([{ "required": ["url"] }, { "required": ["text"] }])
+    );
+    assert_eq!(
+        tool_named(tools, "kagi_news")["inputSchema"]["properties"]["category"]["default"],
+        json!("world")
     );
 }
 

@@ -2437,14 +2437,7 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "tools": [
-                        {"name": "kagi_search", "description": "Search Kagi", "inputSchema": {"type": "object"}},
-                        {"name": "kagi_summarize", "description": "Summarize a URL or text", "inputSchema": {"type": "object"}},
-                        {"name": "kagi_extract", "description": "Extract a page's full content as markdown", "inputSchema": {"type": "object"}},
-                        {"name": "kagi_quick", "description": "Get a Kagi Quick Answer", "inputSchema": {"type": "object"}},
-                        {"name": "kagi_news", "description": "Fetch Kagi News stories for a category", "inputSchema": {"type": "object"}},
-                        {"name": "kagi_news_search", "description": "Search the News tab of kagi.com (clusters of articles)", "inputSchema": {"type": "object"}}
-                    ]
+                    "tools": mcp_tool_definitions()
                 }
             }),
             "tools/call" => match run_mcp_tool_call(&request, profile).await {
@@ -2468,6 +2461,138 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
         println!("{}", serde_json::to_string(&response)?);
     }
     Ok(())
+}
+
+fn mcp_tool_definitions() -> Value {
+    serde_json::json!([
+        {
+            "name": "kagi_search",
+            "description": "Search Kagi",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to send to Kagi"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "kagi_summarize",
+            "description": "Summarize a URL or text",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to summarize"
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Text to summarize"
+                    }
+                },
+                "anyOf": [
+                    {"required": ["url"]},
+                    {"required": ["text"]}
+                ],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "kagi_extract",
+            "description": "Extract a page's full content as markdown",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "HTTPS URL of the page to extract as markdown"
+                    }
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "kagi_quick",
+            "description": "Get a Kagi Quick Answer",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Query to answer"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "kagi_news",
+            "description": "Fetch Kagi News stories for a category",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "News category slug",
+                        "default": "world"
+                    },
+                    "lang": {
+                        "type": "string",
+                        "description": "News language code",
+                        "default": "default"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of stories to return",
+                        "minimum": 1,
+                        "default": 12
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "kagi_news_search",
+            "description": "Search the News tab of kagi.com (clusters of articles)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "News search query"
+                    },
+                    "region": {
+                        "type": "string",
+                        "description": "Kagi region code such as us, gb, or no_region"
+                    },
+                    "freshness": {
+                        "type": "string",
+                        "description": "News recency window",
+                        "enum": ["day", "week", "month"]
+                    },
+                    "order": {
+                        "type": "string",
+                        "description": "News result ordering",
+                        "enum": ["default", "recency", "website"]
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of news results to return",
+                        "minimum": 1
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        }
+    ])
 }
 
 async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Value, KagiError> {
