@@ -20,7 +20,7 @@
 
 the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link`, `API Key`, or `Legacy API Token`, get the official instructions inline, paste the credential, save it to `~/.config/kagi-cli/config.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
-[documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [mcp](https://github.com/Microck/kagi-mcp)
+[documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [mcp](https://kagi.micr.dev/commands/mcp)
 
 ![search demo](images/demos/search.gif)
 
@@ -470,6 +470,7 @@ for the fuller install matrix and platform-specific setup, use the [installation
 - [quickstart guide](https://kagi.micr.dev/guides/quickstart)
 - [authentication guide](https://kagi.micr.dev/guides/authentication)
 - [workflows](https://kagi.micr.dev/guides/workflows)
+- [mcp command](https://kagi.micr.dev/commands/mcp)
 
 ## contributing
 

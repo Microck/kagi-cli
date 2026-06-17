@@ -13,6 +13,56 @@ Run a stdio JSON-RPC server that exposes Kagi tools for agents.
 kagi mcp
 ```
 
+## Use with Codex
+
+`kagi mcp` is a stdio server. You normally do not run it in a separate terminal; your MCP client launches it when it needs Kagi tools.
+
+Start by making sure `kagi` works from your shell:
+
+```bash
+kagi auth status
+kagi auth check
+```
+
+Then add it to Codex:
+
+```bash
+codex mcp add kagi-mcp -- "$(command -v kagi)" mcp
+```
+
+Check the saved entry:
+
+```bash
+codex mcp get kagi-mcp
+```
+
+You should see `command` pointing at the `kagi` binary and `args` set to `mcp`.
+
+If Codex will not run from the directory that contains your `./.kagi.toml`, pass credentials through the MCP entry instead:
+
+```bash
+codex mcp add kagi-mcp \
+  --env KAGI_SESSION_TOKEN="$KAGI_SESSION_TOKEN" \
+  -- "$(command -v kagi)" mcp
+```
+
+Use only the environment values you need. `KAGI_SESSION_TOKEN` unlocks subscriber-backed search, Quick Answer, and news search. Add `--env KAGI_API_KEY="$KAGI_API_KEY"` when you want current `/api/v1` Search or Extract. Add `--env KAGI_API_TOKEN="$KAGI_API_TOKEN"` when you want the legacy public summarizer.
+
+If you previously used the separate `kagi-mcp` wrapper, replace it with the native CLI server:
+
+```bash
+codex mcp remove kagi-mcp
+codex mcp add kagi-mcp -- "$(command -v kagi)" mcp
+```
+
+Restart Codex after changing MCP entries so the tool list is rediscovered.
+
+To use a named profile from `./.kagi.toml`, put `--profile` after `mcp`:
+
+```bash
+codex mcp add kagi-work -- "$(command -v kagi)" mcp --profile work
+```
+
 ## Tools
 
 - `kagi_search` - search Kagi
