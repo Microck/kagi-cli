@@ -382,9 +382,7 @@ pub async fn execute_api_search(
                 );
                 KagiError::Parse(format!("failed to parse Kagi API response: {error}"))
             })?;
-            Ok(SearchResponse {
-                data: api_response.into_search_results(),
-            })
+            Ok(api_response.into_search_response())
         }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, "search api").await;
@@ -427,7 +425,10 @@ pub async fn execute_search(
 ) -> Result<SearchResponse, KagiError> {
     let html = search_with_lens(request, token).await?;
     let data = parse_search_results(&html)?;
-    Ok(SearchResponse { data })
+    Ok(SearchResponse {
+        data,
+        related_searches: Vec::new(),
+    })
 }
 
 /// Freshness window for News-tab search.
@@ -768,23 +769,40 @@ impl<'a> ApiSearchFilters<'a> {
 #[derive(Debug, Deserialize)]
 struct ApiSearchResponse {
     data: Option<ApiSearchData>,
+    #[serde(default)]
+    related_searches: Vec<serde_json::Value>,
 }
 
 impl ApiSearchResponse {
-    fn into_search_results(self) -> Vec<SearchResult> {
-        self.data
+    fn into_search_response(self) -> SearchResponse {
+        let related_searches = self
+            .data
+            .as_ref()
+            .and_then(|data| data.related_searches.clone())
+            .filter(|items| !items.is_empty())
+            .unwrap_or(self.related_searches);
+
+        let data = self
+            .data
             .and_then(|data| data.search)
             .unwrap_or_default()
             .into_iter()
             .enumerate()
             .map(|(index, result)| result.into_search_result(index as u32 + 1))
-            .collect()
+            .collect();
+
+        SearchResponse {
+            data,
+            related_searches,
+        }
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct ApiSearchData {
     search: Option<Vec<ApiSearchResult>>,
+    #[serde(default)]
+    related_searches: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1055,14 +1073,18 @@ mod tests {
                         "title": "Example",
                         "snippet": "Example snippet"
                     }
+                ],
+                "related_searches": [
+                    { "query": "example docs", "score": 0.97 }
                 ]
             }
         }"#;
 
         let parsed: ApiSearchResponse = serde_json::from_str(raw).expect("api response parses");
-        let results = parsed.into_search_results();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Example");
+        let response = parsed.into_search_response();
+        assert_eq!(response.data.len(), 1);
+        assert_eq!(response.data[0].title, "Example");
+        assert_eq!(response.related_searches[0]["query"], "example docs");
     }
 
     #[test]

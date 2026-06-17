@@ -152,19 +152,22 @@ pub async fn execute_summarize(
     decode_kagi_json(response, "summarizer").await
 }
 
-/// Extracts a web page as markdown using Kagi's v1 Extract API with API-key auth.
+/// Extracts a web page using Kagi's v1 Extract API with API-key auth.
 ///
 /// # Arguments
 /// * `url` - The HTTPS URL to extract.
 /// * `token` - The Kagi API key.
 ///
 /// # Returns
-/// Extracted page markdown.
+/// Full Extract API response, including markdown and retained link metadata.
 ///
 /// # Errors
 /// Returns `KagiError::Auth` if the token is missing, `KagiError::Config` if the
 /// URL does not satisfy the Extract API contract, and network/parse errors on failure.
-pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError> {
+pub async fn execute_extract_response(
+    url: &str,
+    token: &str,
+) -> Result<ExtractResponse, KagiError> {
     if token.trim().is_empty() {
         return Err(KagiError::Auth(
             "missing Kagi API key (expected KAGI_API_KEY)".to_string(),
@@ -187,7 +190,16 @@ pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError
         .await
         .map_err(map_transport_error)?;
 
-    let response: ExtractResponse = decode_kagi_json(response, "Extract").await?;
+    decode_kagi_json(response, "Extract").await
+}
+
+/// Extracts a web page as markdown using Kagi's v1 Extract API with API-key auth.
+///
+/// # Errors
+/// Returns auth/config/network errors from [`execute_extract_response`] and
+/// parse errors when the response contains no markdown content.
+pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError> {
+    let response = execute_extract_response(url, token).await?;
     extract_first_markdown(response)
 }
 
@@ -775,7 +787,7 @@ pub async fn execute_assistant_thread_delete(
                 "title": thread.title,
                 "saved": thread.saved,
                 "shared": thread.shared,
-                "tag_ids": thread.tag_ids,
+                "folder_ids": thread.folder_ids,
             }]
         }),
         token,
@@ -3766,7 +3778,7 @@ fn parse_assistant_thread_open_stream(
     body: &str,
 ) -> Result<AssistantThreadOpenResponse, KagiError> {
     let mut meta = AssistantMeta::default();
-    let mut tags = Vec::new();
+    let mut folders = Vec::new();
     let mut thread = None;
     let mut messages = None;
 
@@ -3783,9 +3795,9 @@ fn parse_assistant_thread_open_stream(
                 meta.version = hello.v;
                 meta.trace = hello.trace;
             }
-            "tags.json" => {
-                tags = serde_json::from_str(payload).map_err(|error| {
-                    KagiError::Parse(format!("failed to parse assistant tags frame: {error}"))
+            "folders.json" => {
+                folders = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant folders frame: {error}"))
                 })?;
             }
             "thread.json" => {
@@ -3830,7 +3842,7 @@ fn parse_assistant_thread_open_stream(
 
     Ok(AssistantThreadOpenResponse {
         meta,
-        tags,
+        folders,
         thread: thread.ok_or_else(|| {
             KagiError::Parse(
                 "assistant thread open response did not include a thread.json frame".to_string(),
@@ -3848,7 +3860,7 @@ fn parse_assistant_thread_list_stream(
     body: &str,
 ) -> Result<AssistantThreadListResponse, KagiError> {
     let mut meta = AssistantMeta::default();
-    let mut tags = Vec::new();
+    let mut folders = Vec::new();
     let mut threads = Vec::new();
     let mut pagination = None;
 
@@ -3865,9 +3877,9 @@ fn parse_assistant_thread_list_stream(
                 meta.version = hello.v;
                 meta.trace = hello.trace;
             }
-            "tags.json" => {
-                tags = serde_json::from_str(payload).map_err(|error| {
-                    KagiError::Parse(format!("failed to parse assistant tags frame: {error}"))
+            "folders.json" => {
+                folders = serde_json::from_str(payload).map_err(|error| {
+                    KagiError::Parse(format!("failed to parse assistant folders frame: {error}"))
                 })?;
             }
             "thread_list.html" => {
@@ -3909,7 +3921,7 @@ fn parse_assistant_thread_list_stream(
 
     Ok(AssistantThreadListResponse {
         meta,
-        tags,
+        folders,
         threads,
         pagination: pagination.ok_or_else(|| {
             KagiError::Parse(
@@ -4406,7 +4418,8 @@ fn resolve_translate_bootstrap(
             })
         }
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(KagiError::Auth(
-            "invalid or expired Kagi session token for Kagi Translate".to_string(),
+            "invalid or expired Kagi session token, or inactive Kagi subscription, for Kagi Translate"
+                .to_string(),
         )),
         status if status.is_server_error() => Err(KagiError::Network(format!(
             "Kagi Translate bootstrap server error: HTTP {status}"
@@ -4520,7 +4533,7 @@ struct AssistantThreadPayload {
     shared: bool,
     branch_id: String,
     #[serde(default)]
-    tag_ids: Vec<String>,
+    folder_ids: Vec<String>,
 }
 
 impl From<AssistantThreadPayload> for AssistantThread {
@@ -4534,7 +4547,7 @@ impl From<AssistantThreadPayload> for AssistantThread {
             saved: payload.saved,
             shared: payload.shared,
             branch_id: payload.branch_id,
-            tag_ids: payload.tag_ids,
+            folder_ids: payload.folder_ids,
         }
     }
 }
@@ -4768,6 +4781,9 @@ where
         }
         status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
             let body = http::read_error_body(response, surface).await;
+            if let Some(message) = translate_subscription_error_message(&body) {
+                return Err(KagiError::Auth(message));
+            }
             Err(KagiError::Auth(format!(
                 "invalid or expired Kagi session token for Kagi Translate {surface}: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -4775,6 +4791,9 @@ where
         }
         status if status.is_client_error() => {
             let body = http::read_error_body(response, surface).await;
+            if let Some(message) = translate_subscription_error_message(&body) {
+                return Err(KagiError::Auth(message));
+            }
             Err(KagiError::Config(format!(
                 "Kagi Translate {surface} request rejected: HTTP {status}{}",
                 format_client_error_suffix(&body)
@@ -4795,6 +4814,25 @@ where
             )))
         }
     }
+}
+
+fn translate_subscription_error_message(body: &str) -> Option<String> {
+    let normalized = body.to_ascii_lowercase();
+    let mentions_subscription = [
+        "active subscription",
+        "subscription",
+        "subscriber",
+        "not subscribed",
+        "payment required",
+        "entitlement",
+        "free access",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+
+    mentions_subscription.then(|| {
+        "Kagi Translate requires an active Kagi subscription; free access is paused".to_string()
+    })
 }
 
 fn build_client() -> Result<Client, KagiError> {
@@ -4830,7 +4868,8 @@ mod tests {
         resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
         resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
         should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
-        text_contains_news_filter_keyword, validate_translate_request,
+        text_contains_news_filter_keyword, translate_subscription_error_message,
+        validate_translate_request,
     };
     use crate::api::{
         execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
@@ -5286,7 +5325,7 @@ mod tests {
     fn parses_assistant_prompt_stream() {
         let raw = concat!(
             "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
-            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
             "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
         );
 
@@ -5312,7 +5351,7 @@ mod tests {
             .process_frame("hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}")
             .expect("hello should parse");
         parser
-            .process_frame("thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}")
+            .process_frame("thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}")
             .expect("thread should parse");
 
         let first = parser
@@ -5337,7 +5376,7 @@ mod tests {
     fn parses_assistant_prompt_stream_without_expires_at() {
         let raw = concat!(
             "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
-            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
             "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
         );
 
@@ -5382,8 +5421,8 @@ mod tests {
                 .header("content-type", "application/vnd.kagi.stream")
                 .body(concat!(
                     "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                    "tags.json:[]\0\n",
-                    "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
+                    "folders.json:[]\0\n",
+                    "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
                 ));
         });
         let _second_page = server.mock(|when, then| {
@@ -5404,8 +5443,8 @@ mod tests {
                 .header("content-type", "application/vnd.kagi.stream")
                 .body(concat!(
                     "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                    "tags.json:[]\0\n",
-                    "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":null}\0\n"
+                    "folders.json:[]\0\n",
+                    "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":null}\0\n"
                 ));
         });
 
@@ -5567,7 +5606,7 @@ mod tests {
                 .header("content-type", "application/vnd.kagi.stream")
                 .body(concat!(
                     "hi:{\"v\":\"test\",\"trace\":\"trace-upload\"}\0\n",
-                    "thread.json:{\"id\":\"thread-1\",\"title\":\"Upload test\",\"ack\":\"2026-04-24T00:00:00Z\",\"created_at\":\"2026-04-24T00:00:00Z\",\"expires_at\":\"2026-04-24T01:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                    "thread.json:{\"id\":\"thread-1\",\"title\":\"Upload test\",\"ack\":\"2026-04-24T00:00:00Z\",\"created_at\":\"2026-04-24T00:00:00Z\",\"expires_at\":\"2026-04-24T01:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                     "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-04-24T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Reply with exactly: attached-note\",\"reply_html\":\"attached-note\",\"md\":\"attached-note\",\"references_html\":\"\",\"references_markdown\":\"\",\"metadata_html\":\"\",\"documents\":[],\"profile\":null}\0\n"
                 ));
         });
@@ -5615,7 +5654,7 @@ mod tests {
                 .delay(Duration::from_millis(200))
                 .body(concat!(
                     "hi:{\"v\":\"test\",\"trace\":\"trace-delayed\"}\0\n",
-                    "thread.json:{\"id\":\"thread-delayed\",\"title\":\"Delayed test\",\"ack\":\"2026-05-01T00:00:00Z\",\"created_at\":\"2026-05-01T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                    "thread.json:{\"id\":\"thread-delayed\",\"title\":\"Delayed test\",\"ack\":\"2026-05-01T00:00:00Z\",\"created_at\":\"2026-05-01T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                     "new_message.json:{\"id\":\"msg-delayed\",\"thread_id\":\"thread-delayed\",\"created_at\":\"2026-05-01T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"delayed-ok\",\"documents\":[]}\0\n"
                 ));
         });
@@ -5735,8 +5774,8 @@ mod tests {
     fn parses_assistant_thread_open_stream() {
         let raw = concat!(
             "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-open\"}\0\n",
-            "tags.json:[]\0\n",
-            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+            "folders.json:[]\0\n",
+            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
             "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
         );
 
@@ -5751,8 +5790,8 @@ mod tests {
     fn parses_assistant_thread_list_stream() {
         let raw = concat!(
             "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-list\"}\0\n",
-            "tags.json:[]\0\n",
-            "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"true\\\" data-public=\\\"false\\\" data-tags='[&quot;tag-1&quot;]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":{\"all\":1}}\0\n"
+            "folders.json:[]\0\n",
+            "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"true\\\" data-public=\\\"false\\\" data-folders='[&quot;folder-1&quot;]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":{\"all\":1}}\0\n"
         );
 
         let parsed = parse_assistant_thread_list_stream(raw).expect("thread list parses");
@@ -5767,8 +5806,8 @@ mod tests {
     fn parses_assistant_thread_list_stream_with_wrapped_html_and_object_cursor() {
         let raw = concat!(
             "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-list-object\"}\0\n",
-            "tags.json:[]\0\n",
-            "thread_list.html:{\"html\":{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"true\\\" data-tags='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\"},\"next_cursor\":{\"offset\":100,\"has_more\":true},\"has_more\":true,\"count\":100,\"total_counts\":{\"all\":250}}\0\n"
+            "folders.json:[]\0\n",
+            "thread_list.html:{\"html\":{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"true\\\" data-folders='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\"},\"next_cursor\":{\"offset\":100,\"has_more\":true},\"has_more\":true,\"count\":100,\"total_counts\":{\"all\":250}}\0\n"
         );
 
         let parsed = parse_assistant_thread_list_stream(raw).expect("thread list parses");
@@ -6397,12 +6436,19 @@ mod tests {
         for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
             let error =
                 resolve_translate_bootstrap(status, &headers).expect_err("auth status should fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("invalid or expired Kagi session token")
-            );
+            assert!(error.to_string().contains("inactive Kagi subscription"));
         }
+    }
+
+    #[test]
+    fn maps_translate_subscription_error_bodies() {
+        let message = translate_subscription_error_message(
+            r#"{"error":"Kagi Translate requires an active subscription"}"#,
+        )
+        .expect("subscription body should map to a clear message");
+
+        assert!(message.contains("requires an active Kagi subscription"));
+        assert!(message.contains("free access is paused"));
     }
 
     #[test]

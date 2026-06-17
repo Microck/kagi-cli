@@ -206,11 +206,14 @@ pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSumm
             .value()
             .attr("data-public")
             .is_some_and(|value| value == "true");
-        let tag_ids =
-            serde_json::from_str::<Vec<String>>(element.value().attr("data-tags").unwrap_or("[]"))
-                .map_err(|error| {
-                    KagiError::Parse(format!("failed to parse assistant thread tag ids: {error}"))
-                })?;
+        let folder_ids = serde_json::from_str::<Vec<String>>(
+            element.value().attr("data-folders").unwrap_or("[]"),
+        )
+        .map_err(|error| {
+            KagiError::Parse(format!(
+                "failed to parse assistant thread folder ids: {error}"
+            ))
+        })?;
         let snippet = element
             .value()
             .attr("data-snippet")
@@ -250,7 +253,7 @@ pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSumm
             snippet: parsed_snippet,
             saved,
             shared,
-            tag_ids,
+            folder_ids,
         });
     }
 
@@ -864,7 +867,7 @@ mod tests {
                 data-code="thread-1"
                 data-saved="true"
                 data-public="false"
-                data-tags='["tag-1"]'
+                data-folders='["folder-1"]'
                 data-snippet="First snippet">
               <a href="/assistant/thread-1">
                 <div class="title">First Thread</div>
@@ -884,7 +887,7 @@ mod tests {
         assert_eq!(threads[0].snippet, "First snippet");
         assert!(threads[0].saved);
         assert!(!threads[0].shared);
-        assert_eq!(threads[0].tag_ids, vec!["tag-1".to_string()]);
+        assert_eq!(threads[0].folder_ids, vec!["folder-1".to_string()]);
     }
 
     #[test]
@@ -895,7 +898,7 @@ mod tests {
             <li class="thread"
                 data-saved="true"
                 data-public="false"
-                data-tags='["tag-1"]'
+                data-folders='["folder-1"]'
                 data-snippet="First snippet">
               <a href="/assistant/thread-1">
                 <div class="title">First Thread</div>

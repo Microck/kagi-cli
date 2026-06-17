@@ -273,7 +273,7 @@ fn assistant_prompt_stream_reads_query_from_stdin() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-stdin\"}\0\n",
-                "thread.json:{\"id\":\"thread-stdin\",\"title\":\"Stdin test\",\"ack\":\"2026-06-07T00:00:00Z\",\"created_at\":\"2026-06-07T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "thread.json:{\"id\":\"thread-stdin\",\"title\":\"Stdin test\",\"ack\":\"2026-06-07T00:00:00Z\",\"created_at\":\"2026-06-07T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"streaming\",\"prompt\":\"do a little dance\",\"md\":\"dance\",\"documents\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"done\",\"prompt\":\"do a little dance\",\"md\":\"dance-ok\",\"documents\":[]}\0\n",
             ));
@@ -463,6 +463,51 @@ fn search_command_returns_json_from_mock_api() {
     assert_success(&output);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["data"][0]["title"], "Rust Programming Language");
+}
+
+#[test]
+fn search_command_surfaces_related_searches_from_mock_api() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust programming" }))
+            .header("authorization", "Bearer test-api-key");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": api_meta(),
+                "data": {
+                    "search": [
+                        {
+                            "url": "https://www.rust-lang.org",
+                            "title": "Rust Programming Language",
+                            "snippet": "Reliable systems programming."
+                        }
+                    ],
+                    "related_searches": [
+                        {
+                            "query": "rust ownership",
+                            "rank": 1,
+                            "source": "api"
+                        }
+                    ]
+                }
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["search", "rust programming", "--format", "json"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["related_searches"][0]["query"], "rust ownership");
+    assert_eq!(body["related_searches"][0]["source"], "api");
 }
 
 #[test]
@@ -966,6 +1011,61 @@ fn extract_command_prints_markdown_from_mock_api() {
 }
 
 #[test]
+fn extract_command_json_surfaces_retained_links_from_mock_api() {
+    let server = MockServer::start();
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header("authorization", "Bearer test-api-key")
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted content.",
+                        "links": [
+                            {
+                                "text": "Source",
+                                "url": "https://example.com/source"
+                            }
+                        ]
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi(
+        &["extract", "https://example.com/article", "--format", "json"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["data"][0]["links"][0]["text"], "Source");
+    assert_eq!(
+        body["data"][0]["links"][0]["url"],
+        "https://example.com/source"
+    );
+}
+
+#[test]
 fn extract_command_rejects_non_https_urls() {
     let tempdir = TempDir::new().expect("tempdir");
     let env = [("KAGI_API_KEY", API_KEY)];
@@ -1226,8 +1326,8 @@ fn assistant_thread_list_paginates_with_cursor_id() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                "tags.json:[]\0\n",
-                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
+                "folders.json:[]\0\n",
+                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
             ));
     });
     let _second_page = server.mock(|when, then| {
@@ -1248,8 +1348,8 @@ fn assistant_thread_list_paginates_with_cursor_id() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                "tags.json:[]\0\n",
-                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-tags='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":null}\0\n"
+                "folders.json:[]\0\n",
+                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":null}\0\n"
             ));
     });
 
@@ -1306,7 +1406,7 @@ fn assistant_stream_prints_text_deltas_by_default() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}\0\n",
-                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}\0\n"
             ));
@@ -1337,7 +1437,7 @@ fn assistant_stream_can_print_ndjson_updates() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}\0\n",
-                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}\0\n"
             ));
@@ -1428,7 +1528,7 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
             .header("content-type", "application/vnd.kagi.stream")
             .body(concat!(
                 "hi:{\"v\":\"test\",\"trace\":\"trace-once\"}\0\n",
-                "thread.json:{\"id\":\"thread-once\",\"title\":\"Once\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"tag_ids\":[]}\0\n",
+                "thread.json:{\"id\":\"thread-once\",\"title\":\"Once\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
                 "new_message.json:{\"id\":\"msg-once\",\"thread_id\":\"thread-once\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hi\",\"md\":\"ok\",\"documents\":[]}\0\n"
             ));
     });

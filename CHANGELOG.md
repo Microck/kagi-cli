@@ -7,6 +7,21 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### Added
+
+- `kagi search` and `kagi batch` now preserve related search metadata from the Search API in structured output.
+- `kagi extract` now supports `--format json` and `--format compact` to expose the full Extract API envelope, including retained link metadata when returned by Kagi.
+
+### Changed
+
+- Assistant thread output now uses folders instead of tags, matching Kagi's current thread organization model.
+
+### Fixed
+
+- `kagi translate` now reports inactive subscription failures with a clearer message when Kagi Translate rejects access.
+
 ## [0.9.6]
 
 ### Fixed

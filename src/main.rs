@@ -25,10 +25,10 @@ use crate::api::{
     execute_custom_assistant_list, execute_custom_assistant_update, execute_custom_bang_create,
     execute_custom_bang_delete, execute_custom_bang_get, execute_custom_bang_list,
     execute_custom_bang_update, execute_enrich_news, execute_enrich_web, execute_extract,
-    execute_fastgpt, execute_lens_create, execute_lens_delete, execute_lens_get, execute_lens_list,
-    execute_lens_set_enabled, execute_lens_update, execute_news, execute_news_categories,
-    execute_news_chaos, execute_news_filter_presets, execute_redirect_create,
-    execute_redirect_delete, execute_redirect_get, execute_redirect_list,
+    execute_extract_response, execute_fastgpt, execute_lens_create, execute_lens_delete,
+    execute_lens_get, execute_lens_list, execute_lens_set_enabled, execute_lens_update,
+    execute_news, execute_news_categories, execute_news_chaos, execute_news_filter_presets,
+    execute_redirect_create, execute_redirect_delete, execute_redirect_get, execute_redirect_list,
     execute_redirect_set_enabled, execute_redirect_update, execute_smallweb,
     execute_subscriber_summarize, execute_summarize, execute_translate,
 };
@@ -42,8 +42,9 @@ use crate::cli::{
     AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
     AuthSubcommand, BangSubcommand, Cli, Commands, CompletionCommand, CompletionInstallArgs,
     CompletionShell, CompletionSubcommand, CustomBangSubcommand, EnrichSubcommand,
-    HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs, SearchOrder, SearchTime,
-    SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand, TranslateArgs, WatchArgs,
+    ExtractOutputFormat, HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs,
+    SearchOrder, SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand,
+    TranslateArgs, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -260,12 +261,26 @@ async fn run() -> Result<(), KagiError> {
                 print_json(&response)
             }
         }
-        Commands::Extract(args) => {
-            let markdown =
-                execute_extract_with_available_auth(&args.url, profile.as_deref()).await?;
-            println!("{markdown}");
-            Ok(())
-        }
+        Commands::Extract(args) => match args.format {
+            ExtractOutputFormat::Markdown => {
+                let markdown =
+                    execute_extract_with_available_auth(&args.url, profile.as_deref()).await?;
+                println!("{markdown}");
+                Ok(())
+            }
+            ExtractOutputFormat::Json => {
+                let response =
+                    execute_extract_response_with_available_auth(&args.url, profile.as_deref())
+                        .await?;
+                print_json(&response)
+            }
+            ExtractOutputFormat::Compact => {
+                let response =
+                    execute_extract_response_with_available_auth(&args.url, profile.as_deref())
+                        .await?;
+                print_compact_json(&response)
+            }
+        },
         Commands::News(args) => {
             args.validate().map_err(KagiError::Config)?;
 
@@ -1123,6 +1138,20 @@ async fn execute_extract_with_available_auth(
     ))
 }
 
+async fn execute_extract_response_with_available_auth(
+    url: &str,
+    profile: Option<&str>,
+) -> Result<crate::types::ExtractResponse, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    if let Some(key) = inventory.api_key {
+        return execute_extract_response(url, &key.value).await;
+    }
+
+    Err(KagiError::Config(
+        "extract requires KAGI_API_KEY. Set it in the environment or run `kagi auth set --api-key <key>`".to_string(),
+    ))
+}
+
 fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandRequest, KagiError> {
     let text = match args.text {
         Some(text) => text,
@@ -1674,10 +1703,12 @@ fn result_domain(url: &str) -> Option<String> {
 
 fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String {
     if response.data.is_empty() {
-        return "No results found.".to_string();
+        let mut output = "No results found.".to_string();
+        append_pretty_related_searches(&mut output, response, use_color);
+        return output;
     }
 
-    response
+    let mut output = response
         .data
         .iter()
         .enumerate()
@@ -1701,15 +1732,19 @@ fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String 
             section
         })
         .collect::<Vec<_>>()
-        .join("\n\n")
+        .join("\n\n");
+    append_pretty_related_searches(&mut output, response, use_color);
+    output
 }
 
 fn format_markdown_response(response: &SearchResponse) -> String {
     if response.data.is_empty() {
-        return "# No results found.".to_string();
+        let mut output = "# No results found.".to_string();
+        append_markdown_related_searches(&mut output, response);
+        return output;
     }
 
-    response
+    let mut output = response
         .data
         .iter()
         .enumerate()
@@ -1721,7 +1756,61 @@ fn format_markdown_response(response: &SearchResponse) -> String {
             section
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    append_markdown_related_searches(&mut output, response);
+    output
+}
+
+fn append_pretty_related_searches(output: &mut String, response: &SearchResponse, use_color: bool) {
+    let related = related_search_labels(response);
+    if related.is_empty() {
+        return;
+    }
+
+    let title_color = if use_color { "\x1b[1;34m" } else { "" };
+    let reset_color = if use_color { "\x1b[0m" } else { "" };
+    output.push_str(&format!(
+        "\n\n{title_color}Related searches{reset_color}\n   {}",
+        related.join("\n   ")
+    ));
+}
+
+fn append_markdown_related_searches(output: &mut String, response: &SearchResponse) {
+    let related = related_search_labels(response);
+    if related.is_empty() {
+        return;
+    }
+
+    output.push_str("\n\n## Related searches\n\n");
+    for label in related {
+        output.push_str(&format!("- {label}\n"));
+    }
+}
+
+fn related_search_labels(response: &SearchResponse) -> Vec<String> {
+    response
+        .related_searches
+        .iter()
+        .filter_map(related_search_label)
+        .collect()
+}
+
+fn related_search_label(value: &Value) -> Option<String> {
+    if let Some(text) = value
+        .as_str()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        return Some(text.to_string());
+    }
+
+    let object = value.as_object()?;
+    ["query", "text", "title", "label", "display"]
+        .iter()
+        .find_map(|key| object.get(*key)?.as_str())
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -1852,9 +1941,9 @@ fn format_markdown_news_response(response: &NewsSearchResponse) -> String {
         let mut section = format!("## Cluster {}\n\n", cluster_index + 1);
         for item in &cluster.items {
             let suffix = match (item.source.as_deref(), item.time_relative.as_deref()) {
-                (Some(source), Some(time)) => format!(" — {source}, {time}"),
-                (Some(source), None) => format!(" — {source}"),
-                (None, Some(time)) => format!(" — {time}"),
+                (Some(source), Some(time)) => format!(" - {source}, {time}"),
+                (Some(source), None) => format!(" - {source}"),
+                (None, Some(time)) => format!(" - {time}"),
                 (None, None) => String::new(),
             };
             let paywall = if item.paywall { " *(paywall)*" } else { "" };
@@ -2747,6 +2836,7 @@ mod tests {
                     published: None,
                 },
             ],
+            related_searches: Vec::new(),
         };
 
         let output = format_pretty_response(&response, false);
@@ -2783,7 +2873,10 @@ mod tests {
 
     #[test]
     fn formats_pretty_output_for_empty_results() {
-        let response = SearchResponse { data: vec![] };
+        let response = SearchResponse {
+            data: vec![],
+            related_searches: Vec::new(),
+        };
         let output = format_pretty_response(&response, false);
 
         assert_eq!(output, "No results found.");
@@ -2800,6 +2893,7 @@ mod tests {
                 snippet: "   ".to_string(),
                 published: None,
             }],
+            related_searches: Vec::new(),
         };
 
         let output = format_pretty_response(&response, false);
@@ -2818,6 +2912,7 @@ mod tests {
                 snippet: "Test snippet".to_string(),
                 published: None,
             }],
+            related_searches: Vec::new(),
         };
 
         let output = format_pretty_response(&response, true);
@@ -2948,6 +3043,7 @@ mod tests {
                     .to_string(),
                 published: None,
             }],
+            related_searches: Vec::new(),
         };
 
         let output = format_markdown_response(&response);
@@ -2970,7 +3066,7 @@ mod tests {
                 saved: false,
                 shared: false,
                 branch_id: "00000000-0000-4000-0000-000000000000".to_string(),
-                tag_ids: vec![],
+                folder_ids: vec![],
             },
             message: AssistantMessage {
                 id: "msg-1".to_string(),
@@ -3040,6 +3136,7 @@ mod tests {
                     .to_string(),
                 published: None,
             }],
+            related_searches: Vec::new(),
         };
 
         let output = format_csv_response(&response);
@@ -3061,6 +3158,7 @@ mod tests {
                 snippet: "line 1\nline 2".to_string(),
                 published: None,
             }],
+            related_searches: Vec::new(),
         };
 
         let output = format_csv_response(&response);

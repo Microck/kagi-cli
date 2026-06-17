@@ -79,6 +79,27 @@ pub enum QuickOutputFormat {
     Markdown,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+/// Output format for extracted page content.
+pub enum ExtractOutputFormat {
+    /// Print the extracted markdown only.
+    Markdown,
+    /// Print the full Extract API envelope, including retained link metadata.
+    Json,
+    /// Print compact JSON for scripts that want the full Extract API envelope.
+    Compact,
+}
+
+impl std::fmt::Display for ExtractOutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Markdown => write!(f, "markdown"),
+            Self::Json => write!(f, "json"),
+            Self::Compact => write!(f, "compact"),
+        }
+    }
+}
+
 impl std::fmt::Display for QuickOutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -732,6 +753,10 @@ pub struct ExtractArgs {
     /// HTTPS URL of the page to extract as markdown
     #[arg(value_name = "URL")]
     pub url: String,
+
+    /// Output format
+    #[arg(long, value_name = "FORMAT", default_value_t = ExtractOutputFormat::Markdown)]
+    pub format: ExtractOutputFormat,
 }
 
 #[derive(Debug, Args)]

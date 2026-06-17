@@ -10,14 +10,14 @@ Extract the readable content of a web page as markdown using Kagi's Extract API.
 ## Synopsis
 
 ```bash
-kagi extract <URL>
+kagi extract <URL> [--format markdown|json|compact]
 ```
 
 ## Description
 
-The `kagi extract` command sends one HTTPS URL to Kagi's v1 Extract API and prints the extracted page markdown to stdout. It is useful when a search result, article, or documentation page needs full-page text instead of a search snippet.
+The `kagi extract` command sends one HTTPS URL to Kagi's v1 Extract API and prints the extracted page markdown to stdout by default. It is useful when a search result, article, or documentation page needs full-page text instead of a search snippet.
 
-The command uses JSON mode internally because that is the stable envelope returned by the API, then prints the first page's `markdown` field. If Kagi returns no page markdown, the CLI reports the Extract API error details and trace id when available.
+The command uses JSON mode internally because that is the stable envelope returned by the API, then prints the first page's `markdown` field. Use `--format json` or `--format compact` to print the full response envelope, including retained link metadata when Kagi returns it. If Kagi returns no page markdown, the CLI reports the Extract API error details and trace id when available.
 
 ## Authentication
 
@@ -37,6 +37,16 @@ kagi extract "https://example.com/article"
 
 Only `https://` URLs with a valid host are accepted.
 
+### `--format <FORMAT>`
+
+Output format. Default: `markdown`.
+
+Supported values:
+
+- `markdown` - print the first page's markdown content only
+- `json` - print the full Extract API response envelope
+- `compact` - print the full response envelope as compact JSON
+
 ## Output
 
 The command prints markdown directly:
@@ -45,6 +55,30 @@ The command prints markdown directly:
 # Article title
 
 Extracted page content...
+```
+
+With `--format json`, the command prints the full response envelope:
+
+```json
+{
+  "meta": {
+    "trace": "trace-1",
+    "node": "test",
+    "ms": 12
+  },
+  "data": [
+    {
+      "url": "https://example.com/article",
+      "markdown": "# Article title\n\nExtracted page content...",
+      "links": [
+        {
+          "text": "Source",
+          "url": "https://example.com/"
+        }
+      ]
+    }
+  ]
+}
 ```
 
 ## Examples
@@ -59,6 +93,12 @@ kagi extract "https://example.com/article" > article.md
 
 ```bash
 kagi extract "https://example.com/article" | sed -n '1,80p'
+```
+
+### Inspect Retained Links
+
+```bash
+kagi extract "https://example.com/article" --format json | jq '.data[0].links'
 ```
 
 ## Exit Codes

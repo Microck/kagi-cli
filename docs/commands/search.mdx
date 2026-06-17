@@ -339,6 +339,9 @@ kagi search "iran" --news --time day --format pretty
 # Extract URLs
 kagi search "rust" | jq -r '.data[].url'
 
+# Inspect related search metadata when the API returns it
+kagi search "rust" | jq '.related_searches'
+
 # Get first result
 kagi search "rust" | jq -r '.data[0].title'
 
