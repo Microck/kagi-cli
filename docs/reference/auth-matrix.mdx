@@ -108,7 +108,7 @@ flowchart TD
 - **Purpose:** Interactive setup wizard
 - **Network:** Yes, during credential validation
 - **Uses:** The credential the user just pasted
-- **Writes:** `./.kagi.toml`
+- **Writes:** `~/.config/kagi-cli/config.toml`
 - **TTY only:** In non-interactive environments, use `auth set`, `status`, or `check`
 
 #### `kagi auth status`
@@ -129,7 +129,7 @@ flowchart TD
 
 - **Purpose:** Save credentials to file
 - **Network:** No
-- **Writes:** `./.kagi.toml`
+- **Writes:** `~/.config/kagi-cli/config.toml`
 - **Creates:** Config file if doesn't exist
 
 ### Content Commands
@@ -231,16 +231,18 @@ Works without authentication:
 ```
 1. Environment Variables (KAGI_API_KEY, KAGI_API_TOKEN, KAGI_SESSION_TOKEN)
    ↓ (if not set)
-2. Configuration File (`./.kagi.toml`)
+2. Configuration File (`~/.config/kagi-cli/config.toml`)
    ↓ (if not set)
 3. Missing (error for commands requiring auth)
 ```
+
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`. Environment variables override the config file.
 
 ### Example Scenarios
 
 **Scenario 1: Multiple credentials in file**
 ```toml
-# ./.kagi.toml
+# ~/.config/kagi-cli/config.toml
 [auth]
 api_token = "api123"
 api_key = "key123"
@@ -255,7 +257,7 @@ session_token = "session456"
 **Scenario 2: Mixed sources**
 ```bash
 export KAGI_API_KEY="key789"
-# ./.kagi.toml has session_token only
+# ~/.config/kagi-cli/config.toml has session_token only
 ```
 - `search`: Uses env API key when `[auth.preferred_auth] = "api"`
 - `summarize --subscriber`: Uses file session token
@@ -264,7 +266,7 @@ export KAGI_API_KEY="key789"
 **Scenario 3: Environment overrides file**
 ```bash
 export KAGI_SESSION_TOKEN="special_session"
-# ./.kagi.toml has different session_token
+# ~/.config/kagi-cli/config.toml has different session_token
 ```
 - `search`: Uses env session token (not API, so tries web)
 - `assistant`: Uses env session token

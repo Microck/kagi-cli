@@ -49,7 +49,7 @@ kagi auth
 Opens a guided TTY wizard that walks through:
 - Choosing Session Link, API Key, or Legacy API Token
 - Pasting credentials
-- Saving to `./.kagi.toml`
+- Saving to `~/.config/kagi-cli/config.toml`
 - Immediate validation
 
 ### Non-Interactive Setup
@@ -77,7 +77,7 @@ export KAGI_API_TOKEN='...'
 | `KAGI_API_TOKEN` | summarize, fastgpt, enrich web, enrich news |
 | none | news, smallweb, auth status, --help |
 
-Environment variables override `./.kagi.toml`. When a session token and API key are both present, base `kagi search` defaults to the session token; set `[auth] preferred_auth = "api"` in config to prefer the API key.
+Environment variables override `~/.config/kagi-cli/config.toml`. When a session token and API key are both present, base `kagi search` defaults to the session token; set `[auth] preferred_auth = "api"` in config to prefer the API key.
 
 ## Commands
 

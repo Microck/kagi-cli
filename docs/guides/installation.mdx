@@ -547,7 +547,7 @@ To completely remove *kagi*:
 rm ~/.local/bin/kagi
 
 # Remove config
-rm ./.kagi.toml
+rm ~/.config/kagi-cli/config.toml
 
 # Remove from PATH (edit ~/.bashrc, ~/.zshrc, etc.)
 ```
@@ -559,7 +559,7 @@ rm ./.kagi.toml
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\kagi"
 
 # Remove config
-Remove-Item ".kagi.toml"
+Remove-Item "$HOME\.config\kagi-cli\config.toml"
 
 # Remove from PATH via System Properties
 ```

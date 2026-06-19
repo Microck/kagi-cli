@@ -179,7 +179,8 @@ kagi auth check
 kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN'
 
 # Or manually
-cat > ./.kagi.toml << 'EOF'
+mkdir -p ~/.config/kagi-cli
+cat > ~/.config/kagi-cli/config.toml << 'EOF'
 [auth]
 session_token = "https://kagi.com/search?token=YOUR_TOKEN"
 EOF
@@ -789,7 +790,9 @@ kagi auth check
 
 ### Config File Location
 
-- Repo checkout: `./.kagi.toml`
+- Default: `~/.config/kagi-cli/config.toml`
+
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`. A pre-existing `./.kagi.toml` is no longer read; re-run `kagi auth set` (or `kagi auth`) to re-save credentials at the new location, or set `KAGI_CONFIG` to the old file path.
 
 ### Shell Syntax
 
