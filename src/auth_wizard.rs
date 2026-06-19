@@ -120,7 +120,9 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
         "Current Auth",
         format_inventory_summary(&inventory),
     ))?;
-    wizard_io(log::info("Environment variables override .kagi.toml."))?;
+    wizard_io(log::info(
+        "Environment variables override the saved config file.",
+    ))?;
 
     let Some(kind) = prompt_result(
         cliclack::select("Choose an auth method")

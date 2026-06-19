@@ -240,7 +240,7 @@ pub struct Cli {
     #[arg(long, value_name = "SHELL", value_enum)]
     pub generate_completion: Option<CompletionShell>,
 
-    /// Use a named profile from .kagi.toml instead of the default auth block
+    /// Use a named profile from the kagi config file instead of the default auth block
     #[arg(long, global = true, value_name = "NAME")]
     pub profile: Option<String>,
 
@@ -630,15 +630,15 @@ pub enum AuthSubcommand {
 #[derive(Debug, Args)]
 /// Arguments for `auth set` (store a credential).
 pub struct AuthSetArgs {
-    /// Kagi API key for current /api/v1 endpoints to save into .kagi.toml
+    /// Kagi API key for current /api/v1 endpoints to save into the kagi config file
     #[arg(long, value_name = "KEY")]
     pub api_key: Option<String>,
 
-    /// Legacy Kagi API token for /api/v0 endpoints to save into .kagi.toml
+    /// Legacy Kagi API token for /api/v0 endpoints to save into the kagi config file
     #[arg(long, value_name = "TOKEN")]
     pub api_token: Option<String>,
 
-    /// Kagi session token or full Session Link URL to save into .kagi.toml
+    /// Kagi session token or full Session Link URL to save into the kagi config file
     #[arg(long, value_name = "TOKEN_OR_URL")]
     pub session_token: Option<String>,
 }

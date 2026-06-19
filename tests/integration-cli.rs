@@ -86,6 +86,20 @@ fn isolate_command_home(command: &mut Command, cwd: &Path) {
         .env("XDG_DATA_HOME", cwd.join(".local").join("share"));
 }
 
+/// Path to the kagi config file for a sandboxed run, matching the isolated
+/// `XDG_CONFIG_HOME` set by `isolate_command_home`.
+fn config_path(cwd: &Path) -> std::path::PathBuf {
+    cwd.join(".config").join("kagi-cli").join("config.toml")
+}
+
+/// Seeds the kagi config file for a sandboxed run, creating parent directories.
+fn write_config(cwd: &Path, contents: &str) {
+    let path = config_path(cwd);
+    fs::create_dir_all(path.parent().expect("config path has a parent"))
+        .expect("config directory should create");
+    fs::write(path, contents).expect("config should write");
+}
+
 fn assert_success(output: &Output) {
     assert!(
         output.status.success(),
@@ -691,11 +705,7 @@ fn search_command_falls_back_to_session_when_api_is_rate_limited() {
     });
 
     let tempdir = TempDir::new().expect("tempdir");
-    fs::write(
-        tempdir.path().join(".kagi.toml"),
-        "[auth]\npreferred_auth = \"api\"\n",
-    )
-    .expect("config should write");
+    write_config(tempdir.path(), "[auth]\npreferred_auth = \"api\"\n");
     let env = vec![
         ("KAGI_API_KEY", API_KEY.to_string()),
         ("KAGI_SESSION_TOKEN", "test-session".to_string()),
@@ -929,7 +939,7 @@ fn auth_set_saves_api_key_and_legacy_api_token_separately() {
     );
 
     assert_success(&output);
-    let raw = fs::read_to_string(tempdir.path().join(".kagi.toml")).expect("config should exist");
+    let raw = fs::read_to_string(config_path(tempdir.path())).expect("config should exist");
     assert!(raw.contains("api_key = \"current-key\""));
     assert!(raw.contains("api_token = \"legacy-token\""));
 }
