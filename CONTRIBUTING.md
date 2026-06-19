@@ -78,7 +78,7 @@ Pull requests will not be rejected solely because AI was used. They may be rejec
 
 ## Auth and Test Safety
 
-- Do not commit `.env`, `.kagi.toml`, session tokens, or API tokens
+- Do not commit `.env`, credential files, session tokens, or API tokens
 - Prefer unit tests and parser fixtures over live authenticated tests
 - If a change requires live verification, document the exact manual steps in the pull request
 

@@ -15,7 +15,7 @@ On a real terminal, the default setup path is:
 kagi auth
 ```
 
-The wizard lets you choose `Session Link`, `API Key`, or `Legacy API Token`, points you to the correct Kagi settings page, accepts a paste, saves into `./.kagi.toml`, and validates the selected credential immediately.
+The wizard lets you choose `Session Link`, `API Key`, or `Legacy API Token`, points you to the correct Kagi settings page, accepts a paste, saves into `~/.config/kagi-cli/config.toml`, and validates the selected credential immediately.
 
 Use `kagi auth set ...` only when you want a non-interactive or scripted flow.
 
@@ -219,10 +219,14 @@ env:
 
 ### Method 2: Configuration File
 
-The `.kagi.toml` file provides persistent configuration:
+The config file provides persistent configuration:
 
 **Location:**
-- `./.kagi.toml` in the current working directory
+- `~/.config/kagi-cli/config.toml`
+
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`.
+
+> **Migration note:** A pre-existing `./.kagi.toml` in your working directory is no longer read. Re-run `kagi auth set` (or `kagi auth`) once to re-save your credentials at the new location, or set `KAGI_CONFIG` to the old file path.
 
 **File format:**
 
@@ -260,14 +264,15 @@ kagi auth set --session-token 'https://kagi.com/search?token=SESSION_TOKEN' --ap
 
 ```bash
 # macOS/Linux
-cat > ./.kagi.toml << 'EOF'
+mkdir -p ~/.config/kagi-cli
+cat > ~/.config/kagi-cli/config.toml << 'EOF'
 [auth]
 api_token = "your_api_token"
 session_token = "https://kagi.com/search?token=your_session_token"
 EOF
 
 # Set secure permissions
-chmod 600 ./.kagi.toml
+chmod 600 ~/.config/kagi-cli/config.toml
 ```
 
 ```powershell
@@ -277,7 +282,8 @@ $content = @"
 api_token = `"your_api_token`"
 session_token = `"https://kagi.com/search?token=your_session_token`"
 "@
-$content | Out-File -FilePath ".kagi.toml" -Encoding utf8
+New-Item -ItemType Directory -Force -Path "$HOME\.config\kagi-cli" | Out-Null
+$content | Out-File -FilePath "$HOME\.config\kagi-cli\config.toml" -Encoding utf8
 ```
 
 ### Precedence Rules
@@ -286,9 +292,11 @@ Credentials are resolved in this order (first match wins):
 
 ```
 1. Environment Variables (KAGI_API_KEY, KAGI_API_TOKEN, KAGI_SESSION_TOKEN)
-2. Configuration File (`./.kagi.toml`)
+2. Configuration File (`~/.config/kagi-cli/config.toml`)
 3. Missing (error for commands requiring auth)
 ```
+
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`.
 
 This means:
 - Environment variables override config file values
@@ -300,7 +308,7 @@ This means:
 
 ```bash
 # Config file has default session token
-cat ./.kagi.toml
+cat ~/.config/kagi-cli/config.toml
 # [auth]
 # session_token = "https://kagi.com/search?token=DEFAULT_TOKEN"
 
@@ -335,7 +343,7 @@ selected: none
 api key: not configured
 legacy api token: not configured
 session token: not configured
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 Session token only:
@@ -344,7 +352,7 @@ selected: session-token (config)
 api key: not configured
 legacy api token: not configured
 session token: configured via config
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 API key and session token:
@@ -353,7 +361,7 @@ selected: api-key (env)
 api key: configured via env
 legacy api token: not configured
 session token: configured via config
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 ### Validating Credentials
@@ -497,7 +505,7 @@ kagi search "test"
 **Scenario 2: API-first mode works**
 ```bash
 export KAGI_API_KEY='valid_key'
-# .kagi.toml contains: [auth] preferred_auth = "api"
+# ~/.config/kagi-cli/config.toml contains: [auth] preferred_auth = "api"
 kagi search "test"
 # Uses Search API, returns results
 ```
@@ -506,7 +514,7 @@ kagi search "test"
 ```bash
 export KAGI_API_KEY='valid_key'
 export KAGI_SESSION_TOKEN='also_valid'
-# .kagi.toml contains: [auth] preferred_auth = "api"
+# ~/.config/kagi-cli/config.toml contains: [auth] preferred_auth = "api"
 kagi search "test"
 # Tries Search API and gets auth error
 # Falls back to session token path
@@ -527,7 +535,7 @@ kagi search "test"
 
 **DO:**
 - ✅ Use `kagi auth` for local setup so the CLI validates the credential as you save it
-- ✅ Store tokens in `./.kagi.toml` with 600 permissions
+- ✅ Store tokens in `~/.config/kagi-cli/config.toml` with 600 permissions
 - ✅ Use environment variables in CI/CD secrets
 - ✅ Use secret managers (1Password, Vault, etc.)
 - ✅ Rotate tokens periodically
@@ -742,7 +750,7 @@ $env:KAGI_SESSION_TOKEN = [System.Runtime.InteropServices.Marshal]::PtrToStringA
 
 ### Multiple Profiles
 
-For users with multiple Kagi accounts, prefer named profiles in one `.kagi.toml`:
+For users with multiple Kagi accounts, prefer named profiles in one config file (`~/.config/kagi-cli/config.toml`):
 
 ```toml
 [auth]

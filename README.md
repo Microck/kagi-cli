@@ -18,7 +18,7 @@
 
 `kagi` is a terminal CLI for Kagi that gives you command-line access to search, quick answers, ask-page, assistant, translate, summarization, public feeds through `news` and `smallweb`, paid API commands like `fastgpt` and `enrich`, and account-level settings like lenses, custom assistants, custom bangs, and redirect rules. it is built for people who want one command surface for interactive use, shell workflows, and structured JSON output.
 
-the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link`, `API Key`, or `Legacy API Token`, get the official instructions inline, paste the credential, save it to `./.kagi.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
+the main setup path is `kagi auth`. on a real terminal it opens a guided setup flow where you choose `Session Link`, `API Key`, or `Legacy API Token`, get the official instructions inline, paste the credential, save it to `~/.config/kagi-cli/config.toml`, and validate it immediately. if you also use Kagi's paid API, the same wizard can add that too.
 
 [documentation](https://kagi.micr.dev) | [npm](https://www.npmjs.com/package/kagi-cli) | [mcp](https://github.com/Microck/kagi-mcp)
 
@@ -81,7 +81,7 @@ the wizard is the default setup path. it guides you through:
 - `Session Link` from `https://kagi.com/settings/user_details`
 - `API Key` from `https://kagi.com/api/keys`
 - `Legacy API Token` from `https://kagi.com/settings/api`
-- saving into `./.kagi.toml`
+- saving into `~/.config/kagi-cli/config.toml`
 - immediate validation
 
 non-interactive alternative:
@@ -153,8 +153,8 @@ notes:
 
 - `kagi auth` is interactive on TTYs and becomes the default onboarding path
 - `kagi auth set --session-token` accepts either the raw token or the full session-link URL
-- `kagi --profile work ...` reads `[profiles.work.auth]` from `.kagi.toml`
-- environment variables override `.kagi.toml`
+- `kagi --profile work ...` reads `[profiles.work.auth]` from the config file (`~/.config/kagi-cli/config.toml`)
+- environment variables override `~/.config/kagi-cli/config.toml`
 - base `kagi search` defaults to the session-token path when both credentials are present
 - set `[auth] preferred_auth = "api"` if you want base search to prefer the API path instead
 - API-first base search falls back to the session-token path when the API key is rejected, including quota and rate-limit failures

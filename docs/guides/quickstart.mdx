@@ -90,7 +90,7 @@ selected: none
 api key: not configured
 legacy api token: not configured
 session token: not configured
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 This is expected - we'll configure credentials next.
@@ -150,7 +150,7 @@ Save the token to a config file:
 kagi auth set --session-token 'https://kagi.com/search?token=YOUR_TOKEN_HERE'
 ```
 
-This creates `./.kagi.toml` with your token. The CLI accepts either:
+This creates `~/.config/kagi-cli/config.toml` with your token. The CLI accepts either:
 - The full Session Link URL (recommended)
 - Just the raw token value
 
@@ -167,7 +167,7 @@ selected: session-token (config)
 api key: not configured
 legacy api token: not configured
 session token: configured via config
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 ### Testing Subscriber Features
@@ -306,9 +306,9 @@ See the [Auth Matrix](/reference/auth-matrix) for the complete command-to-token 
 
 Now that you've tested everything, let's create a robust configuration.
 
-### The .kagi.toml File
+### The config file
 
-Kagi uses a TOML configuration file located at `./.kagi.toml`.
+Kagi uses a TOML configuration file located at `~/.config/kagi-cli/config.toml`.
 
 **Basic configuration:**
 
@@ -322,14 +322,15 @@ session_token = "your_session_token_here"
 
 ```bash
 # Create the file
-cat > ./.kagi.toml << 'EOF'
+mkdir -p ~/.config/kagi-cli
+cat > ~/.config/kagi-cli/config.toml << 'EOF'
 [auth]
 api_token = "your_api_token_here"
 session_token = "your_session_token_here"
 EOF
 
 # Set secure permissions
-chmod 600 ./.kagi.toml
+chmod 600 ~/.config/kagi-cli/config.toml
 ```
 
 ### Configuration Precedence
@@ -337,9 +338,9 @@ chmod 600 ./.kagi.toml
 Kagi resolves credentials in this order (first match wins):
 
 1. **Environment variables** (`KAGI_API_KEY`, `KAGI_API_TOKEN`, `KAGI_SESSION_TOKEN`)
-2. **Config file** (`./.kagi.toml`)
+2. **Config file** (`~/.config/kagi-cli/config.toml`)
 
-This means you can override file configuration with environment variables for specific workflows or CI/CD.
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`. This means you can override file configuration with environment variables for specific workflows or CI/CD.
 
 ### Shell Profile Integration
 
@@ -379,7 +380,7 @@ $env:KAGI_API_TOKEN = 'your_api_token'
 
 ### Security Best Practices
 
-1. **File permissions**: Set `./.kagi.toml` to 600 (readable only by you)
+1. **File permissions**: Set `~/.config/kagi-cli/config.toml` to 600 (readable only by you)
 2. **Environment variables**: Don't commit these to version control
 3. **Token rotation**: Regenerate tokens periodically
 4. **Separate contexts**: Use different tokens for different environments (dev/staging/prod)

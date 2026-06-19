@@ -691,8 +691,9 @@ chmod 600 "$TEMP_FILE"
 #!/bin/bash
 # Prevent accidental token commits
 
-# Add to .gitignore
-echo ".kagi.toml" >> .gitignore
+# The config file now lives at ~/.config/kagi-cli/config.toml, outside your
+# repositories, so it no longer needs to be added to .gitignore.
+# Still guard against other accidental secret commits:
 echo ".env" >> .gitignore
 echo "*token*" >> .gitignore
 

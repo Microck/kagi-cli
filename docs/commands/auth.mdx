@@ -5,7 +5,7 @@ description: "Reference for the kagi auth wizard and non-interactive credential 
 
 # `kagi auth`
 
-`kagi auth` is the main onboarding path for this CLI. On a real terminal, it launches an interactive setup wizard that lets you choose `Session Link`, `API Key`, or `Legacy API Token`, shows the official Kagi settings page for that credential, accepts a paste, saves into `./.kagi.toml`, and validates the selected credential immediately.
+`kagi auth` is the main onboarding path for this CLI. On a real terminal, it launches an interactive setup wizard that lets you choose `Session Link`, `API Key`, or `Legacy API Token`, shows the official Kagi settings page for that credential, accepts a paste, saves into `~/.config/kagi-cli/config.toml`, and validates the selected credential immediately.
 
 ![Auth command demo](/images/demos/auth.gif)
 
@@ -34,7 +34,7 @@ The wizard flow is:
 4. accepts the pasted value
 5. asks before overwriting an existing config value of the same type
 6. validates the selected credential
-7. saves to `./.kagi.toml`
+7. saves to `~/.config/kagi-cli/config.toml`
 8. warns if an environment variable will still override what you saved
 
 ### Session Link Path
@@ -109,7 +109,7 @@ preferred auth for base search: session
 api key: not configured
 legacy api token: not configured
 session token: configured via config
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 precedence: env > selected profile config > default config; base search defaults to session unless preferred_auth = "api"; lens search requires session token
 ```
 
@@ -155,7 +155,7 @@ Options:
 
 Behavior:
 
-- creates `./.kagi.toml` when needed
+- creates `~/.config/kagi-cli/config.toml` when needed
 - preserves the other credential if you only set one
 - normalizes full Session Link URLs into the raw token value
 - writes the config file with restrictive permissions on Unix
@@ -166,9 +166,9 @@ The CLI resolves credentials in this order:
 
 1. `KAGI_API_KEY` / `KAGI_API_TOKEN` / `KAGI_SESSION_TOKEN`
 2. selected profile config, such as `[profiles.work.auth]`
-3. default `./.kagi.toml` `[auth]`
+3. default `~/.config/kagi-cli/config.toml` `[auth]`
 
-Environment variables override the config file. Use `--profile <NAME>` to select a named profile from `.kagi.toml`:
+The config file is resolved from `$KAGI_CONFIG` (an explicit full path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`. Environment variables override the config file. Use `--profile <NAME>` to select a named profile from the config file (`~/.config/kagi-cli/config.toml`):
 
 ```toml
 [profiles.work.auth]
@@ -220,7 +220,7 @@ kagi search --format pretty "what changed in rust 1.86?"
 ## Security Notes
 
 - `auth status` and `auth check` never print the secret values
-- `./.kagi.toml` is local plaintext config, so keep it out of version control
+- `~/.config/kagi-cli/config.toml` is local plaintext config, so keep it out of version control
 - on Unix, the CLI writes restrictive file permissions when saving the config
 - environment variables still override config and may be preferable in CI/CD
 

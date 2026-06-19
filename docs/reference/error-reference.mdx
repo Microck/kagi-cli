@@ -147,7 +147,7 @@ Error: Auth error: Kagi Search API request rejected: HTTP 400 Bad Request; Insuf
 
 **Message:**
 ```
-config path: .kagi.toml
+config path: ~/.config/kagi-cli/config.toml
 ```
 
 **Meaning:** No configuration file exists yet.
@@ -181,13 +181,13 @@ Error: Permission denied (os error 13)
 **Solution:**
 ```bash
 # Check permissions
-ls -la ./.kagi.toml
+ls -la ~/.config/kagi-cli/config.toml
 
 # Fix permissions
-chmod 600 ./.kagi.toml
+chmod 600 ~/.config/kagi-cli/config.toml
 
 # Or recreate
-rm ./.kagi.toml
+rm ~/.config/kagi-cli/config.toml
 kagi auth set --session-token 'YOUR_TOKEN'
 ```
 

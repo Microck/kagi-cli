@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- The configuration file now lives at a fixed XDG location instead of a working-directory-relative `./.kagi.toml`. It is resolved in this order: `$KAGI_CONFIG` (an explicit full file path), then `$XDG_CONFIG_HOME/kagi-cli/config.toml`, then `~/.config/kagi-cli/config.toml`. The file is still created with `0600` permissions, and the `KAGI_API_KEY`/`KAGI_API_TOKEN`/`KAGI_SESSION_TOKEN` environment variables continue to take precedence over it.
+
+  **Breaking:** credentials previously saved in a working-directory-relative `./.kagi.toml` are no longer read. Run `kagi auth set` (or `kagi auth`) once to re-save them at the new location, or point `KAGI_CONFIG` at your existing file.
+
 ## [0.10.0]
 
 ### Added

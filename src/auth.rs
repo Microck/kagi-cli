@@ -15,7 +15,12 @@ use serde::Deserialize;
 
 use crate::error::KagiError;
 
-const DEFAULT_CONFIG_PATH: &str = ".kagi.toml";
+/// Environment variable that overrides the full path to the config file.
+pub const CONFIG_PATH_ENV: &str = "KAGI_CONFIG";
+/// Directory name, under the XDG config home, that holds the config file.
+const CONFIG_DIR_NAME: &str = "kagi-cli";
+/// File name of the config file within the config directory.
+const CONFIG_FILE_NAME: &str = "config.toml";
 pub const API_KEY_ENV: &str = "KAGI_API_KEY";
 pub const API_TOKEN_ENV: &str = "KAGI_API_TOKEN";
 pub const SESSION_TOKEN_ENV: &str = "KAGI_SESSION_TOKEN";
@@ -262,6 +267,41 @@ pub struct ConfigAuthSnapshot {
     pub search_preference: SearchAuthPreference,
 }
 
+/// Resolves the path to the kagi config file.
+///
+/// Resolution order:
+/// 1. The `KAGI_CONFIG` environment variable, used verbatim as the full file
+///    path when set to a non-empty value.
+/// 2. `$XDG_CONFIG_HOME/kagi-cli/config.toml`.
+/// 3. `$HOME/.config/kagi-cli/config.toml` when `XDG_CONFIG_HOME` is unset.
+pub fn default_config_path() -> PathBuf {
+    if let Some(path) = env::var_os(CONFIG_PATH_ENV)
+        .map(PathBuf::from)
+        .filter(|value| !value.as_os_str().is_empty())
+    {
+        return path;
+    }
+
+    xdg_config_home()
+        .join(CONFIG_DIR_NAME)
+        .join(CONFIG_FILE_NAME)
+}
+
+fn xdg_config_home() -> PathBuf {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| home_dir().join(".config"))
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 /// Loads the credential inventory from the default config path and environment variables.
 ///
 /// # Returns
@@ -282,7 +322,7 @@ pub fn load_credential_inventory() -> Result<CredentialInventory, KagiError> {
 pub fn load_credential_inventory_for_profile(
     profile: Option<&str>,
 ) -> Result<CredentialInventory, KagiError> {
-    load_credential_inventory_from_path(Path::new(DEFAULT_CONFIG_PATH), profile)
+    load_credential_inventory_from_path(&default_config_path(), profile)
 }
 
 fn load_credential_inventory_from_path(
@@ -388,7 +428,7 @@ pub fn format_status(inventory: &CredentialInventory) -> String {
 /// # Errors
 /// Returns `KagiError::Config` if the config file cannot be read or parsed.
 pub fn load_config_auth_snapshot() -> Result<ConfigAuthSnapshot, KagiError> {
-    load_config_auth_snapshot_from_path(Path::new(DEFAULT_CONFIG_PATH))
+    load_config_auth_snapshot_from_path(&default_config_path())
 }
 
 fn load_config_auth_snapshot_from_path(
@@ -464,7 +504,7 @@ fn select_auth_config<'a>(
         .and_then(|profiles| profiles.get(profile))
         .ok_or_else(|| {
             KagiError::Config(format!(
-                "profile `{profile}` was not found in .kagi.toml. Run `kagi auth status --profile {profile}` to confirm the name, or add [profiles.{profile}.auth]"
+                "profile `{profile}` was not found in the kagi config file. Run `kagi auth status --profile {profile}` to confirm the name, or add [profiles.{profile}.auth]"
             ))
         })?;
 
@@ -593,7 +633,7 @@ fn save_credentials_with_preference_for_profile(
     preferred_auth: Option<SearchAuthPreference>,
 ) -> Result<CredentialInventory, KagiError> {
     save_credentials_with_preference_to_path(
-        Path::new(DEFAULT_CONFIG_PATH),
+        &default_config_path(),
         profile,
         api_key,
         api_token,
@@ -733,6 +773,14 @@ fn read_config_file(path: &Path) -> Result<ConfigFile, KagiError> {
 
 fn write_config_file_atomically(path: &Path, raw: &str) -> Result<(), KagiError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    if !parent.as_os_str().is_empty() {
+        fs::create_dir_all(parent).map_err(|error| {
+            KagiError::Config(format!(
+                "failed to create config directory {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
     let file_name = path
         .file_name()
         .map(|value| value.to_string_lossy().into_owned())
@@ -921,7 +969,7 @@ mod tests {
             api_token: None,
             session_token: None,
             search_preference: SearchAuthPreference::Session,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -943,7 +991,7 @@ mod tests {
             api_token: None,
             session_token: None,
             search_preference: SearchAuthPreference::Session,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -969,7 +1017,7 @@ mod tests {
                 value: "session".to_string(),
             }),
             search_preference: SearchAuthPreference::Session,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -995,7 +1043,7 @@ mod tests {
                 value: "session".to_string(),
             }),
             search_preference: SearchAuthPreference::Session,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -1020,7 +1068,7 @@ mod tests {
                 value: "session".to_string(),
             }),
             search_preference: SearchAuthPreference::Api,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -1041,7 +1089,7 @@ mod tests {
             }),
             session_token: None,
             search_preference: SearchAuthPreference::Api,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -1085,7 +1133,7 @@ mod tests {
             }),
             session_token: None,
             search_preference: SearchAuthPreference::Session,
-            config_path: PathBuf::from(DEFAULT_CONFIG_PATH),
+            config_path: default_config_path(),
             profile: None,
         };
 
@@ -1240,5 +1288,42 @@ mod tests {
                 & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn config_path_prefers_explicit_override() {
+        let _guard = lock_env();
+        let _override = set_env_var(CONFIG_PATH_ENV, "/tmp/custom/kagi-config.toml");
+
+        assert_eq!(
+            default_config_path(),
+            PathBuf::from("/tmp/custom/kagi-config.toml")
+        );
+    }
+
+    #[test]
+    fn config_path_uses_xdg_config_home_when_no_override() {
+        let _guard = lock_env();
+        let _override = set_env_var(CONFIG_PATH_ENV, "");
+        let _xdg = set_env_var("XDG_CONFIG_HOME", "/tmp/xdg-config");
+
+        let expected = PathBuf::from("/tmp/xdg-config")
+            .join("kagi-cli")
+            .join("config.toml");
+        assert_eq!(default_config_path(), expected);
+    }
+
+    #[test]
+    fn config_path_falls_back_to_home_config_dir() {
+        let _guard = lock_env();
+        let _override = set_env_var(CONFIG_PATH_ENV, "");
+        let _xdg = set_env_var("XDG_CONFIG_HOME", "");
+        let _home = set_env_var("HOME", "/home/tester");
+
+        let expected = PathBuf::from("/home/tester")
+            .join(".config")
+            .join("kagi-cli")
+            .join("config.toml");
+        assert_eq!(default_config_path(), expected);
     }
 }
