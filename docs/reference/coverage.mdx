@@ -16,7 +16,7 @@ These endpoints come from Kagi's current OpenAPI contract at `https://kagi.com/a
 | Endpoint | Command | Status |
 |----------|---------|--------|
 | Search API (`POST /api/v1/search`) | `kagi search` | ✅ Implemented for query, limit, and `filters.region/after/before` |
-| Extract API | `kagi extract` | ✅ Implemented |
+| Extract API | `kagi extract` | ✅ Implemented, including stdin URL filter mode |
 
 Current V1 Search optional fields not exposed by this CLI: `workflow`, API response `format`, `lens_id`, inline `lens`, `timeout`, `page`, search-result `extract`, `safe_search`, and explicit personalization rule objects. Subscriber web-product features cover some adjacent workflows, but they are not represented as V1 OpenAPI request fields.
 
@@ -39,12 +39,12 @@ These features use the subscriber web product with `KAGI_SESSION_TOKEN`:
 |---------|---------|--------|
 | Base search | `kagi search` | ✅ Implemented |
 | Snap-prefixed search | `kagi search --snap` | ✅ Implemented |
-| Lens search | `kagi search --lens` | ✅ Implemented |
+| Lens search | `kagi search --lens` | ✅ Implemented for numeric indexes and exact enabled lens names |
 | Filtered search | `kagi search --region/--from-date/--to-date` on V1 API or session path; `--time/--order/...` on session path | ✅ Implemented |
 | Quick Answer | `kagi quick` | ✅ Implemented |
 | Web Summarizer | `kagi summarize --subscriber` | ✅ Implemented |
 | Search result summarize pipeline | `kagi search --follow` | ✅ Implemented |
-| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented |
+| Assistant prompt + thread management | `kagi assistant` | ✅ Implemented, including prompt contracts |
 | Assistant terminal REPL | `kagi assistant repl` | ✅ Implemented |
 | Custom assistant management | `kagi assistant custom` | ✅ Implemented |
 | Ask questions about a page | `kagi ask-page` | ✅ Implemented |
@@ -71,7 +71,7 @@ These require no authentication:
 |---------|-------------|------|--------|
 | `search` | Base Kagi search | API or Session | ✅ |
 | `search --snap` | Snap-prefixed search | API or Session | ✅ |
-| `search --lens` | Lens-aware search | Session | ✅ |
+| `search --lens` | Lens-aware search by numeric index or exact enabled name | Session | ✅ |
 | `search` with filters | Region, time, date, order, verbatim, personalization filters | Session | ✅ |
 | `search --template` | Lightweight result templates | API or Session | ✅ |
 | `search --follow` | Search plus subscriber summaries for top results | Session | ✅ |
@@ -83,7 +83,7 @@ These require no authentication:
 | `summarize` | Public API summarizer | API | ✅ |
 | `summarize --subscriber` | Web summarizer | Session | ✅ |
 | `summarize --filter` | Summarize stdin items as URLs or text | API or Session | ✅ |
-| `extract` | Extract page content as markdown | API | ✅ |
+| `extract` | Extract page content as markdown or stdin URL JSONL records | API | ✅ |
 | `watch` | Search diff monitoring | API or Session | ✅ |
 | `notify` | Webhook notifications for search/news | API, Session, or None | ✅ |
 | `history` | Local history and stats | None | ✅ |
@@ -130,12 +130,14 @@ These require no authentication:
 | `--personalized` / `--no-personalized` | search, batch, assistant | ✅ |
 | `--template` | search, batch | ✅ |
 | `--local-cache` / `--cache-ttl` | search, summarize, quick, fastgpt | ✅ |
+| `--error-format` | global | Implemented |
 
 ### Assistant and Settings Options
 
 | Option | Commands | Status |
 |--------|----------|--------|
 | `--assistant` | assistant | ✅ |
+| `--contract` / `--contract-file` | assistant | Implemented |
 | `--thread-id` | assistant | ✅ |
 | `--model` | assistant, assistant custom | ✅ |
 | `--lens` | assistant, assistant custom | ✅ |
@@ -143,6 +145,7 @@ These require no authentication:
 | `thread list/get/delete/export` | assistant | ✅ |
 | `custom list/get/create/update/delete` | assistant | ✅ |
 | `repl` | assistant | ✅ |
+| `--filter` | extract | Implemented |
 | `list/get/create/update/delete` | lens | ✅ |
 | `enable` / `disable` | lens, redirect | ✅ |
 | `custom list/get/create/update/delete` | bang | ✅ |

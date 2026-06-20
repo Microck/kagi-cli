@@ -1,0 +1,29 @@
+
+# domain
+- a Contract is a prompt-mode output shape that the assistant command asks Kagi Assistant to return as JSON and validates before printing
+- an ErrorEnvelope is an opt-in JSON stderr object for command failures with stable code, category, retryable, message, and suggested_commands fields
+
+# cli
+
+## assistant
+- label: kagi assistant --contract decision validates the final assistant reply as a JSON object containing decision, rationale, and next_actions before printing it
+  command: cargo test --test integration-cli assistant_contract_decision_prints_validated_json -- --exact
+  tags: [implemented]
+- label: kagi assistant --contract-file accepts a small JSON contract file with required top-level string keys and rejects assistant replies that do not satisfy it
+  command: cargo test --test integration-cli assistant_contract_file_rejects_missing_required_key -- --exact
+  tags: [implemented]
+
+## errors
+- label: runtime command failures can opt into JSON stderr with --error-format json or KAGI_ERROR_FORMAT=json
+  command: cargo test --test integration-cli json_error_format_prints_structured_stderr -- --exact
+  tags: [implemented]
+
+## search
+- label: kagi search --lens accepts an enabled lens exact name, resolves it through the authenticated lens settings page, and sends the current numeric lens position to search
+  command: cargo test --test integration-cli search_lens_name_resolves_to_current_position -- --exact
+  tags: [implemented]
+
+## extract
+- label: kagi extract --filter reads HTTPS URLs from stdin and writes one compact JSONL record per input in order, including per-item errors without corrupting stdout
+  command: cargo test --test integration-cli extract_filter_prints_ordered_jsonl_records -- --exact
+  tags: [implemented]

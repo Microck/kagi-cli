@@ -93,13 +93,16 @@ kagi search --snap reddit "rust async runtime"
 kagi search --snap @map "coffee near london bridge"
 ```
 
-### `--lens <INDEX>`
+### `--lens <INDEX_OR_NAME>`
 
-Scope search to one of your enabled Kagi lenses.
+Scope search to one of your enabled Kagi lenses. Numeric values keep the existing index behavior. Non-numeric values are matched against enabled lens names exactly at runtime, then resolved to the current account-specific numeric position before search.
 
 ```bash
 kagi search --lens 2 "developer documentation"
+kagi search --lens "Rust Docs" "borrow checker examples"
 ```
+
+If a name is missing, disabled, or duplicated, the command fails before search and points you to `kagi lens list` or the numeric index path. Numeric-looking names are treated as numeric indexes.
 
 ### `--region <REGION>`
 
@@ -361,7 +364,10 @@ kagi search --format markdown "rust ownership"
 - `this search option requires KAGI_SESSION_TOKEN` - you used a web-product-only search option without a session token
 - `search --time cannot be combined with --from-date or --to-date` - choose a preset window or a custom date range
 - `search --from-date must use YYYY-MM-DD format` - dates must be zero-padded ISO dates
-- `lens 'foo' must be a numeric index` - lens values are numeric Kagi lens indices
+- `lens named 'foo' was not found` - named lens search matches enabled lens names exactly. Run `kagi lens list`
+- `lens name 'foo' is ambiguous` - multiple lenses have that exact name. Use the numeric index
+- `lens named 'foo' is disabled` - enable it with `kagi lens enable <ID_OR_NAME>` or choose an enabled lens
+- `lens 'foo' must be a numeric index` - internal numeric validation still applies after named lenses are resolved
 
 ## Related Commands
 

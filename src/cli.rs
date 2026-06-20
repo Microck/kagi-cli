@@ -33,6 +33,15 @@ pub enum AssistantThreadExportFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// Output format for runtime command failures.
+pub enum ErrorOutputFormat {
+    /// Existing human-readable stderr errors.
+    Text,
+    /// Stable JSON object on stderr for automation.
+    Json,
+}
+
 /// Output format options for search results
 #[derive(Debug, Clone, ValueEnum)]
 /// Output format for search results.
@@ -243,6 +252,10 @@ pub struct Cli {
     /// Use a named profile from the kagi config file instead of the default auth block
     #[arg(long, global = true, value_name = "NAME")]
     pub profile: Option<String>,
+
+    /// Runtime error output format
+    #[arg(long, global = true, value_name = "FORMAT", value_enum)]
+    pub error_format: Option<ErrorOutputFormat>,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -751,12 +764,36 @@ impl SummarizeArgs {
 /// Arguments for the `extract` subcommand.
 pub struct ExtractArgs {
     /// HTTPS URL of the page to extract as markdown
-    #[arg(value_name = "URL")]
-    pub url: String,
+    #[arg(value_name = "URL", required_unless_present = "filter")]
+    pub url: Option<String>,
+
+    /// Read one HTTPS URL per stdin line and print one compact JSON record per input
+    #[arg(long, conflicts_with = "url")]
+    pub filter: bool,
 
     /// Output format
     #[arg(long, value_name = "FORMAT", default_value_t = ExtractOutputFormat::Markdown)]
     pub format: ExtractOutputFormat,
+}
+
+impl ExtractArgs {
+    /// Validates extract arguments.
+    ///
+    /// # Errors
+    /// Returns an error when neither a URL nor `--filter` is provided.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.filter {
+            return Ok(());
+        }
+
+        if self.url.as_deref().map(str::trim).is_none_or(str::is_empty) {
+            return Err(
+                "extract requires a URL, or use --filter to read URLs from stdin".to_string(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Args)]
@@ -889,6 +926,14 @@ pub struct AssistantArgs {
     /// Output format for assistant prompt mode
     #[arg(long, value_name = "FORMAT", default_value_t = AssistantOutputFormat::Json)]
     pub format: AssistantOutputFormat,
+
+    /// Validate the final assistant reply against a built-in JSON contract
+    #[arg(long, value_name = "NAME", conflicts_with_all = ["contract_file", "stream"])]
+    pub contract: Option<String>,
+
+    /// Validate the final assistant reply against a small JSON contract file
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["contract", "stream"])]
+    pub contract_file: Option<PathBuf>,
 
     /// Stream prompt updates as text deltas or newline-delimited JSON
     #[arg(long, conflicts_with = "export")]

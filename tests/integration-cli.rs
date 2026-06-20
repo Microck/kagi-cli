@@ -22,6 +22,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
+        "KAGI_ERROR_FORMAT",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -55,6 +56,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
+        "KAGI_ERROR_FORMAT",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -154,6 +156,56 @@ fn default_failure_stderr_has_single_user_facing_error() {
         1,
         "expected one user-facing missing credentials error, got:\n{stderr}"
     );
+}
+
+#[test]
+fn json_error_format_prints_structured_stderr() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &["--error-format", "json", "search", "rust"],
+        &[],
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "expected search without auth to fail"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "expected no stdout, got:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let envelope: Value =
+        serde_json::from_slice(&output.stderr).expect("stderr should be a JSON error envelope");
+    assert_eq!(envelope["code"], "missing_credentials");
+    assert_eq!(envelope["category"], "configuration");
+    assert_eq!(envelope["retryable"], false);
+    assert_eq!(
+        envelope["required_auth"],
+        "KAGI_API_KEY or KAGI_SESSION_TOKEN"
+    );
+    assert!(
+        envelope["suggested_commands"]
+            .as_array()
+            .expect("suggested_commands should be an array")
+            .iter()
+            .any(|command| command == "kagi auth status")
+    );
+
+    let env_tempdir = TempDir::new().expect("tempdir");
+    let env_output = run_kagi(
+        &["search", "rust"],
+        &[("KAGI_ERROR_FORMAT", "json")],
+        env_tempdir.path(),
+    );
+    assert!(
+        !env_output.status.success(),
+        "expected search without auth to fail"
+    );
+    let env_envelope: Value = serde_json::from_slice(&env_output.stderr)
+        .expect("env-selected stderr should be a JSON error envelope");
+    assert_eq!(env_envelope["code"], "missing_credentials");
 }
 
 #[test]
@@ -358,6 +410,31 @@ fn assistant_list_html() -> &'static str {
     "#
 }
 
+fn assistant_prompt_stream_body(markdown: &str) -> String {
+    let hello = json!({ "v": "test", "trace": "trace-contract" });
+    let thread = json!({
+        "id": "thread-contract",
+        "title": "Contract",
+        "ack": "2026-06-07T00:00:00Z",
+        "created_at": "2026-06-07T00:00:00Z",
+        "saved": false,
+        "shared": false,
+        "branch_id": "00000000-0000-4000-0000-000000000000",
+        "folder_ids": []
+    });
+    let message = json!({
+        "id": "msg-contract",
+        "thread_id": "thread-contract",
+        "created_at": "2026-06-07T00:00:00Z",
+        "state": "done",
+        "prompt": "contract prompt",
+        "md": markdown,
+        "documents": []
+    });
+
+    format!("hi:{hello}\0\nthread.json:{thread}\0\nnew_message.json:{message}\0\n")
+}
+
 fn search_payload(title: &str, url: &str, snippet: &str) -> Value {
     json!({
         "meta": api_meta(),
@@ -381,6 +458,19 @@ fn search_html_fixture() -> &'static str {
         <div class="__sri-desc">Served by session fallback.</div>
       </div>
     </body></html>
+    "#
+}
+
+fn lens_settings_html_fixture() -> &'static str {
+    r#"
+    <form class="__lens_item" action="/lenses/move" method="POST">
+      <input type="hidden" name="lens_id" value="22524">
+      <input type="hidden" name="active_index" value="2">
+      <a class="lens_title" href="/settings/update_lens?id=22524"><div>Rust Docs</div></a>
+      <div class="lens_edit_lens">
+        <a aria-label="Edit lens" href="/settings/update_lens?id=22524">Edit</a>
+      </div>
+    </form>
     "#
 }
 
@@ -720,6 +810,50 @@ fn search_command_falls_back_to_session_when_api_is_rate_limited() {
     assert_success(&output);
     api_search.assert_calls(1);
     session_search.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["data"][0]["title"], "Session Result");
+}
+
+#[test]
+fn search_lens_name_resolves_to_current_position() {
+    let server = MockServer::start();
+    let lenses = server.mock(|when, then| {
+        when.method(GET)
+            .path("/html/settings/lenses")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(lens_settings_html_fixture());
+    });
+    let search = server.mock(|when, then| {
+        when.method(GET)
+            .path("/html/search")
+            .query_param("q", "rust ownership")
+            .query_param("l", "2")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(search_html_fixture());
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "search",
+            "rust ownership",
+            "--lens",
+            "Rust Docs",
+            "--format",
+            "json",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    lenses.assert_calls(1);
+    search.assert_calls(1);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["data"][0]["title"], "Session Result");
 }
@@ -1114,6 +1248,71 @@ fn extract_command_requires_api_key_with_session_only_auth() {
     );
 }
 
+#[test]
+fn extract_filter_prints_ordered_jsonl_records() {
+    let server = MockServer::start();
+    let extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header("authorization", "Bearer test-api-key")
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/one"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/one",
+                        "markdown": "# One"
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi_with_stdin(
+        &["extract", "--filter"],
+        "https://example.com/one\nhttp://example.com/two\n",
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "expected nonzero exit when one filter item fails"
+    );
+    extract.assert_calls(1);
+    let records = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("JSONL record should parse"))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["url"], "https://example.com/one");
+    assert_eq!(records[0]["ok"], true);
+    assert_eq!(records[0]["response"]["data"][0]["markdown"], "# One");
+    assert_eq!(records[1]["url"], "http://example.com/two");
+    assert_eq!(records[1]["ok"], false);
+    assert_eq!(records[1]["error"]["code"], "configuration_error");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("extract --filter completed with 1 failed item"),
+        "expected aggregate failure on stderr, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn news_search_html_fixture() -> &'static str {
     r#"<html><body>
         <div class="newsResultItem _0_SRI">
@@ -1470,6 +1669,104 @@ fn assistant_stream_can_print_ndjson_updates() {
     assert_eq!(lines[0]["md_delta"], "Hel");
     assert_eq!(lines[1]["md_delta"], "lo");
     assert_eq!(lines[1]["message"]["state"], "done");
+}
+
+#[test]
+fn assistant_contract_decision_prints_validated_json() {
+    let server = MockServer::start();
+    let prompt = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/prompt")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json")
+            .body_includes("Assistant contract")
+            .body_includes("decision")
+            .body_includes("next_actions");
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(assistant_prompt_stream_body(
+                r#"{"decision":"ship","rationale":"tests pass","next_actions":["open PR"]}"#,
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &["assistant", "--contract", "decision", "Should I ship?"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    prompt.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["decision"], "ship");
+    assert_eq!(body["rationale"], "tests pass");
+    assert_eq!(body["next_actions"], json!(["open PR"]));
+    assert!(
+        body.get("message").is_none(),
+        "contract mode should print the contract JSON only"
+    );
+}
+
+#[test]
+fn assistant_contract_file_rejects_missing_required_key() {
+    let server = MockServer::start();
+    let prompt = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/prompt")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json")
+            .body_includes("Assistant contract")
+            .body_includes("verdict");
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(assistant_prompt_stream_body(r#"{"summary":"not enough"}"#));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let contract_path = tempdir.path().join("verdict-contract.json");
+    fs::write(
+        &contract_path,
+        r#"{
+          "type": "object",
+          "required": ["summary", "verdict"],
+          "properties": {
+            "summary": { "type": "string" },
+            "verdict": { "type": "string" }
+          }
+        }"#,
+    )
+    .expect("contract file should write");
+    let env = session_env(&server);
+    let contract_path_string = contract_path.to_string_lossy().to_string();
+    let output = run_kagi(
+        &[
+            "assistant",
+            "--contract-file",
+            &contract_path_string,
+            "Summarize the release state",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "expected invalid contract output to fail"
+    );
+    prompt.assert_calls(2);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("assistant contract"),
+        "expected contract error, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("missing required key 'verdict'"),
+        "expected missing key detail, got:\n{stderr}"
+    );
 }
 
 #[test]
