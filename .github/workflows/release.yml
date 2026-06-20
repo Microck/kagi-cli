@@ -217,6 +217,7 @@ jobs:
 
           if [ -z "${MINTLIFY_DEPLOY_COOKIE:-}" ]; then
             echo "MINTLIFY_DEPLOY_COOKIE is not configured; skipping Mintlify deployment trigger."
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -227,6 +228,7 @@ jobs:
             -H "referer: https://app.mintlify.com/kagi-cli/kagi-cli" \
             -H "cookie: ${MINTLIFY_DEPLOY_COOKIE}" \
             https://app.mintlify.com/api/deployment/update/kagi-cli
+          echo "status=triggered" >> "$GITHUB_OUTPUT"
 
       - name: Sync Homebrew tap and Scoop bucket
         id: sync_package_indexes
@@ -238,6 +240,7 @@ jobs:
 
           if [ -z "${REPO_SYNC_TOKEN:-}" ]; then
             echo "REPO_SYNC_TOKEN is not configured; skipping Homebrew/Scoop sync."
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -373,6 +376,7 @@ jobs:
             git -C "$BUCKET_DIR" commit -m "chore: update kagi manifest for ${RELEASE_TAG}"
             push_with_token "$BUCKET_DIR"
           fi
+          echo "status=synced" >> "$GITHUB_OUTPUT"
 
       - name: Sync AUR package
         id: sync_aur_package
@@ -384,6 +388,7 @@ jobs:
 
           if [ -z "${AUR_SSH_PRIVATE_KEY:-}" ]; then
             echo "AUR_SSH_PRIVATE_KEY is not configured; skipping AUR sync."
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -505,18 +510,19 @@ jobs:
             git -C "$AUR_DIR" commit -m "chore: update kagi-cli for ${RELEASE_TAG}"
             git -C "$AUR_DIR" push origin master
           fi
+          echo "status=synced" >> "$GITHUB_OUTPUT"
 
       - name: Report package index sync warning
-        if: steps.sync_package_indexes.outcome == 'failure'
+        if: steps.sync_package_indexes.outcome == 'failure' || steps.sync_package_indexes.outputs.status == 'skipped'
         run: |
-          echo "::warning title=Package index sync failed::GitHub release assets were published, but Homebrew/Scoop sync did not complete. Check the release job logs."
+          echo "::warning title=Package index sync incomplete::GitHub release assets were published, but Homebrew/Scoop sync did not complete. Configure REPO_SYNC_TOKEN or update the package indexes manually."
 
       - name: Report AUR package sync warning
-        if: steps.sync_aur_package.outcome == 'failure'
+        if: steps.sync_aur_package.outcome == 'failure' || steps.sync_aur_package.outputs.status == 'skipped'
         run: |
-          echo "::warning title=AUR package sync failed::GitHub release assets were published, but the AUR package was not updated. Check the release job logs."
+          echo "::warning title=AUR package sync incomplete::GitHub release assets were published, but the AUR package was not updated. Configure AUR_SSH_PRIVATE_KEY or update the AUR package manually."
 
       - name: Report Mintlify deployment warning
-        if: steps.trigger_mintlify_docs.outcome == 'failure'
+        if: steps.trigger_mintlify_docs.outcome == 'failure' || steps.trigger_mintlify_docs.outputs.status == 'skipped'
         run: |
-          echo "::warning title=Mintlify deployment trigger failed::GitHub release assets were published, but the private Mintlify deployment endpoint did not accept the configured cookie. Rotate MINTLIFY_DEPLOY_COOKIE or trigger the deployment from the Mintlify dashboard."
+          echo "::warning title=Mintlify deployment incomplete::GitHub release assets were published, but docs deployment was not confirmed. Configure or rotate MINTLIFY_DEPLOY_COOKIE, or trigger the deployment from the Mintlify dashboard."

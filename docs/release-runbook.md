@@ -17,6 +17,7 @@ Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebr
    - `REPO_SYNC_TOKEN` GitHub Actions secret for `Microck/homebrew-kagi` and `Microck/scoop-kagi`
    - `AUR_SSH_PRIVATE_KEY` GitHub Actions secret for `ssh://aur@aur.archlinux.org/kagi-cli.git`
    - `MINTLIFY_DEPLOY_COOKIE` GitHub Actions secret for the private Mintlify deployment trigger
+   Missing or stale optional sync credentials do not block GitHub release asset publication, but the release workflow emits explicit warnings and the affected channel must be recovered manually.
 5. Confirm `CHANGELOG.md` has a complete user-facing entry ready to publish. The release workflow extracts notes from the `## [X.Y.Z]` section, so the heading must exist before the tag is pushed.
 
 ## Update release metadata
@@ -72,6 +73,7 @@ git push origin vX.Y.Z
 - calls Mintlify's private deployment update endpoint when `MINTLIFY_DEPLOY_COOKIE` is configured
 - syncs `Microck/homebrew-kagi` and `Microck/scoop-kagi`
 - syncs the `kagi-cli` AUR package when `AUR_SSH_PRIVATE_KEY` is configured
+- warns when optional package-index, AUR, or Mintlify sync work is skipped or fails after GitHub release publication
 
 `.github/workflows/npm-publish.yml` runs after a successful `Release` workflow and publishes `npm/package.json` to npm when `NPM_PUBLISH_ENABLED=true`.
 
@@ -103,7 +105,7 @@ Verify all public release surfaces after the workflows finish:
 7. Mintlify docs
    - confirm `https://kagi.micr.dev` reflects the committed docs changes from `docs/`
    - if the site still shows old content, inspect the `Trigger Mintlify docs deployment` release step
-   - if Mintlify rejected the private deployment trigger, rotate `MINTLIFY_DEPLOY_COOKIE` or trigger the deployment from the Mintlify dashboard
+   - if Mintlify rejected the private deployment trigger or the release emitted a Mintlify warning, rotate `MINTLIFY_DEPLOY_COOKIE` or trigger the deployment from the Mintlify dashboard
    - verify the changed command, guide, or reference pages render correctly
 8. Installers and scripts
    - `scripts/install.sh` and `scripts/install.ps1` resolve the latest GitHub release dynamically, so they need no per-release version bump
@@ -175,6 +177,8 @@ Mintlify docs are source-controlled under `docs/`. Automatic GitHub App deployme
 Configure `MINTLIFY_DEPLOY_COOKIE` as a GitHub Actions secret containing the complete `Cookie` header value from an authenticated Mintlify dashboard session that can deploy `kagi-cli`. Do not commit this value, paste it into logs, or store it in repo files.
 
 This uses a private dashboard endpoint, not a stable public API. If the cookie expires, Mintlify changes the endpoint, or Cloudflare rejects the request, the release workflow emits a warning and continues. Rotate the secret or trigger the deployment from the Mintlify dashboard.
+
+The public docs site can still return HTTP 200 while serving an old deployment. Compare visible docs content or response metadata such as `last-modified` against the release changes before treating Mintlify as complete.
 
 ### Cargo
 

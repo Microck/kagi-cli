@@ -7,6 +7,23 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.12.0]
+
+### Added
+
+- `kagi assistant` now supports built-in and file-backed JSON contracts for prompt responses, validates the final Assistant output before printing it, and makes one repair attempt when the model returns invalid JSON.
+- CLI failures can opt into structured JSON error envelopes with `--error-format json` or `KAGI_ERROR_FORMAT=json`.
+- `kagi search --lens` now accepts exact enabled lens names as well as numeric lens positions.
+- `kagi extract --filter` now reads HTTPS URLs from stdin and emits ordered JSONL records for pipeline-friendly batch extraction.
+
+### Changed
+
+- Release automation now emits explicit warnings when optional Homebrew, Scoop, AUR, or Mintlify sync credentials are missing or stale.
+
+### Fixed
+
+- Updated `quinn-proto` to clear the current RustSec `cargo audit` gate.
+
 ## [0.11.0]
 
 ### Changed
