@@ -11,7 +11,7 @@ This page documents the current CLI output behavior as implemented in the repo.
 
 1. Most commands print pretty-formatted JSON to stdout on success.
 2. `kagi search`, `kagi batch`, `kagi quick`, and `kagi assistant` support alternate output via format flags, including `toon` for token-efficient structured context.
-3. Errors are plain text on stderr and exit with status code `1`.
+3. Errors are plain text on stderr and exit with status code `1` by default. Use global `--error-format json` or `KAGI_ERROR_FORMAT=json` for a structured stderr envelope.
 4. Output shapes differ by command. There is no single universal response envelope.
 
 ## Success Shapes
@@ -119,6 +119,34 @@ Subscriber mode:
 }
 ```
 
+### `kagi extract`
+
+Single-URL extract prints markdown by default, or the full Extract API envelope with `--format json`:
+
+```json
+{
+  "meta": {
+    "trace": "trace-1",
+    "node": "test",
+    "ms": 12
+  },
+  "data": [
+    {
+      "url": "https://example.com/article",
+      "markdown": "# Article\n\nExtracted content.",
+      "links": []
+    }
+  ]
+}
+```
+
+`kagi extract --filter` prints compact JSONL, one record per stdin URL:
+
+```jsonl
+{"url":"https://example.com/article","ok":true,"response":{"meta":{"trace":"trace-1","node":"test","ms":12},"data":[{"url":"https://example.com/article","markdown":"# Article","links":[]}]}}
+{"url":"http://example.com/bad","ok":false,"error":{"code":"configuration_error","category":"configuration","retryable":false,"message":"configuration error: extract URL must use the https scheme","suggested_commands":[],"docs_url":"https://kagi.micr.dev/reference/error-reference"}}
+```
+
 ### `kagi news`
 
 ```json
@@ -165,6 +193,16 @@ Subscriber mode:
 ```
 
 `kagi assistant --stream` writes incremental markdown deltas to stdout and flushes after each update. `kagi assistant --stream --stream-output json` writes the same stream as newline-delimited compact JSON events with an `md_delta` field plus the current `meta`, `thread`, and `message` snapshot.
+
+`kagi assistant --contract <NAME>` and `kagi assistant --contract-file <PATH>` print only the validated contract JSON. Contract mode supports `--format json` and `--format compact`.
+
+```json
+{
+  "decision": "ship",
+  "rationale": "tests pass",
+  "next_actions": ["open PR"]
+}
+```
 
 ### `kagi assistant custom`
 
@@ -436,6 +474,20 @@ Errors are plain text on stderr. Typical examples:
 configuration error: missing credentials: search was not sent. Set KAGI_API_KEY or KAGI_SESSION_TOKEN, or run `kagi auth set --api-key <key>` or `kagi auth set --session-token <token>`
 Auth error: invalid or expired Kagi session token
 Network error: request to Kagi timed out
+```
+
+Opt into JSON errors with global `--error-format json` or `KAGI_ERROR_FORMAT=json`. The envelope is compact JSON on stderr:
+
+```json
+{
+  "code": "missing_credentials",
+  "category": "configuration",
+  "retryable": false,
+  "message": "configuration error: missing credentials: search was not sent...",
+  "required_auth": "KAGI_API_KEY or KAGI_SESSION_TOKEN",
+  "suggested_commands": ["kagi auth status", "kagi auth set --api-key <key>", "kagi auth set --session-token <token>"],
+  "docs_url": "https://kagi.micr.dev/reference/error-reference"
+}
 ```
 
 ## jq Examples

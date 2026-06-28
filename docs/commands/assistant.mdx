@@ -14,6 +14,8 @@ Prompt Kagi Assistant, continue an existing thread, use a saved assistant profil
 ```bash
 kagi assistant [OPTIONS] <QUERY>
 kagi assistant --stream [--stream-output text|json] <QUERY>
+kagi assistant --contract decision <QUERY>
+kagi assistant --contract-file ./contract.json <QUERY>
 kagi assistant thread list
 kagi assistant thread get <THREAD_ID>
 kagi assistant thread delete <THREAD_ID>
@@ -75,6 +77,39 @@ Possible values:
 kagi assistant --format pretty "What changed in Rust 1.86?"
 kagi assistant --format markdown "Write a release summary"
 ```
+
+#### `--contract <NAME>`
+
+Ask Assistant to return only JSON that satisfies a built-in contract, then validate the final reply before printing it. Contract mode supports `--format json` and `--format compact`.
+
+Supported built-ins:
+
+- `decision` - requires `decision`, `rationale`, and `next_actions`
+- `checklist` - requires `items`
+- `plan` - requires `steps`
+
+```bash
+kagi assistant --contract decision "Should we ship this release?"
+```
+
+If the first reply is invalid, the CLI sends one repair prompt in the same thread. If the repaired reply still fails validation, the command exits with a contract error.
+
+#### `--contract-file <PATH>`
+
+Load a small JSON contract file. The supported subset is a top-level object with `required` and optional `properties.<key>.type` fields:
+
+```json
+{
+  "type": "object",
+  "required": ["summary", "verdict"],
+  "properties": {
+    "summary": { "type": "string" },
+    "verdict": { "type": "string" }
+  }
+}
+```
+
+Required entries default to `string` when `properties` does not specify a type. Supported types are `string`, `number`, `integer`, `boolean`, `object`, and `array`.
 
 #### `--no-color`
 
@@ -286,6 +321,16 @@ Prompt mode returns:
     },
     "trace_id": "trace-message-1"
   }
+}
+```
+
+Contract mode returns only the validated contract JSON, not the normal Assistant envelope:
+
+```json
+{
+  "decision": "ship",
+  "rationale": "tests pass",
+  "next_actions": ["open PR"]
 }
 ```
 

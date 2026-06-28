@@ -11,6 +11,7 @@ Extract the readable content of a web page as markdown using Kagi's Extract API.
 
 ```bash
 kagi extract <URL> [--format markdown|json|compact]
+kagi extract --filter
 ```
 
 ## Description
@@ -18,6 +19,8 @@ kagi extract <URL> [--format markdown|json|compact]
 The `kagi extract` command sends one HTTPS URL to Kagi's v1 Extract API and prints the extracted page markdown to stdout by default. It is useful when a search result, article, or documentation page needs full-page text instead of a search snippet.
 
 The command uses JSON mode internally because that is the stable envelope returned by the API, then prints the first page's `markdown` field. Use `--format json` or `--format compact` to print the full response envelope, including retained link metadata when Kagi returns it. If Kagi returns no page markdown, the CLI reports the Extract API error details and trace id when available.
+
+Use `--filter` for pipelines that already have one URL per line. Filter mode ignores the single-URL markdown default and prints one compact JSON record per input line in the same order. Successful records include the Extract API response under `response`. Failed records include an `error` envelope on stdout and the command exits nonzero after all inputs are processed.
 
 ## Authentication
 
@@ -36,6 +39,16 @@ kagi extract "https://example.com/article"
 ```
 
 Only `https://` URLs with a valid host are accepted.
+
+Omit `<URL>` when using `--filter`.
+
+### `--filter`
+
+Read one URL per stdin line and print JSONL records.
+
+```bash
+kagi search "rust release notes" --template '{{url}}' | kagi extract --filter
+```
 
 ### `--format <FORMAT>`
 
@@ -81,6 +94,13 @@ With `--format json`, the command prints the full response envelope:
 }
 ```
 
+With `--filter`, stdout is JSONL:
+
+```jsonl
+{"url":"https://example.com/article","ok":true,"response":{"meta":{"trace":"trace-1","node":"test","ms":12},"data":[{"url":"https://example.com/article","markdown":"# Article title\n\nExtracted page content...","links":[]}]}}
+{"url":"http://example.com/bad","ok":false,"error":{"code":"configuration_error","category":"configuration","retryable":false,"message":"configuration error: extract URL must use the https scheme","suggested_commands":[],"docs_url":"https://kagi.micr.dev/reference/error-reference"}}
+```
+
 ## Examples
 
 ### Save an Article
@@ -101,12 +121,18 @@ kagi extract "https://example.com/article" | sed -n '1,80p'
 kagi extract "https://example.com/article" --format json | jq '.data[0].links'
 ```
 
+### Extract Search Results
+
+```bash
+kagi search "rust async cancellation" --template '{{url}}' | kagi extract --filter > pages.jsonl
+```
+
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success - markdown extracted |
-| 1 | Error - see stderr |
+| 0 | Success - markdown extracted, or every `--filter` input produced an `ok: true` record |
+| 1 | Error - see stderr; `--filter` may still have written per-input records to stdout |
 
 Common errors:
 

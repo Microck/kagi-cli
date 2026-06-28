@@ -9,7 +9,7 @@ This guide catalogs all error messages from the *kagi* CLI, organized by categor
 
 ## Error Format
 
-Errors follow this pattern:
+Plain text errors follow this pattern:
 
 ```
 Error: {category}: {message}
@@ -29,6 +29,27 @@ Transport errors include the request URL when the HTTP client exposes it:
 
 ```text
 Error: Network error: request to https://kagi.com/api/v1/search timed out after the configured timeout
+```
+
+Automation can request compact JSON stderr instead:
+
+```bash
+kagi --error-format json search "rust"
+KAGI_ERROR_FORMAT=json kagi search "rust"
+```
+
+The JSON error envelope uses stable top-level fields:
+
+```json
+{
+  "code": "missing_credentials",
+  "category": "configuration",
+  "retryable": false,
+  "message": "configuration error: missing credentials: search was not sent...",
+  "required_auth": "KAGI_API_KEY or KAGI_SESSION_TOKEN",
+  "suggested_commands": ["kagi auth status", "kagi auth set --api-key <key>", "kagi auth set --session-token <token>"],
+  "docs_url": "https://kagi.micr.dev/reference/error-reference"
+}
 ```
 
 ## Authentication Errors
@@ -269,22 +290,25 @@ Error: Config: --length requires --subscriber
 kagi summarize --subscriber --url https://example.com --length digest
 ```
 
-### "lens 'abc' must be a numeric index"
+### "lens named 'abc' was not found"
 
 **Message:**
 ```
-configuration error: lens 'abc' must be a numeric index (e.g., '0', '1', '2').
+configuration error: lens named 'abc' was not found. Lens names are matched exactly; run `kagi lens list` to inspect available lenses
 ```
 
-**Meaning:** Lens-aware commands only accept the numeric `l=` value from Kagi's web UI.
+**Meaning:** `kagi search --lens` was given a non-numeric value, but no enabled lens has that exact name.
 
 **Solution:**
 ```bash
-# Search
-kagi search --lens 2 "developer documentation"
+kagi lens list
+kagi search --lens "Exact Lens Name" "developer documentation"
+```
 
-# Quick Answer
-kagi quick --lens 2 "best rust tutorials"
+Use a numeric index when names are duplicated or numeric-looking:
+
+```bash
+kagi search --lens 2 "developer documentation"
 ```
 
 ### "--engine is only supported for the paid public summarizer API"

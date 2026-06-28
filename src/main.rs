@@ -42,9 +42,9 @@ use crate::cli::{
     AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
     AuthSubcommand, BangSubcommand, Cli, Commands, CompletionCommand, CompletionInstallArgs,
     CompletionShell, CompletionSubcommand, CustomBangSubcommand, EnrichSubcommand,
-    ExtractOutputFormat, HistorySubcommand, McpArgs, NotifyArgs, OutputFormat, SearchArgs,
-    SearchOrder, SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand,
-    TranslateArgs, WatchArgs,
+    ErrorOutputFormat, ExtractOutputFormat, HistorySubcommand, McpArgs, NotifyArgs, OutputFormat,
+    SearchArgs, SearchOrder, SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand,
+    SkillsSubcommand, TranslateArgs, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -60,6 +60,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::future::Future;
 use std::io::{self, BufRead, Read, Write};
@@ -88,10 +89,167 @@ struct SearchRequestOptions {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     init_tracing();
+    let error_format = selected_error_output_format();
     if let Err(error) = run().await {
-        eprintln!("{error}");
+        print_kagi_error(&error, error_format);
         std::process::exit(1);
     }
+}
+
+fn selected_error_output_format() -> ErrorOutputFormat {
+    error_output_format_from_args(env::args_os())
+        .or_else(|| {
+            env::var("KAGI_ERROR_FORMAT")
+                .ok()
+                .and_then(|value| parse_error_output_format(&value))
+        })
+        .unwrap_or(ErrorOutputFormat::Text)
+}
+
+fn error_output_format_from_args<I>(args: I) -> Option<ErrorOutputFormat>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter().skip(1);
+    while let Some(arg) = args.next() {
+        let arg = arg.to_string_lossy();
+        if arg == "--" {
+            break;
+        }
+        if let Some(value) = arg.strip_prefix("--error-format=") {
+            return parse_error_output_format(value);
+        }
+        if arg == "--error-format" {
+            return args
+                .next()
+                .and_then(|value| parse_error_output_format(&value.to_string_lossy()));
+        }
+    }
+
+    None
+}
+
+fn parse_error_output_format(value: &str) -> Option<ErrorOutputFormat> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "json" => Some(ErrorOutputFormat::Json),
+        "text" => Some(ErrorOutputFormat::Text),
+        _ => None,
+    }
+}
+
+fn print_kagi_error(error: &KagiError, format: ErrorOutputFormat) {
+    match format {
+        ErrorOutputFormat::Text => eprintln!("{error}"),
+        ErrorOutputFormat::Json => match serde_json::to_string(&error_envelope(error)) {
+            Ok(output) => eprintln!("{output}"),
+            Err(_) => eprintln!("{error}"),
+        },
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorEnvelope {
+    code: &'static str,
+    category: &'static str,
+    retryable: bool,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_auth: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    http_status: Option<u16>,
+    suggested_commands: Vec<&'static str>,
+    docs_url: &'static str,
+}
+
+fn error_envelope(error: &KagiError) -> ErrorEnvelope {
+    let (code, category, retryable, detail) = match error {
+        KagiError::Network(message) => ("network_error", "network", true, message.as_str()),
+        KagiError::Auth(message) => ("authentication_error", "auth", false, message.as_str()),
+        KagiError::Parse(message) => ("parse_error", "parse", false, message.as_str()),
+        KagiError::Config(message) if message.starts_with("assistant contract") => {
+            ("contract_error", "contract", false, message.as_str())
+        }
+        KagiError::Config(message) if message.contains("missing credentials") => (
+            "missing_credentials",
+            "configuration",
+            false,
+            message.as_str(),
+        ),
+        KagiError::Config(message) => (
+            "configuration_error",
+            "configuration",
+            false,
+            message.as_str(),
+        ),
+        KagiError::Batch(message) => ("batch_error", "batch", false, message.as_str()),
+    };
+    let required_auth = required_auth_for_message(detail);
+
+    ErrorEnvelope {
+        code,
+        category,
+        retryable,
+        message: error.to_string(),
+        required_auth,
+        http_status: extract_http_status(detail),
+        suggested_commands: suggested_commands_for_error(category, required_auth),
+        docs_url: "https://kagi.micr.dev/reference/error-reference",
+    }
+}
+
+fn required_auth_for_message(message: &str) -> Option<&'static str> {
+    if message.contains("missing credentials") {
+        Some("KAGI_API_KEY or KAGI_SESSION_TOKEN")
+    } else if message.contains("KAGI_API_KEY") {
+        Some("KAGI_API_KEY")
+    } else if message.contains("KAGI_API_TOKEN") {
+        Some("KAGI_API_TOKEN")
+    } else if message.contains("KAGI_SESSION_TOKEN") {
+        Some("KAGI_SESSION_TOKEN")
+    } else {
+        None
+    }
+}
+
+fn suggested_commands_for_error(
+    category: &str,
+    required_auth: Option<&'static str>,
+) -> Vec<&'static str> {
+    match required_auth {
+        Some("KAGI_API_KEY") => vec![
+            "kagi auth status",
+            "kagi auth set --api-key <key>",
+            "kagi auth check",
+        ],
+        Some("KAGI_API_TOKEN") => vec![
+            "kagi auth status",
+            "kagi auth set --api-token <token>",
+            "kagi auth check",
+        ],
+        Some("KAGI_SESSION_TOKEN") => vec![
+            "kagi auth status",
+            "kagi auth set --session-token <token>",
+            "kagi auth check",
+        ],
+        Some("KAGI_API_KEY or KAGI_SESSION_TOKEN") => vec![
+            "kagi auth status",
+            "kagi auth set --api-key <key>",
+            "kagi auth set --session-token <token>",
+        ],
+        _ if category == "auth" => vec!["kagi auth status", "kagi auth check"],
+        _ => Vec::new(),
+    }
+}
+
+fn extract_http_status(message: &str) -> Option<u16> {
+    message.split("HTTP ").nth(1).and_then(|suffix| {
+        suffix
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .collect::<String>()
+            .parse::<u16>()
+            .ok()
+    })
 }
 
 fn init_tracing() {
@@ -153,7 +311,7 @@ async fn run() -> Result<(), KagiError> {
                 return print_news_search(&response, &args.format, !args.no_color);
             }
 
-            let options = SearchRequestOptions {
+            let mut options = SearchRequestOptions {
                 snap: args.snap,
                 lens: args.lens,
                 region: args.region,
@@ -166,6 +324,7 @@ async fn run() -> Result<(), KagiError> {
                 personalized: args.personalized,
                 no_personalized: args.no_personalized,
             };
+            options.lens = resolve_search_lens_option(options.lens, profile.as_deref()).await?;
             let request = build_search_request(args.query, &options);
             let format_str = args.format.to_string();
             if let Some(follow_count) = args.follow {
@@ -261,26 +420,39 @@ async fn run() -> Result<(), KagiError> {
                 print_json(&response)
             }
         }
-        Commands::Extract(args) => match args.format {
-            ExtractOutputFormat::Markdown => {
-                let markdown =
-                    execute_extract_with_available_auth(&args.url, profile.as_deref()).await?;
-                println!("{markdown}");
-                Ok(())
+        Commands::Extract(args) => {
+            args.validate().map_err(KagiError::Config)?;
+
+            if args.filter {
+                return run_extract_filter(profile.as_deref()).await;
             }
-            ExtractOutputFormat::Json => {
-                let response =
-                    execute_extract_response_with_available_auth(&args.url, profile.as_deref())
-                        .await?;
-                print_json(&response)
+
+            let url = args.url.as_deref().ok_or_else(|| {
+                KagiError::Config(
+                    "extract requires a URL, or use --filter to read URLs from stdin".to_string(),
+                )
+            })?;
+            match args.format {
+                ExtractOutputFormat::Markdown => {
+                    let markdown =
+                        execute_extract_with_available_auth(url, profile.as_deref()).await?;
+                    println!("{markdown}");
+                    Ok(())
+                }
+                ExtractOutputFormat::Json => {
+                    let response =
+                        execute_extract_response_with_available_auth(url, profile.as_deref())
+                            .await?;
+                    print_json(&response)
+                }
+                ExtractOutputFormat::Compact => {
+                    let response =
+                        execute_extract_response_with_available_auth(url, profile.as_deref())
+                            .await?;
+                    print_compact_json(&response)
+                }
             }
-            ExtractOutputFormat::Compact => {
-                let response =
-                    execute_extract_response_with_available_auth(&args.url, profile.as_deref())
-                        .await?;
-                print_compact_json(&response)
-            }
-        },
+        }
         Commands::News(args) => {
             args.validate().map_err(KagiError::Config)?;
 
@@ -414,7 +586,17 @@ async fn run() -> Result<(), KagiError> {
                     },
                 }
             } else {
-                let query = read_assistant_prompt_query(args.query)?;
+                let contract = load_assistant_contract(
+                    args.contract.as_deref(),
+                    args.contract_file.as_deref(),
+                )?;
+                if contract.is_some() {
+                    validate_assistant_contract_output_format(args.format.clone())?;
+                }
+                let mut query = read_assistant_prompt_query(args.query)?;
+                if let Some(contract) = contract.as_ref() {
+                    query = contract_prompt_query(&query, contract);
+                }
                 let request = AssistantPromptRequest {
                     query,
                     thread_id: args.thread_id,
@@ -433,7 +615,43 @@ async fn run() -> Result<(), KagiError> {
                         _ => None,
                     },
                 };
-                if args.once {
+                if let Some(contract) = contract.as_ref() {
+                    let response = execute_assistant_prompt_for_args(
+                        &request,
+                        args.once,
+                        args.stream.then_some(args.stream_output),
+                        &token,
+                    )
+                    .await?;
+                    let value = match validate_assistant_contract_response(contract, &response) {
+                        Ok(value) => value,
+                        Err(first_error) => {
+                            let mut repair_request = request.clone();
+                            repair_request.thread_id = Some(response.thread.id.clone());
+                            repair_request.query = contract_repair_query(
+                                contract,
+                                assistant_message_content(&response),
+                                &first_error,
+                            );
+                            let repaired = execute_assistant_prompt_for_args(
+                                &repair_request,
+                                args.once,
+                                None,
+                                &token,
+                            )
+                            .await?;
+                            validate_assistant_contract_response(contract, &repaired).map_err(
+                                |second_error| {
+                                    KagiError::Config(format!(
+                                        "assistant contract '{}' was not satisfied after one repair attempt: {second_error}",
+                                        contract.name
+                                    ))
+                                },
+                            )?
+                        }
+                    };
+                    print_assistant_contract_value(&value, args.format)
+                } else if args.once {
                     let response = execute_once_assistant_prompt(
                         &request,
                         args.stream.then_some(args.stream_output),
@@ -1124,32 +1342,68 @@ fn resolve_session_token(profile: Option<&str>) -> Result<String, KagiError> {
         })
 }
 
+fn resolve_api_key(profile: Option<&str>) -> Result<String, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    inventory.api_key.map(|credential| credential.value).ok_or_else(|| {
+        KagiError::Config(
+            "extract requires KAGI_API_KEY. Set it in the environment or run `kagi auth set --api-key <key>`"
+                .to_string(),
+        )
+    })
+}
+
 async fn execute_extract_with_available_auth(
     url: &str,
     profile: Option<&str>,
 ) -> Result<String, KagiError> {
-    let inventory = load_credential_inventory_for_profile(profile)?;
-    if let Some(key) = inventory.api_key {
-        return execute_extract(url, &key.value).await;
-    }
-
-    Err(KagiError::Config(
-        "extract requires KAGI_API_KEY. Set it in the environment or run `kagi auth set --api-key <key>`".to_string(),
-    ))
+    let api_key = resolve_api_key(profile)?;
+    execute_extract(url, &api_key).await
 }
 
 async fn execute_extract_response_with_available_auth(
     url: &str,
     profile: Option<&str>,
 ) -> Result<crate::types::ExtractResponse, KagiError> {
-    let inventory = load_credential_inventory_for_profile(profile)?;
-    if let Some(key) = inventory.api_key {
-        return execute_extract_response(url, &key.value).await;
+    let api_key = resolve_api_key(profile)?;
+    execute_extract_response(url, &api_key).await
+}
+
+async fn run_extract_filter(profile: Option<&str>) -> Result<(), KagiError> {
+    let urls = read_stdin_lines()?;
+    if urls.is_empty() {
+        return Err(KagiError::Config(
+            "extract --filter requires at least one stdin URL".to_string(),
+        ));
     }
 
-    Err(KagiError::Config(
-        "extract requires KAGI_API_KEY. Set it in the environment or run `kagi auth set --api-key <key>`".to_string(),
-    ))
+    let api_key = resolve_api_key(profile)?;
+    let mut failure_count = 0usize;
+
+    for url in urls {
+        match execute_extract_response(&url, &api_key).await {
+            Ok(response) => print_compact_json(&serde_json::json!({
+                "url": url,
+                "ok": true,
+                "response": response,
+            }))?,
+            Err(error) => {
+                failure_count += 1;
+                print_compact_json(&serde_json::json!({
+                    "url": url,
+                    "ok": false,
+                    "error": error_envelope(&error),
+                }))?;
+            }
+        }
+    }
+
+    if failure_count > 0 {
+        return Err(KagiError::Batch(format!(
+            "extract --filter completed with {failure_count} failed item(s)"
+        )));
+    }
+
+    Ok(())
 }
 
 fn build_translate_request(args: TranslateArgs) -> Result<TranslateCommandRequest, KagiError> {
@@ -1307,6 +1561,54 @@ fn search_auth_requirement(request: &search::SearchRequest) -> SearchAuthRequire
     }
 }
 
+async fn resolve_search_lens_option(
+    lens: Option<String>,
+    profile: Option<&str>,
+) -> Result<Option<String>, KagiError> {
+    let Some(lens) = lens else {
+        return Ok(None);
+    };
+    let lens = lens.trim().to_string();
+    if lens.is_empty() || lens.parse::<u32>().is_ok() {
+        return Ok(Some(lens));
+    }
+
+    let token = resolve_session_token(profile)?;
+    let lenses = execute_lens_list(&token).await?;
+    let matches = lenses
+        .iter()
+        .filter(|candidate| candidate.name == lens)
+        .collect::<Vec<_>>();
+
+    let [selected] = matches.as_slice() else {
+        if matches.is_empty() {
+            return Err(KagiError::Config(format!(
+                "lens named '{lens}' was not found. Lens names are matched exactly; run `kagi lens list` to inspect available lenses"
+            )));
+        }
+
+        return Err(KagiError::Config(format!(
+            "lens name '{lens}' is ambiguous because multiple lenses have that exact name. Use the numeric lens index instead"
+        )));
+    };
+
+    if !selected.enabled {
+        return Err(KagiError::Config(format!(
+            "lens named '{lens}' is disabled. Enable it with `kagi lens enable {}` or choose an enabled lens",
+            selected.id
+        )));
+    }
+
+    selected
+        .position
+        .map(|position| Some(position.to_string()))
+        .ok_or_else(|| {
+            KagiError::Config(format!(
+                "lens named '{lens}' is enabled but has no active search position. Disable and re-enable it, then retry"
+            ))
+        })
+}
+
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
     let output = serde_json::to_string_pretty(value)
         .map_err(|error| KagiError::Parse(format!("failed to serialize JSON output: {error}")))?;
@@ -1376,6 +1678,21 @@ fn temporary_assistant_name() -> String {
     format!("kagi-cli-once-{millis}-{}", std::process::id())
 }
 
+async fn execute_assistant_prompt_for_args(
+    request: &AssistantPromptRequest,
+    once: bool,
+    stream_output: Option<AssistantStreamOutput>,
+    token: &str,
+) -> Result<crate::types::AssistantPromptResponse, KagiError> {
+    if once {
+        execute_once_assistant_prompt(request, stream_output, token).await
+    } else if let Some(stream_output) = stream_output {
+        execute_streaming_assistant_prompt(request, token, stream_output).await
+    } else {
+        execute_assistant_prompt(request, token).await
+    }
+}
+
 async fn execute_streaming_assistant_prompt(
     request: &AssistantPromptRequest,
     token: &str,
@@ -1420,6 +1737,297 @@ fn print_toon<T: serde::Serialize>(value: &T) -> Result<(), KagiError> {
         .map_err(|error| KagiError::Parse(format!("failed to serialize TOON output: {error}")))?;
     println!("{}", toon::encode(&value, None));
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct AssistantContractSpec {
+    name: String,
+    fields: Vec<AssistantContractField>,
+}
+
+#[derive(Debug, Clone)]
+struct AssistantContractField {
+    name: String,
+    kind: AssistantContractFieldKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantContractFieldKind {
+    String,
+    Number,
+    Boolean,
+    Object,
+    Array,
+    StringArray,
+}
+
+fn load_assistant_contract(
+    builtin: Option<&str>,
+    file: Option<&Path>,
+) -> Result<Option<AssistantContractSpec>, KagiError> {
+    match (builtin, file) {
+        (Some(name), None) => builtin_assistant_contract(name).map(Some),
+        (None, Some(path)) => load_assistant_contract_file(path).map(Some),
+        (None, None) => Ok(None),
+        (Some(_), Some(_)) => Err(KagiError::Config(
+            "assistant contract mode accepts either --contract or --contract-file, not both"
+                .to_string(),
+        )),
+    }
+}
+
+fn builtin_assistant_contract(name: &str) -> Result<AssistantContractSpec, KagiError> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let fields = match normalized.as_str() {
+        "decision" => vec![
+            contract_field("decision", AssistantContractFieldKind::String),
+            contract_field("rationale", AssistantContractFieldKind::String),
+            contract_field("next_actions", AssistantContractFieldKind::StringArray),
+        ],
+        "checklist" => vec![contract_field(
+            "items",
+            AssistantContractFieldKind::StringArray,
+        )],
+        "plan" => vec![contract_field(
+            "steps",
+            AssistantContractFieldKind::StringArray,
+        )],
+        _ => {
+            return Err(KagiError::Config(format!(
+                "unknown assistant contract '{name}'. Supported contracts: decision, checklist, plan"
+            )));
+        }
+    };
+
+    Ok(AssistantContractSpec {
+        name: normalized,
+        fields,
+    })
+}
+
+fn load_assistant_contract_file(path: &Path) -> Result<AssistantContractSpec, KagiError> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        KagiError::Config(format!(
+            "failed to read assistant contract file '{}': {error}",
+            path.display()
+        ))
+    })?;
+    let value: Value = serde_json::from_str(&raw).map_err(|error| {
+        KagiError::Config(format!(
+            "assistant contract file '{}' must be valid JSON: {error}",
+            path.display()
+        ))
+    })?;
+    if value
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind != "object")
+    {
+        return Err(KagiError::Config(
+            "assistant contract file only supports top-level type \"object\"".to_string(),
+        ));
+    }
+
+    let required = value
+        .get("required")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            KagiError::Config("assistant contract file must include a required array".to_string())
+        })?;
+    if required.is_empty() {
+        return Err(KagiError::Config(
+            "assistant contract file required array cannot be empty".to_string(),
+        ));
+    }
+
+    let mut fields = Vec::new();
+    for item in required {
+        let name = item
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                KagiError::Config(
+                    "assistant contract file required entries must be non-empty strings"
+                        .to_string(),
+                )
+            })?;
+        fields.push(contract_field(
+            name,
+            contract_file_field_kind(&value, name)?,
+        ));
+    }
+
+    let name = value
+        .get("title")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("name").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            path.file_stem()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "contract-file".to_string());
+
+    Ok(AssistantContractSpec { name, fields })
+}
+
+fn contract_file_field_kind(
+    contract: &Value,
+    field_name: &str,
+) -> Result<AssistantContractFieldKind, KagiError> {
+    let Some(kind) = contract
+        .get("properties")
+        .and_then(Value::as_object)
+        .and_then(|properties| properties.get(field_name))
+        .and_then(|property| property.get("type"))
+        .and_then(Value::as_str)
+    else {
+        return Ok(AssistantContractFieldKind::String);
+    };
+
+    match kind {
+        "string" => Ok(AssistantContractFieldKind::String),
+        "number" | "integer" => Ok(AssistantContractFieldKind::Number),
+        "boolean" => Ok(AssistantContractFieldKind::Boolean),
+        "object" => Ok(AssistantContractFieldKind::Object),
+        "array" => Ok(AssistantContractFieldKind::Array),
+        _ => Err(KagiError::Config(format!(
+            "assistant contract file property '{field_name}' uses unsupported type '{kind}'"
+        ))),
+    }
+}
+
+fn contract_field(name: &str, kind: AssistantContractFieldKind) -> AssistantContractField {
+    AssistantContractField {
+        name: name.to_string(),
+        kind,
+    }
+}
+
+fn validate_assistant_contract_output_format(
+    format: AssistantOutputFormat,
+) -> Result<(), KagiError> {
+    if matches!(
+        format,
+        AssistantOutputFormat::Json | AssistantOutputFormat::Compact
+    ) {
+        return Ok(());
+    }
+
+    Err(KagiError::Config(
+        "assistant contract mode only supports --format json or --format compact because the validated output is JSON".to_string(),
+    ))
+}
+
+fn contract_prompt_query(query: &str, contract: &AssistantContractSpec) -> String {
+    format!(
+        "{query}\n\n{}",
+        assistant_contract_instruction(contract, "Return only a valid JSON object")
+    )
+}
+
+fn contract_repair_query(
+    contract: &AssistantContractSpec,
+    previous_reply: &str,
+    validation_error: &str,
+) -> String {
+    format!(
+        "Your previous answer did not satisfy the assistant contract '{}': {validation_error}\n\nPrevious answer:\n{previous_reply}\n\n{}",
+        contract.name,
+        assistant_contract_instruction(
+            contract,
+            "Repair the answer and return only the valid JSON object"
+        )
+    )
+}
+
+fn assistant_contract_instruction(contract: &AssistantContractSpec, lead: &str) -> String {
+    let fields = contract
+        .fields
+        .iter()
+        .map(|field| format!("- {}: {}", field.name, field.kind.description()))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "Assistant contract: {lead}. Do not include markdown fences, prose outside JSON, comments, or trailing commas.\nRequired top-level fields:\n{fields}"
+    )
+}
+
+fn validate_assistant_contract_response(
+    contract: &AssistantContractSpec,
+    response: &crate::types::AssistantPromptResponse,
+) -> Result<Value, String> {
+    let content = assistant_message_content(response);
+    let value = serde_json::from_str::<Value>(content)
+        .map_err(|error| format!("assistant reply was not valid JSON: {error}"))?;
+    validate_assistant_contract_value(contract, &value)?;
+    Ok(value)
+}
+
+fn validate_assistant_contract_value(
+    contract: &AssistantContractSpec,
+    value: &Value,
+) -> Result<(), String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "assistant reply must be a JSON object".to_string())?;
+
+    for field in &contract.fields {
+        let field_value = object
+            .get(&field.name)
+            .ok_or_else(|| format!("missing required key '{}'", field.name))?;
+        field.kind.validate(&field.name, field_value)?;
+    }
+
+    Ok(())
+}
+
+fn print_assistant_contract_value(
+    value: &Value,
+    format: AssistantOutputFormat,
+) -> Result<(), KagiError> {
+    match format {
+        AssistantOutputFormat::Compact => print_compact_json(value),
+        AssistantOutputFormat::Json => print_json(value),
+        _ => validate_assistant_contract_output_format(format),
+    }
+}
+
+impl AssistantContractFieldKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Boolean => "boolean",
+            Self::Object => "object",
+            Self::Array => "array",
+            Self::StringArray => "array of strings",
+        }
+    }
+
+    fn validate(self, field_name: &str, value: &Value) -> Result<(), String> {
+        let valid = match self {
+            Self::String => value.as_str().is_some_and(|text| !text.trim().is_empty()),
+            Self::Number => value.is_number(),
+            Self::Boolean => value.is_boolean(),
+            Self::Object => value.is_object(),
+            Self::Array => value.is_array(),
+            Self::StringArray => value
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_string)),
+        };
+
+        if valid {
+            Ok(())
+        } else {
+            Err(format!("key '{field_name}' must be {}", self.description()))
+        }
+    }
 }
 
 async fn cached_json<T, K, Fut, F>(
