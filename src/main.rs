@@ -42,9 +42,10 @@ use crate::cli::{
     AssistantSubcommand, AssistantThreadExportFormat, AssistantThreadSubcommand, AuthSetArgs,
     AuthSubcommand, BangSubcommand, Cli, Commands, CompletionCommand, CompletionInstallArgs,
     CompletionShell, CompletionSubcommand, CustomBangSubcommand, EnrichSubcommand,
-    ErrorOutputFormat, ExtractOutputFormat, HistorySubcommand, McpArgs, NotifyArgs, OutputFormat,
-    SearchArgs, SearchOrder, SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand,
-    SkillsSubcommand, TranslateArgs, WatchArgs,
+    ErrorOutputFormat, ExtractOutputFormat, HistorySubcommand, McpArgs, NewsFilterMode,
+    NewsFilterScope, NotifyArgs, OutputFormat, QuickOutputFormat, SearchArgs, SearchOrder,
+    SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand, TranslateArgs,
+    WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -65,6 +66,7 @@ use std::fs;
 use std::future::Future;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
@@ -3105,8 +3107,24 @@ async fn run_assistant_repl(args: AssistantReplArgs, token: &str) -> Result<(), 
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct McpServerConfig {
+    default_output: Option<OutputFormat>,
+    enable_mutating_tools: bool,
+}
+
+impl McpServerConfig {
+    fn default_output_or(&self, fallback: OutputFormat) -> OutputFormat {
+        self.default_output.clone().unwrap_or(fallback)
+    }
+}
+
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
+    let config = McpServerConfig {
+        default_output: args.default_output,
+        enable_mutating_tools: args.enable_mutating_tools,
+    };
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =
@@ -3114,7 +3132,14 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
         if line.trim().is_empty() {
             continue;
         }
-        let request: Value = serde_json::from_str(&line)?;
+        let request: Value = match serde_json::from_str(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                let response = json_rpc_error(Value::Null, -32700, format!("Parse error: {error}"));
+                println!("{}", serde_json::to_string(&response)?);
+                continue;
+            }
+        };
         // Notifications have no `id` field; per JSON-RPC 2.0 they must not be answered.
         let Some(id) = request.get("id").cloned() else {
             continue;
@@ -3134,10 +3159,10 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "tools": mcp_tool_definitions()
+                    "tools": mcp_tool_definitions(&config)
                 }
             }),
-            "tools/call" => match run_mcp_tool_call(&request, profile).await {
+            "tools/call" => match run_mcp_tool_call(&request, profile, &config).await {
                 Ok(result) => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -3160,139 +3185,702 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
     Ok(())
 }
 
-fn mcp_tool_definitions() -> Value {
-    serde_json::json!([
-        {
-            "name": "kagi_search",
-            "description": "Search Kagi",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query to send to Kagi"
-                    }
-                },
-                "required": ["query"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "kagi_summarize",
-            "description": "Summarize a URL or text",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "URL to summarize"
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "Text to summarize"
-                    }
-                },
-                "anyOf": [
-                    {"required": ["url"]},
-                    {"required": ["text"]}
-                ],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "kagi_extract",
-            "description": "Extract a page's full content as markdown",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "HTTPS URL of the page to extract as markdown"
-                    }
-                },
-                "required": ["url"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "kagi_quick",
-            "description": "Get a Kagi Quick Answer",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Query to answer"
-                    }
-                },
-                "required": ["query"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "kagi_news",
-            "description": "Fetch Kagi News stories for a category",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "category": {
-                        "type": "string",
-                        "description": "News category slug",
-                        "default": "world"
-                    },
-                    "lang": {
-                        "type": "string",
-                        "description": "News language code",
-                        "default": "default"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Number of stories to return",
-                        "minimum": 1,
-                        "default": 12
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "kagi_news_search",
-            "description": "Search the News tab of kagi.com (clusters of articles)",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "News search query"
-                    },
-                    "region": {
-                        "type": "string",
-                        "description": "Kagi region code such as us, gb, or no_region"
-                    },
-                    "freshness": {
-                        "type": "string",
-                        "description": "News recency window",
-                        "enum": ["day", "week", "month"]
-                    },
-                    "order": {
-                        "type": "string",
-                        "description": "News result ordering",
-                        "enum": ["default", "recency", "website"]
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of news results to return",
-                        "minimum": 1
-                    }
-                },
-                "required": ["query"],
-                "additionalProperties": false
-            }
-        }
-    ])
+fn json_rpc_error(id: Value, code: i64, message: String) -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {"code": code, "message": message},
+    })
 }
 
-async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Value, KagiError> {
+fn mcp_tool_definitions(config: &McpServerConfig) -> Value {
+    let mut tools = vec![
+        tool_schema(
+            "kagi_search",
+            "Search Kagi web or news results",
+            search_schema(),
+        ),
+        tool_schema(
+            "kagi_batch_search",
+            "Run multiple Kagi searches with shared filters",
+            batch_search_schema(),
+        ),
+        tool_schema(
+            "kagi_summarize",
+            "Summarize a URL or text through public API or subscriber summarizer",
+            summarize_schema(),
+        ),
+        tool_schema(
+            "kagi_extract",
+            "Extract a page's full content through Kagi Extract",
+            extract_schema(),
+        ),
+        tool_schema("kagi_quick", "Get a Kagi Quick Answer", quick_schema()),
+        tool_schema(
+            "kagi_news",
+            "Fetch Kagi News stories for a category",
+            news_schema(),
+        ),
+        tool_schema(
+            "kagi_news_categories",
+            "List Kagi News categories",
+            lang_only_schema(),
+        ),
+        tool_schema(
+            "kagi_news_chaos",
+            "Fetch the Kagi News chaos index",
+            lang_only_schema(),
+        ),
+        tool_schema(
+            "kagi_news_filter_presets",
+            "List built-in Kagi News content-filter presets",
+            lang_only_schema(),
+        ),
+        tool_schema(
+            "kagi_news_search",
+            "Search the News tab of kagi.com",
+            news_search_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant",
+            "Prompt Kagi Assistant",
+            assistant_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant_models",
+            "List Assistant base-model slugs",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant_thread_list",
+            "List Assistant threads",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant_thread_get",
+            "Fetch an Assistant thread by id",
+            target_schema("thread_id", "Assistant thread id"),
+        ),
+        tool_schema(
+            "kagi_assistant_thread_export",
+            "Export an Assistant thread as markdown or JSON",
+            thread_export_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant_custom_list",
+            "List custom and built-in assistants",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_assistant_custom_get",
+            "Fetch a custom assistant by id or name",
+            target_schema("target", "Custom assistant id or exact name"),
+        ),
+        tool_schema(
+            "kagi_ask_page",
+            "Ask Assistant about a page",
+            ask_page_schema(),
+        ),
+        tool_schema(
+            "kagi_translate",
+            "Translate text through Kagi Translate",
+            translate_schema(),
+        ),
+        tool_schema(
+            "kagi_fastgpt",
+            "Answer a query with Kagi FastGPT",
+            fastgpt_schema(),
+        ),
+        tool_schema(
+            "kagi_enrich_web",
+            "Query Kagi's Teclis web enrichment index",
+            query_schema("Query to enrich"),
+        ),
+        tool_schema(
+            "kagi_enrich_news",
+            "Query Kagi's TinyGem news enrichment index",
+            query_schema("Query to enrich"),
+        ),
+        tool_schema(
+            "kagi_smallweb",
+            "Fetch the Kagi Small Web feed",
+            smallweb_schema(),
+        ),
+        tool_schema("kagi_lens_list", "List Kagi search lenses", empty_schema()),
+        tool_schema(
+            "kagi_lens_get",
+            "Fetch one Kagi search lens by id or name",
+            target_schema("target", "Lens id or exact name"),
+        ),
+        tool_schema("kagi_custom_bang_list", "List custom bangs", empty_schema()),
+        tool_schema(
+            "kagi_custom_bang_get",
+            "Fetch one custom bang by id, name, or trigger",
+            target_schema("target", "Bang id, exact name, or trigger"),
+        ),
+        tool_schema("kagi_redirect_list", "List redirect rules", empty_schema()),
+        tool_schema(
+            "kagi_redirect_get",
+            "Fetch one redirect rule by id or exact rule text",
+            target_schema("target", "Redirect id or exact rule text"),
+        ),
+        tool_schema(
+            "kagi_auth_status",
+            "Show configured credential status",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_auth_check",
+            "Validate selected credentials",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_history_list",
+            "List local command history",
+            history_list_schema(),
+        ),
+        tool_schema(
+            "kagi_history_stats",
+            "Show local command history stats",
+            empty_schema(),
+        ),
+        tool_schema(
+            "kagi_site_pref_list",
+            "List local search site preferences",
+            empty_schema(),
+        ),
+    ];
+
+    if config.enable_mutating_tools {
+        tools.extend([
+            tool_schema(
+                "kagi_assistant_thread_delete",
+                "Delete an Assistant thread",
+                target_schema("thread_id", "Assistant thread id"),
+            ),
+            tool_schema(
+                "kagi_assistant_custom_create",
+                "Create a custom assistant",
+                assistant_custom_create_schema(),
+            ),
+            tool_schema(
+                "kagi_assistant_custom_update",
+                "Update a custom assistant",
+                assistant_custom_update_schema(),
+            ),
+            tool_schema(
+                "kagi_assistant_custom_delete",
+                "Delete a custom assistant",
+                target_schema("target", "Custom assistant id or exact name"),
+            ),
+            tool_schema(
+                "kagi_lens_create",
+                "Create a Kagi search lens",
+                lens_create_schema(),
+            ),
+            tool_schema(
+                "kagi_lens_update",
+                "Update a Kagi search lens",
+                lens_update_schema(),
+            ),
+            tool_schema(
+                "kagi_lens_delete",
+                "Delete a Kagi search lens",
+                target_schema("target", "Lens id or exact name"),
+            ),
+            tool_schema(
+                "kagi_lens_enable",
+                "Enable a Kagi search lens",
+                target_schema("target", "Lens id or exact name"),
+            ),
+            tool_schema(
+                "kagi_lens_disable",
+                "Disable a Kagi search lens",
+                target_schema("target", "Lens id or exact name"),
+            ),
+            tool_schema(
+                "kagi_custom_bang_create",
+                "Create a custom bang",
+                custom_bang_create_schema(),
+            ),
+            tool_schema(
+                "kagi_custom_bang_update",
+                "Update a custom bang",
+                custom_bang_update_schema(),
+            ),
+            tool_schema(
+                "kagi_custom_bang_delete",
+                "Delete a custom bang",
+                target_schema("target", "Bang id, exact name, or trigger"),
+            ),
+            tool_schema(
+                "kagi_redirect_create",
+                "Create a redirect rule",
+                redirect_create_schema(),
+            ),
+            tool_schema(
+                "kagi_redirect_update",
+                "Update a redirect rule",
+                redirect_update_schema(),
+            ),
+            tool_schema(
+                "kagi_redirect_delete",
+                "Delete a redirect rule",
+                target_schema("target", "Redirect id or exact rule text"),
+            ),
+            tool_schema(
+                "kagi_redirect_enable",
+                "Enable a redirect rule",
+                target_schema("target", "Redirect id or exact rule text"),
+            ),
+            tool_schema(
+                "kagi_redirect_disable",
+                "Disable a redirect rule",
+                target_schema("target", "Redirect id or exact rule text"),
+            ),
+            tool_schema(
+                "kagi_site_pref_set",
+                "Set a local search site preference",
+                site_pref_set_schema(),
+            ),
+            tool_schema(
+                "kagi_site_pref_remove",
+                "Remove a local search site preference",
+                target_schema("domain", "Domain to remove"),
+            ),
+            tool_schema(
+                "kagi_cli",
+                "Run an arbitrary kagi CLI command as an escape hatch for exact CLI parity",
+                cli_passthrough_schema(),
+            ),
+        ]);
+    }
+
+    Value::Array(tools)
+}
+
+fn tool_schema(name: &str, description: &str, input_schema: Value) -> Value {
+    serde_json::json!({
+        "name": name,
+        "description": description,
+        "inputSchema": input_schema,
+    })
+}
+
+fn object_schema(properties: Value, required: &[&str]) -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": false,
+    })
+}
+
+fn empty_schema() -> Value {
+    object_schema(serde_json::json!({}), &[])
+}
+
+fn query_schema(description: &str) -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string", "description": description},
+            "format": output_format_schema(),
+        }),
+        &["query"],
+    )
+}
+
+fn target_schema(name: &str, description: &str) -> Value {
+    object_schema(
+        serde_json::json!({name: {"type": "string", "description": description}}),
+        &[name],
+    )
+}
+
+fn output_format_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "description": "Output format; defaults to the MCP server --default-output",
+        "enum": ["json", "toon", "pretty", "compact", "markdown", "csv"]
+    })
+}
+
+fn search_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "format": output_format_schema(),
+            "snap": {"type": "string"},
+            "lens": {"type": "string"},
+            "region": {"type": "string"},
+            "time": {"type": "string", "enum": ["day", "week", "month", "year"]},
+            "from_date": {"type": "string"},
+            "to_date": {"type": "string"},
+            "order": {"type": "string", "enum": ["default", "recency", "website", "trackers"]},
+            "verbatim": {"type": "boolean"},
+            "personalized": {"type": "boolean"},
+            "no_personalized": {"type": "boolean"},
+            "template": {"type": "string"},
+            "local_cache": {"type": "boolean"},
+            "cache_ttl": {"type": "integer", "minimum": 1},
+            "follow": {"type": "integer", "minimum": 1},
+            "limit": {"type": "integer", "minimum": 1},
+            "news": {"type": "boolean"}
+        }),
+        &["query"],
+    )
+}
+
+fn batch_search_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "queries": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "concurrency": {"type": "integer", "minimum": 1, "default": 3},
+            "rate_limit": {"type": "integer", "minimum": 1, "default": 60},
+            "format": output_format_schema(),
+            "snap": {"type": "string"},
+            "lens": {"type": "string"},
+            "region": {"type": "string"},
+            "time": {"type": "string", "enum": ["day", "week", "month", "year"]},
+            "from_date": {"type": "string"},
+            "to_date": {"type": "string"},
+            "order": {"type": "string", "enum": ["default", "recency", "website", "trackers"]},
+            "verbatim": {"type": "boolean"},
+            "personalized": {"type": "boolean"},
+            "no_personalized": {"type": "boolean"},
+            "template": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1}
+        }),
+        &["queries"],
+    )
+}
+
+fn summarize_schema() -> Value {
+    let mut schema = object_schema(
+        serde_json::json!({
+            "url": {"type": "string"},
+            "text": {"type": "string"},
+            "subscriber": {"type": "boolean"},
+            "length": {"type": "string"},
+            "engine": {"type": "string"},
+            "summary_type": {"type": "string"},
+            "target_language": {"type": "string"},
+            "cache": {"type": "boolean"},
+            "local_cache": {"type": "boolean"},
+            "cache_ttl": {"type": "integer", "minimum": 1},
+            "format": output_format_schema()
+        }),
+        &[],
+    );
+    schema["anyOf"] = serde_json::json!([{ "required": ["url"] }, { "required": ["text"] }]);
+    schema
+}
+
+fn extract_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "url": {"type": "string"},
+            "format": {"type": "string", "enum": ["markdown", "json", "compact", "toon"]}
+        }),
+        &["url"],
+    )
+}
+
+fn quick_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "format": {"type": "string", "enum": ["json", "toon", "pretty", "compact", "markdown"]},
+            "lens": {"type": "string"},
+            "local_cache": {"type": "boolean"},
+            "cache_ttl": {"type": "integer", "minimum": 1}
+        }),
+        &["query"],
+    )
+}
+
+fn news_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "category": {"type": "string", "default": "world"},
+            "lang": {"type": "string", "default": "default"},
+            "limit": {"type": "integer", "minimum": 1, "default": 12},
+            "filter_preset": {"type": "array", "items": {"type": "string"}},
+            "filter_keyword": {"type": "array", "items": {"type": "string"}},
+            "filter_mode": {"type": "string", "enum": ["hide", "blur"], "default": "hide"},
+            "filter_scope": {"type": "string", "enum": ["title", "summary", "all"], "default": "all"},
+            "format": output_format_schema()
+        }),
+        &[],
+    )
+}
+
+fn lang_only_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "lang": {"type": "string", "default": "default"},
+            "format": output_format_schema()
+        }),
+        &[],
+    )
+}
+
+fn news_search_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "region": {"type": "string"},
+            "freshness": {"type": "string", "enum": ["day", "week", "month"]},
+            "order": {"type": "string", "enum": ["default", "recency", "website"]},
+            "dir_desc": {"type": "boolean"},
+            "limit": {"type": "integer", "minimum": 1},
+            "format": output_format_schema()
+        }),
+        &["query"],
+    )
+}
+
+fn assistant_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "thread_id": {"type": "string"},
+            "attach": {"type": "array", "items": {"type": "string"}},
+            "assistant": {"type": "string"},
+            "format": {"type": "string", "enum": ["json", "toon", "pretty", "compact", "markdown"]},
+            "contract": {"type": "string", "enum": ["decision", "checklist", "plan"]},
+            "contract_file": {"type": "string"},
+            "model": {"type": "string"},
+            "once": {"type": "boolean"},
+            "lens": {"type": "integer"},
+            "web_access": {"type": "boolean"},
+            "no_web_access": {"type": "boolean"},
+            "personalized": {"type": "boolean"},
+            "no_personalized": {"type": "boolean"}
+        }),
+        &["query"],
+    )
+}
+
+fn thread_export_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "thread_id": {"type": "string"},
+            "format": {"type": "string", "enum": ["markdown", "json"], "default": "markdown"}
+        }),
+        &["thread_id"],
+    )
+}
+
+fn ask_page_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "url": {"type": "string"},
+            "question": {"type": "string"},
+            "format": output_format_schema()
+        }),
+        &["url", "question"],
+    )
+}
+
+fn translate_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "text": {"type": "string"},
+            "from": {"type": "string", "default": "auto"},
+            "to": {"type": "string", "default": "en"},
+            "quality": {"type": "string"},
+            "model": {"type": "string"},
+            "prediction": {"type": "string"},
+            "predicted_language": {"type": "string"},
+            "formality": {"type": "string"},
+            "speaker_gender": {"type": "string"},
+            "addressee_gender": {"type": "string"},
+            "language_complexity": {"type": "string"},
+            "translation_style": {"type": "string"},
+            "context": {"type": "string"},
+            "dictionary_language": {"type": "string"},
+            "time_format": {"type": "string"},
+            "use_definition_context": {"type": "boolean"},
+            "enable_language_features": {"type": "boolean"},
+            "preserve_formatting": {"type": "boolean"},
+            "context_memory": {"type": "array"},
+            "fetch_alternatives": {"type": "boolean", "default": true},
+            "fetch_word_insights": {"type": "boolean", "default": true},
+            "fetch_suggestions": {"type": "boolean", "default": true},
+            "fetch_alignments": {"type": "boolean", "default": true},
+            "format": output_format_schema()
+        }),
+        &["text"],
+    )
+}
+
+fn fastgpt_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "cache": {"type": "boolean"},
+            "web_search": {"type": "boolean"},
+            "local_cache": {"type": "boolean"},
+            "cache_ttl": {"type": "integer", "minimum": 1},
+            "format": output_format_schema()
+        }),
+        &["query"],
+    )
+}
+
+fn smallweb_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "limit": {"type": "integer", "minimum": 1},
+            "format": output_format_schema()
+        }),
+        &[],
+    )
+}
+
+fn assistant_custom_create_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "name": {"type": "string"},
+            "bang_trigger": {"type": "string"},
+            "web_access": {"type": "boolean"},
+            "no_web_access": {"type": "boolean"},
+            "lens": {"type": "string"},
+            "personalized": {"type": "boolean"},
+            "no_personalized": {"type": "boolean"},
+            "model": {"type": "string"},
+            "instructions": {"type": "string"}
+        }),
+        &["name"],
+    )
+}
+
+fn assistant_custom_update_schema() -> Value {
+    let mut schema = assistant_custom_create_schema();
+    schema["properties"]["target"] = serde_json::json!({"type": "string"});
+    schema["required"] = serde_json::json!(["target"]);
+    schema
+}
+
+fn lens_create_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "name": {"type": "string"},
+            "included_sites": {"type": "string"},
+            "included_keywords": {"type": "string"},
+            "description": {"type": "string"},
+            "region": {"type": "string"},
+            "before_date": {"type": "string"},
+            "after_date": {"type": "string"},
+            "excluded_sites": {"type": "string"},
+            "excluded_keywords": {"type": "string"},
+            "shortcut": {"type": "string"},
+            "autocomplete_keywords": {"type": "boolean"},
+            "no_autocomplete_keywords": {"type": "boolean"},
+            "template": {"type": "string", "enum": ["default", "news"]},
+            "file_type": {"type": "string"},
+            "share_with_team": {"type": "boolean"},
+            "no_share_with_team": {"type": "boolean"},
+            "share_copy_code": {"type": "boolean"},
+            "no_share_copy_code": {"type": "boolean"}
+        }),
+        &["name"],
+    )
+}
+
+fn lens_update_schema() -> Value {
+    let mut schema = lens_create_schema();
+    schema["properties"]["target"] = serde_json::json!({"type": "string"});
+    schema["required"] = serde_json::json!(["target"]);
+    schema
+}
+
+fn custom_bang_create_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "name": {"type": "string"},
+            "trigger": {"type": "string"},
+            "template": {"type": "string"},
+            "snap_domain": {"type": "string"},
+            "regex_pattern": {"type": "string"},
+            "shortcut_menu": {"type": "boolean"},
+            "no_shortcut_menu": {"type": "boolean"},
+            "open_snap_domain": {"type": "boolean"},
+            "no_open_snap_domain": {"type": "boolean"},
+            "open_base_path": {"type": "boolean"},
+            "no_open_base_path": {"type": "boolean"},
+            "encode_placeholder": {"type": "boolean"},
+            "no_encode_placeholder": {"type": "boolean"},
+            "plus_for_space": {"type": "boolean"},
+            "no_plus_for_space": {"type": "boolean"}
+        }),
+        &["name", "trigger"],
+    )
+}
+
+fn custom_bang_update_schema() -> Value {
+    let mut schema = custom_bang_create_schema();
+    schema["properties"]["target"] = serde_json::json!({"type": "string"});
+    schema["required"] = serde_json::json!(["target"]);
+    schema
+}
+
+fn redirect_create_schema() -> Value {
+    object_schema(serde_json::json!({"rule": {"type": "string"}}), &["rule"])
+}
+
+fn redirect_update_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "target": {"type": "string"},
+            "rule": {"type": "string"}
+        }),
+        &["target", "rule"],
+    )
+}
+
+fn site_pref_set_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "domain": {"type": "string"},
+            "mode": {"type": "string", "enum": ["block", "lower", "normal", "higher", "pin"]}
+        }),
+        &["domain", "mode"],
+    )
+}
+
+fn history_list_schema() -> Value {
+    object_schema(
+        serde_json::json!({"limit": {"type": "integer", "minimum": 1, "default": 25}}),
+        &[],
+    )
+}
+
+fn cli_passthrough_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "args": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "description": "Arguments passed to the kagi binary, excluding the binary name"
+            },
+            "stdin": {
+                "type": "string",
+                "description": "Optional stdin to pass to the command"
+            },
+            "format": output_format_schema()
+        }),
+        &["args"],
+    )
+}
+
+async fn run_mcp_tool_call(
+    request: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<Value, KagiError> {
     let params = request
         .get("params")
         .cloned()
@@ -3302,104 +3890,1436 @@ async fn run_mcp_tool_call(request: &Value, profile: Option<&str>) -> Result<Val
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
-    let text =
-        match name {
-            "kagi_search" => {
-                let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
-                let inventory = load_credential_inventory_for_profile(profile)?;
-                let request = search::SearchRequest::new(query.to_string());
-                let credentials = inventory.resolve_for_search(SearchAuthRequirement::Base)?;
-                serde_json::to_string_pretty(&execute_search_request(&request, credentials).await?)?
-            }
-            "kagi_summarize" => {
-                let token = resolve_api_token(profile)?;
-                let request = SummarizeRequest {
-                    url: arguments
-                        .get("url")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    text: arguments
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    engine: None,
-                    summary_type: None,
-                    target_language: None,
-                    cache: None,
-                };
-                serde_json::to_string_pretty(&execute_summarize(&request, &token).await?)?
-            }
-            "kagi_extract" => {
-                let url = arguments.get("url").and_then(Value::as_str).unwrap_or("");
-                execute_extract_with_available_auth(url, profile).await?
-            }
-            "kagi_quick" => {
-                let token = resolve_session_token(profile)?;
-                let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
-                let request = search::SearchRequest::new(query.to_string());
-                serde_json::to_string_pretty(&execute_quick(&request, &token).await?)?
-            }
-            "kagi_news" => {
-                let category = arguments
-                    .get("category")
-                    .and_then(Value::as_str)
-                    .unwrap_or("world");
-                let lang = arguments
-                    .get("lang")
-                    .and_then(Value::as_str)
-                    .unwrap_or("default");
-                let limit = arguments
-                    .get("limit")
-                    .and_then(Value::as_u64)
-                    .map(|v| v as u32)
-                    .unwrap_or(12);
-                serde_json::to_string_pretty(&execute_news(category, limit, lang, None).await?)?
-            }
-            "kagi_news_search" => {
-                let token = resolve_session_token(profile)?;
-                let query = arguments
-                    .get("query")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                let region = arguments
-                    .get("region")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                let freshness = arguments.get("freshness").and_then(Value::as_str).and_then(
-                    |value| match value {
-                        "day" => Some(search::NewsFreshness::Day),
-                        "week" => Some(search::NewsFreshness::Week),
-                        "month" => Some(search::NewsFreshness::Month),
-                        _ => None,
-                    },
-                );
-                let order = arguments
-                    .get("order")
-                    .and_then(Value::as_str)
-                    .and_then(|value| match value {
-                        "default" => Some(search::NewsSearchOrder::Default),
-                        "recency" => Some(search::NewsSearchOrder::Recency),
-                        "website" => Some(search::NewsSearchOrder::Website),
-                        _ => None,
-                    });
-                let limit = arguments
-                    .get("limit")
-                    .and_then(Value::as_u64)
-                    .map(|v| v as usize);
-                let request = search::NewsSearchRequest {
-                    query,
-                    region,
-                    freshness,
-                    order,
-                    dir_desc: false,
-                    limit,
-                };
-                serde_json::to_string_pretty(&search::execute_news_search(&request, &token).await?)?
-            }
-            _ => format!("unsupported tool `{name}`"),
-        };
+    let text = match name {
+        "kagi_search" => mcp_search(&arguments, profile, config).await?,
+        "kagi_batch_search" => mcp_batch_search(&arguments, profile, config).await?,
+        "kagi_summarize" => mcp_summarize(&arguments, profile, config).await?,
+        "kagi_extract" => mcp_extract(&arguments, profile, config).await?,
+        "kagi_quick" => mcp_quick(&arguments, profile, config).await?,
+        "kagi_news" => mcp_news(&arguments, config).await?,
+        "kagi_news_categories" => mcp_output(
+            &execute_news_categories(mcp_string_or(&arguments, "lang", "default").as_str()).await?,
+            mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+        )?,
+        "kagi_news_chaos" => mcp_output(
+            &execute_news_chaos(mcp_string_or(&arguments, "lang", "default").as_str()).await?,
+            mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+        )?,
+        "kagi_news_filter_presets" => mcp_output(
+            &execute_news_filter_presets(mcp_string_or(&arguments, "lang", "default").as_str())?,
+            mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+        )?,
+        "kagi_news_search" => mcp_news_search(&arguments, profile, config).await?,
+        "kagi_assistant" => mcp_assistant(&arguments, profile, config).await?,
+        "kagi_assistant_models" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_assistant_model_catalog(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_assistant_thread_list" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_assistant_thread_list(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_assistant_thread_get" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_assistant_thread_get(
+                    &mcp_required_string(&arguments, "thread_id")?,
+                    &token,
+                )
+                .await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_assistant_thread_export" => {
+            mcp_assistant_thread_export(&arguments, profile, config).await?
+        }
+        "kagi_assistant_custom_list" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_custom_assistant_list(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_assistant_custom_get" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_custom_assistant_get(&mcp_required_string(&arguments, "target")?, &token)
+                    .await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_ask_page" => {
+            let token = resolve_session_token(profile)?;
+            let response = execute_ask_page(
+                &AskPageRequest {
+                    url: mcp_required_string(&arguments, "url")?,
+                    question: mcp_required_string(&arguments, "question")?,
+                },
+                &token,
+            )
+            .await?;
+            mcp_output(
+                &response,
+                mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+            )?
+        }
+        "kagi_translate" => mcp_translate(&arguments, profile, config).await?,
+        "kagi_fastgpt" => mcp_fastgpt(&arguments, profile, config).await?,
+        "kagi_enrich_web" => {
+            let token = resolve_api_token(profile)?;
+            mcp_output(
+                &execute_enrich_web(&mcp_required_string(&arguments, "query")?, &token).await?,
+                mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+            )?
+        }
+        "kagi_enrich_news" => {
+            let token = resolve_api_token(profile)?;
+            mcp_output(
+                &execute_enrich_news(&mcp_required_string(&arguments, "query")?, &token).await?,
+                mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
+            )?
+        }
+        "kagi_smallweb" => mcp_smallweb(&arguments, config).await?,
+        "kagi_lens_list" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_lens_list(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_lens_get" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_lens_get(&mcp_required_string(&arguments, "target")?, &token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_custom_bang_list" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_custom_bang_list(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_custom_bang_get" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_custom_bang_get(&mcp_required_string(&arguments, "target")?, &token)
+                    .await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_redirect_list" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_redirect_list(&token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_redirect_get" => {
+            let token = resolve_session_token(profile)?;
+            mcp_output(
+                &execute_redirect_get(&mcp_required_string(&arguments, "target")?, &token).await?,
+                config.default_output_or(OutputFormat::Json),
+            )?
+        }
+        "kagi_auth_status" => {
+            let inventory = load_credential_inventory_for_profile(profile)?;
+            format_status(&inventory)
+        }
+        "kagi_auth_check" => mcp_auth_check(profile).await?,
+        "kagi_history_list" => mcp_output(
+            &local::read_history(mcp_usize_or(&arguments, "limit", 25)?)?,
+            config.default_output_or(OutputFormat::Json),
+        )?,
+        "kagi_history_stats" => mcp_output(
+            &local::history_stats()?,
+            config.default_output_or(OutputFormat::Json),
+        )?,
+        "kagi_site_pref_list" => mcp_output(
+            &local::load_site_preferences()?,
+            config.default_output_or(OutputFormat::Json),
+        )?,
+        "kagi_assistant_thread_delete"
+        | "kagi_assistant_custom_create"
+        | "kagi_assistant_custom_update"
+        | "kagi_assistant_custom_delete"
+        | "kagi_lens_create"
+        | "kagi_lens_update"
+        | "kagi_lens_delete"
+        | "kagi_lens_enable"
+        | "kagi_lens_disable"
+        | "kagi_custom_bang_create"
+        | "kagi_custom_bang_update"
+        | "kagi_custom_bang_delete"
+        | "kagi_redirect_create"
+        | "kagi_redirect_update"
+        | "kagi_redirect_delete"
+        | "kagi_redirect_enable"
+        | "kagi_redirect_disable"
+        | "kagi_site_pref_set"
+        | "kagi_site_pref_remove"
+        | "kagi_cli" => mcp_mutating_tool_call(name, &arguments, profile, config).await?,
+        _ => {
+            return Err(KagiError::Config(format!(
+                "unsupported MCP tool `{name}`. Call tools/list to inspect available tools"
+            )));
+        }
+    };
     Ok(serde_json::json!({ "content": [{ "type": "text", "text": text }] }))
+}
+
+async fn mcp_mutating_tool_call(
+    name: &str,
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    if !config.enable_mutating_tools {
+        return Err(KagiError::Config(format!(
+            "MCP tool `{name}` mutates Kagi or local CLI state. Restart `kagi mcp` with --enable-mutating-tools to expose it"
+        )));
+    }
+
+    if name == "kagi_cli" {
+        return mcp_cli_passthrough(arguments, config);
+    }
+
+    let token = resolve_session_token(profile)?;
+    match name {
+        "kagi_assistant_thread_delete" => mcp_output(
+            &execute_assistant_thread_delete(&mcp_required_string(arguments, "thread_id")?, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_assistant_custom_create" => mcp_output(
+            &execute_custom_assistant_create(
+                &mcp_assistant_custom_create_request(arguments)?,
+                &token,
+            )
+            .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_assistant_custom_update" => mcp_output(
+            &execute_custom_assistant_update(
+                &mcp_assistant_custom_update_request(arguments)?,
+                &token,
+            )
+            .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_assistant_custom_delete" => mcp_output(
+            &execute_custom_assistant_delete(&mcp_required_string(arguments, "target")?, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_lens_create" => mcp_output(
+            &execute_lens_create(&mcp_lens_create_request(arguments)?, &token).await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_lens_update" => mcp_output(
+            &execute_lens_update(&mcp_lens_update_request(arguments)?, &token).await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_lens_delete" => mcp_output(
+            &execute_lens_delete(&mcp_required_string(arguments, "target")?, &token).await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_lens_enable" => mcp_output(
+            &execute_lens_set_enabled(&mcp_required_string(arguments, "target")?, true, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_lens_disable" => mcp_output(
+            &execute_lens_set_enabled(&mcp_required_string(arguments, "target")?, false, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_custom_bang_create" => mcp_output(
+            &execute_custom_bang_create(&mcp_custom_bang_create_request(arguments)?, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_custom_bang_update" => mcp_output(
+            &execute_custom_bang_update(&mcp_custom_bang_update_request(arguments)?, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_custom_bang_delete" => mcp_output(
+            &execute_custom_bang_delete(&mcp_required_string(arguments, "target")?, &token).await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_redirect_create" => mcp_output(
+            &execute_redirect_create(
+                &RedirectRuleCreateRequest {
+                    rule: mcp_required_string(arguments, "rule")?,
+                },
+                &token,
+            )
+            .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_redirect_update" => mcp_output(
+            &execute_redirect_update(
+                &RedirectRuleUpdateRequest {
+                    target: mcp_required_string(arguments, "target")?,
+                    rule: mcp_required_string(arguments, "rule")?,
+                },
+                &token,
+            )
+            .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_redirect_delete" => mcp_output(
+            &execute_redirect_delete(&mcp_required_string(arguments, "target")?, &token).await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_redirect_enable" => mcp_output(
+            &execute_redirect_set_enabled(&mcp_required_string(arguments, "target")?, true, &token)
+                .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_redirect_disable" => mcp_output(
+            &execute_redirect_set_enabled(
+                &mcp_required_string(arguments, "target")?,
+                false,
+                &token,
+            )
+            .await?,
+            config.default_output_or(OutputFormat::Json),
+        ),
+        "kagi_site_pref_set" => {
+            let mut preferences = local::load_site_preferences()?;
+            let domain = local::normalize_domain(&mcp_required_string(arguments, "domain")?)?;
+            let mode = mcp_site_pref_mode(arguments)?;
+            preferences.domains.insert(domain.clone(), mode);
+            local::save_site_preferences(&preferences)?;
+            mcp_output(
+                &serde_json::json!({"domain": domain, "mode": mode.as_str()}),
+                config.default_output_or(OutputFormat::Json),
+            )
+        }
+        "kagi_site_pref_remove" => {
+            let mut preferences = local::load_site_preferences()?;
+            let domain = local::normalize_domain(&mcp_required_string(arguments, "domain")?)?;
+            preferences.domains.remove(&domain);
+            local::save_site_preferences(&preferences)?;
+            mcp_output(
+                &serde_json::json!({"domain": domain, "removed": true}),
+                config.default_output_or(OutputFormat::Json),
+            )
+        }
+        _ => Err(KagiError::Config(format!(
+            "unsupported mutating MCP tool `{name}`"
+        ))),
+    }
+}
+
+fn mcp_cli_passthrough(arguments: &Value, config: &McpServerConfig) -> Result<String, KagiError> {
+    let args = mcp_string_array(arguments, "args")?;
+    if args.first().is_some_and(|arg| arg == "mcp") {
+        return Err(KagiError::Config(
+            "kagi_cli cannot launch nested `kagi mcp` servers".to_string(),
+        ));
+    }
+
+    let executable = env::current_exe().map_err(|error| {
+        KagiError::Config(format!("failed to locate current kagi executable: {error}"))
+    })?;
+    let mut command = ProcessCommand::new(executable);
+    command.args(&args);
+
+    if mcp_string(arguments, "stdin").is_some() {
+        command.stdin(Stdio::piped());
+    } else {
+        command.stdin(Stdio::null());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| KagiError::Config(format!("failed to run kagi command: {error}")))?;
+
+    if let Some(stdin) = mcp_string(arguments, "stdin") {
+        let mut child_stdin = child.stdin.take().ok_or_else(|| {
+            KagiError::Config("failed to open stdin for kagi command".to_string())
+        })?;
+        child_stdin.write_all(stdin.as_bytes()).map_err(|error| {
+            KagiError::Config(format!("failed to write stdin to kagi command: {error}"))
+        })?;
+    }
+
+    let output = child.wait_with_output().map_err(|error| {
+        KagiError::Config(format!("failed to collect kagi command output: {error}"))
+    })?;
+    let payload = serde_json::json!({
+        "status": output.status.code(),
+        "success": output.status.success(),
+        "stdout": String::from_utf8_lossy(&output.stdout),
+        "stderr": String::from_utf8_lossy(&output.stderr),
+    });
+    mcp_output(
+        &payload,
+        mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+    )
+}
+
+async fn mcp_search(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let format = mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?;
+    if mcp_bool(arguments, "news") {
+        let token = resolve_session_token(profile)?;
+        let request = mcp_news_search_request(arguments)?;
+        let response = search::execute_news_search(&request, &token).await?;
+        return format_news_search_response(&response, &format, false);
+    }
+
+    let mut options = mcp_search_options(arguments)?;
+    options.lens = resolve_search_lens_option(options.lens, profile).await?;
+    let request = build_search_request(mcp_required_string(arguments, "query")?, &options);
+
+    if let Some(follow_count) = mcp_usize(arguments, "follow")? {
+        let value = mcp_search_follow_value(request, follow_count, options.limit, profile).await?;
+        return mcp_output(&value, format);
+    }
+
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
+    let response = cached_json(
+        mcp_bool(arguments, "local_cache"),
+        mcp_u64_or(arguments, "cache_ttl", 900)?,
+        "search",
+        &request,
+        || async { execute_search_request(&request, credentials).await },
+    )
+    .await?;
+    record_history("search", Some(&request.query), Some(response.data.len()))?;
+    let mut response = apply_local_site_preferences(response)?;
+    if let Some(limit) = options.limit {
+        response.data.truncate(limit);
+    }
+    format_search_response(
+        &response,
+        &format,
+        arguments.get("template").and_then(Value::as_str),
+        false,
+    )
+}
+
+async fn mcp_batch_search(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let queries = mcp_string_array(arguments, "queries")?;
+    if queries.is_empty() {
+        return Err(KagiError::Config(
+            "kagi_batch_search requires at least one query".to_string(),
+        ));
+    }
+
+    let format = mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?;
+    let mut options = mcp_search_options(arguments)?;
+    options.lens = resolve_search_lens_option(options.lens, profile).await?;
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    let auth_probe_request = build_search_request("auth probe".to_string(), &options);
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&auth_probe_request))?;
+    let rate_limit = mcp_u32_or(arguments, "rate_limit", 60)?;
+    let concurrency = mcp_usize_or(arguments, "concurrency", 3)?;
+    if concurrency == 0 {
+        return Err(KagiError::Config(
+            "kagi_batch_search concurrency must be at least 1".to_string(),
+        ));
+    }
+    let rate_limiter = Arc::new(RateLimiter::new(rate_limit, rate_limit));
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut handles = Vec::new();
+
+    for query in queries {
+        let rate_limiter = Arc::clone(&rate_limiter);
+        let semaphore = Arc::clone(&semaphore);
+        let credentials = credentials.clone();
+        let options = options.clone();
+        let query_for_task = query.clone();
+        let handle: tokio::task::JoinHandle<(String, Result<SearchResponse, KagiError>)> =
+            tokio::spawn(async move {
+                let _permit = semaphore.acquire().await;
+                let result = async {
+                    rate_limiter.acquire().await?;
+                    let request = build_search_request(query_for_task, &options);
+                    execute_search_request(&request, credentials).await
+                }
+                .await;
+                (query, result)
+            });
+        handles.push(handle);
+    }
+
+    let mut query_order = Vec::new();
+    let mut results = Vec::new();
+    let mut failures = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok((query, Ok(mut response))) => {
+                if let Some(limit) = options.limit {
+                    response.data.truncate(limit);
+                }
+                query_order.push(query);
+                results.push(serde_json::to_value(response)?);
+            }
+            Ok((query, Err(error))) => failures.push(format!("{query}: {error}")),
+            Err(error) => failures.push(format!("worker task failed: {error}")),
+        }
+    }
+
+    if !failures.is_empty()
+        && matches!(
+            format,
+            OutputFormat::Json | OutputFormat::Compact | OutputFormat::Toon
+        )
+    {
+        return Err(KagiError::Batch(format_batch_failure_message(
+            results.len(),
+            &failures,
+        )));
+    }
+
+    let payload = serde_json::json!({
+        "queries": query_order,
+        "results": results,
+        "failures": failures,
+    });
+    mcp_output(&payload, format)
+}
+
+async fn mcp_search_follow_value(
+    request: search::SearchRequest,
+    follow_count: usize,
+    limit: Option<usize>,
+    profile: Option<&str>,
+) -> Result<Value, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    let credentials = inventory.resolve_for_search(search_auth_requirement(&request))?;
+    let mut response =
+        apply_local_site_preferences(execute_search_request(&request, credentials).await?)?;
+    if let Some(limit) = limit {
+        response.data.truncate(limit);
+    }
+    let token = resolve_session_token(profile)?;
+    let mut summaries = Vec::new();
+    for result in response.data.iter().take(follow_count) {
+        let request = SubscriberSummarizeRequest {
+            url: Some(result.url.clone()),
+            text: None,
+            summary_type: None,
+            target_language: None,
+            length: None,
+        };
+        summaries.push(serde_json::json!({
+            "title": result.title,
+            "url": result.url,
+            "summary": execute_subscriber_summarize(&request, &token).await?,
+        }));
+    }
+    record_history(
+        "search-follow",
+        Some(&request.query),
+        Some(response.data.len()),
+    )?;
+    Ok(serde_json::json!({
+        "query": request.query,
+        "search": response,
+        "summaries": summaries,
+    }))
+}
+
+async fn mcp_summarize(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let format = mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?;
+    if mcp_bool(arguments, "subscriber") {
+        if arguments.get("engine").is_some() {
+            return Err(KagiError::Config(
+                "engine is only supported for the paid public summarizer API".to_string(),
+            ));
+        }
+        if arguments.get("cache").is_some() {
+            return Err(KagiError::Config(
+                "cache is only supported for the paid public summarizer API".to_string(),
+            ));
+        }
+        let request = SubscriberSummarizeRequest {
+            url: mcp_string(arguments, "url"),
+            text: mcp_string(arguments, "text"),
+            summary_type: mcp_string(arguments, "summary_type"),
+            target_language: mcp_string(arguments, "target_language"),
+            length: mcp_string(arguments, "length"),
+        };
+        mcp_validate_url_or_text(
+            request.url.as_deref(),
+            request.text.as_deref(),
+            "kagi_summarize",
+        )?;
+        let token = resolve_session_token(profile)?;
+        let response = cached_json(
+            mcp_bool(arguments, "local_cache"),
+            mcp_u64_or(arguments, "cache_ttl", 3600)?,
+            "subscriber-summarize",
+            &request,
+            || async { execute_subscriber_summarize(&request, &token).await },
+        )
+        .await?;
+        return mcp_output(&response, format);
+    }
+
+    if arguments.get("length").is_some() {
+        return Err(KagiError::Config(
+            "length requires subscriber=true".to_string(),
+        ));
+    }
+    let request = SummarizeRequest {
+        url: mcp_string(arguments, "url"),
+        text: mcp_string(arguments, "text"),
+        engine: mcp_string(arguments, "engine"),
+        summary_type: mcp_string(arguments, "summary_type"),
+        target_language: mcp_string(arguments, "target_language"),
+        cache: mcp_bool_option(arguments, "cache"),
+    };
+    mcp_validate_url_or_text(
+        request.url.as_deref(),
+        request.text.as_deref(),
+        "kagi_summarize",
+    )?;
+    let token = resolve_api_token(profile)?;
+    let response = cached_json(
+        mcp_bool(arguments, "local_cache"),
+        mcp_u64_or(arguments, "cache_ttl", 3600)?,
+        "summarize",
+        &request,
+        || async { execute_summarize(&request, &token).await },
+    )
+    .await?;
+    mcp_output(&response, format)
+}
+
+async fn mcp_extract(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let url = mcp_required_string(arguments, "url")?;
+    let format = arguments
+        .get("format")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase);
+    match format.as_deref() {
+        Some("markdown") => execute_extract_with_available_auth(&url, profile).await,
+        Some("compact") => {
+            let response = execute_extract_response_with_available_auth(&url, profile).await?;
+            serde_json::to_string(&response).map_err(KagiError::from)
+        }
+        Some("toon") => {
+            let response = execute_extract_response_with_available_auth(&url, profile).await?;
+            mcp_output(&response, OutputFormat::Toon)
+        }
+        Some("json") => {
+            let response = execute_extract_response_with_available_auth(&url, profile).await?;
+            mcp_output(&response, OutputFormat::Json)
+        }
+        None => match config.default_output.clone() {
+            None | Some(OutputFormat::Markdown | OutputFormat::Pretty) => {
+                execute_extract_with_available_auth(&url, profile).await
+            }
+            Some(OutputFormat::Compact) => {
+                let response = execute_extract_response_with_available_auth(&url, profile).await?;
+                serde_json::to_string(&response).map_err(KagiError::from)
+            }
+            Some(OutputFormat::Toon) => {
+                let response = execute_extract_response_with_available_auth(&url, profile).await?;
+                mcp_output(&response, OutputFormat::Toon)
+            }
+            Some(OutputFormat::Json | OutputFormat::Csv) => {
+                let response = execute_extract_response_with_available_auth(&url, profile).await?;
+                mcp_output(&response, OutputFormat::Json)
+            }
+        },
+        Some(other) => Err(KagiError::Config(format!(
+            "unsupported extract format `{other}`. Use markdown, json, compact, or toon"
+        ))),
+    }
+}
+
+async fn mcp_quick(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let token = resolve_session_token(profile)?;
+    let mut request = search::SearchRequest::new(mcp_required_string(arguments, "query")?);
+    if let Some(lens) = mcp_string(arguments, "lens") {
+        request = request.with_lens(lens);
+    }
+    let response = cached_json(
+        mcp_bool(arguments, "local_cache"),
+        mcp_u64_or(arguments, "cache_ttl", 900)?,
+        "quick",
+        &request,
+        || async { execute_quick(&request, &token).await },
+    )
+    .await?;
+    format_quick_response(
+        &response,
+        mcp_quick_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+        false,
+    )
+}
+
+async fn mcp_news(arguments: &Value, config: &McpServerConfig) -> Result<String, KagiError> {
+    let presets = mcp_string_array_or_empty(arguments, "filter_preset")?;
+    let keywords = mcp_string_array_or_empty(arguments, "filter_keyword")?;
+    let filter_mode = mcp_news_filter_mode(arguments)?.unwrap_or(NewsFilterMode::Hide);
+    let filter_scope = mcp_news_filter_scope(arguments)?.unwrap_or(NewsFilterScope::All);
+    let filter_request =
+        (!presets.is_empty() || !keywords.is_empty()).then_some(NewsFilterRequest {
+            preset_ids: presets,
+            keywords,
+            mode: filter_mode,
+            scope: filter_scope,
+        });
+    let response = execute_news(
+        &mcp_string_or(arguments, "category", "world"),
+        mcp_u32_or(arguments, "limit", 12)?,
+        &mcp_string_or(arguments, "lang", "default"),
+        filter_request.as_ref(),
+    )
+    .await?;
+    mcp_output(
+        &response,
+        mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+    )
+}
+
+async fn mcp_news_search(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let token = resolve_session_token(profile)?;
+    let request = mcp_news_search_request(arguments)?;
+    let response = search::execute_news_search(&request, &token).await?;
+    format_news_search_response(
+        &response,
+        &mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+        false,
+    )
+}
+
+async fn mcp_assistant(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let token = resolve_session_token(profile)?;
+    let mut query = mcp_required_string(arguments, "query")?;
+    let contract_file = mcp_string(arguments, "contract_file").map(PathBuf::from);
+    let contract = load_assistant_contract(
+        mcp_string(arguments, "contract").as_deref(),
+        contract_file.as_deref(),
+    )?;
+    let format = mcp_assistant_format(arguments, &config.default_output_or(OutputFormat::Json))?;
+    if contract.is_some() {
+        validate_assistant_contract_output_format(format.clone())?;
+    }
+    if let Some(contract) = contract.as_ref() {
+        query = contract_prompt_query(&query, contract);
+    }
+
+    let request = AssistantPromptRequest {
+        query,
+        thread_id: mcp_string(arguments, "thread_id"),
+        attachments: mcp_path_array(arguments, "attach")?,
+        profile_id: mcp_string(arguments, "assistant"),
+        model: mcp_string(arguments, "model"),
+        lens_id: mcp_u64(arguments, "lens")?,
+        internet_access: mcp_bool_choice(arguments, "web_access", "no_web_access"),
+        personalizations: mcp_bool_choice(arguments, "personalized", "no_personalized"),
+    };
+    let response = if mcp_bool(arguments, "once") {
+        execute_once_assistant_prompt(&request, None, &token).await?
+    } else {
+        execute_assistant_prompt(&request, &token).await?
+    };
+
+    if let Some(contract) = contract.as_ref() {
+        let value = validate_assistant_contract_response(contract, &response).map_err(|error| {
+            KagiError::Config(format!(
+                "assistant contract '{}' was not satisfied: {error}",
+                contract.name
+            ))
+        })?;
+        return mcp_output(&value, output_format_from_assistant(format));
+    }
+
+    format_assistant_response(&response, format, false)
+}
+
+async fn mcp_assistant_thread_export(
+    arguments: &Value,
+    profile: Option<&str>,
+    _config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let token = resolve_session_token(profile)?;
+    let thread_id = mcp_required_string(arguments, "thread_id")?;
+    match mcp_string_or(arguments, "format", "markdown").as_str() {
+        "markdown" => Ok(execute_assistant_thread_export(&thread_id, &token)
+            .await?
+            .markdown),
+        "json" => mcp_output(
+            &execute_assistant_thread_get(&thread_id, &token).await?,
+            OutputFormat::Json,
+        ),
+        other => Err(KagiError::Config(format!(
+            "unsupported thread export format `{other}`. Use markdown or json"
+        ))),
+    }
+}
+
+async fn mcp_translate(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let token = resolve_session_token(profile)?;
+    let request = TranslateCommandRequest {
+        text: mcp_required_string(arguments, "text")?,
+        from: mcp_string_or(arguments, "from", "auto"),
+        to: mcp_string_or(arguments, "to", "en"),
+        quality: mcp_string(arguments, "quality"),
+        model: mcp_string(arguments, "model"),
+        prediction: mcp_string(arguments, "prediction"),
+        predicted_language: mcp_string(arguments, "predicted_language"),
+        formality: mcp_string(arguments, "formality"),
+        speaker_gender: mcp_string(arguments, "speaker_gender"),
+        addressee_gender: mcp_string(arguments, "addressee_gender"),
+        language_complexity: mcp_string(arguments, "language_complexity"),
+        translation_style: mcp_string(arguments, "translation_style"),
+        context: mcp_string(arguments, "context"),
+        dictionary_language: mcp_string(arguments, "dictionary_language"),
+        time_format: mcp_string(arguments, "time_format"),
+        use_definition_context: mcp_bool_option(arguments, "use_definition_context"),
+        enable_language_features: mcp_bool_option(arguments, "enable_language_features"),
+        preserve_formatting: mcp_bool_option(arguments, "preserve_formatting"),
+        context_memory: arguments
+            .get("context_memory")
+            .and_then(Value::as_array)
+            .cloned(),
+        fetch_alternatives: mcp_bool_or(arguments, "fetch_alternatives", true),
+        fetch_word_insights: mcp_bool_or(arguments, "fetch_word_insights", true),
+        fetch_suggestions: mcp_bool_or(arguments, "fetch_suggestions", true),
+        fetch_alignments: mcp_bool_or(arguments, "fetch_alignments", true),
+    };
+    let response = execute_translate(&request, &token).await?;
+    mcp_output(
+        &response,
+        mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+    )
+}
+
+async fn mcp_fastgpt(
+    arguments: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Result<String, KagiError> {
+    let request = FastGptRequest {
+        query: mcp_required_string(arguments, "query")?,
+        cache: mcp_bool_option(arguments, "cache"),
+        web_search: mcp_bool_option(arguments, "web_search"),
+    };
+    let token = resolve_api_token(profile)?;
+    let response = cached_json(
+        mcp_bool(arguments, "local_cache"),
+        mcp_u64_or(arguments, "cache_ttl", 3600)?,
+        "fastgpt",
+        &request,
+        || async { execute_fastgpt(&request, &token).await },
+    )
+    .await?;
+    mcp_output(
+        &response,
+        mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+    )
+}
+
+async fn mcp_smallweb(arguments: &Value, config: &McpServerConfig) -> Result<String, KagiError> {
+    mcp_output(
+        &execute_smallweb(mcp_u32(arguments, "limit")?).await?,
+        mcp_output_format(arguments, &config.default_output_or(OutputFormat::Json))?,
+    )
+}
+
+async fn mcp_auth_check(profile: Option<&str>) -> Result<String, KagiError> {
+    let inventory = load_credential_inventory_for_profile(profile)?;
+    let credential = inventory.preferred_for_status().cloned().ok_or_else(|| {
+        KagiError::Config(
+            "missing credentials: auth check could not verify an account. Set KAGI_API_KEY, KAGI_API_TOKEN, or KAGI_SESSION_TOKEN, or run `kagi auth set` with the credential you want to save"
+                .to_string(),
+        )
+    })?;
+    let selected_kind = credential.kind;
+    let selected_source = credential.source;
+    validate_credential(&credential).await?;
+    Ok(format!(
+        "auth check passed: {} ({})",
+        selected_kind.as_str(),
+        selected_source.as_str()
+    ))
+}
+
+fn mcp_assistant_custom_create_request(
+    arguments: &Value,
+) -> Result<AssistantProfileCreateRequest, KagiError> {
+    Ok(AssistantProfileCreateRequest {
+        name: mcp_required_string(arguments, "name")?,
+        bang_trigger: mcp_string(arguments, "bang_trigger"),
+        internet_access: mcp_bool_choice(arguments, "web_access", "no_web_access"),
+        selected_lens: mcp_string(arguments, "lens"),
+        personalizations: mcp_bool_choice(arguments, "personalized", "no_personalized"),
+        base_model: mcp_string(arguments, "model"),
+        custom_instructions: mcp_string(arguments, "instructions"),
+    })
+}
+
+fn mcp_assistant_custom_update_request(
+    arguments: &Value,
+) -> Result<AssistantProfileUpdateRequest, KagiError> {
+    Ok(AssistantProfileUpdateRequest {
+        target: mcp_required_string(arguments, "target")?,
+        name: mcp_string(arguments, "name"),
+        bang_trigger: mcp_string(arguments, "bang_trigger"),
+        internet_access: mcp_bool_choice(arguments, "web_access", "no_web_access"),
+        selected_lens: mcp_string(arguments, "lens"),
+        personalizations: mcp_bool_choice(arguments, "personalized", "no_personalized"),
+        base_model: mcp_string(arguments, "model"),
+        custom_instructions: mcp_string(arguments, "instructions"),
+    })
+}
+
+fn mcp_lens_create_request(arguments: &Value) -> Result<LensCreateRequest, KagiError> {
+    Ok(LensCreateRequest {
+        name: mcp_required_string(arguments, "name")?,
+        included_sites: mcp_string(arguments, "included_sites"),
+        included_keywords: mcp_string(arguments, "included_keywords"),
+        description: mcp_string(arguments, "description"),
+        search_region: mcp_string(arguments, "region"),
+        before_time: mcp_string(arguments, "before_date"),
+        after_time: mcp_string(arguments, "after_date"),
+        excluded_sites: mcp_string(arguments, "excluded_sites"),
+        excluded_keywords: mcp_string(arguments, "excluded_keywords"),
+        shortcut_keyword: mcp_string(arguments, "shortcut"),
+        autocomplete_keywords: mcp_bool_choice(
+            arguments,
+            "autocomplete_keywords",
+            "no_autocomplete_keywords",
+        ),
+        template: mcp_lens_template(arguments)?,
+        file_type: mcp_string(arguments, "file_type"),
+        share_with_team: mcp_bool_choice(arguments, "share_with_team", "no_share_with_team"),
+        share_copy_code: mcp_bool_choice(arguments, "share_copy_code", "no_share_copy_code"),
+    })
+}
+
+fn mcp_lens_update_request(arguments: &Value) -> Result<LensUpdateRequest, KagiError> {
+    Ok(LensUpdateRequest {
+        target: mcp_required_string(arguments, "target")?,
+        name: mcp_string(arguments, "name"),
+        included_sites: mcp_string(arguments, "included_sites"),
+        included_keywords: mcp_string(arguments, "included_keywords"),
+        description: mcp_string(arguments, "description"),
+        search_region: mcp_string(arguments, "region"),
+        before_time: mcp_string(arguments, "before_date"),
+        after_time: mcp_string(arguments, "after_date"),
+        excluded_sites: mcp_string(arguments, "excluded_sites"),
+        excluded_keywords: mcp_string(arguments, "excluded_keywords"),
+        shortcut_keyword: mcp_string(arguments, "shortcut"),
+        autocomplete_keywords: mcp_bool_choice(
+            arguments,
+            "autocomplete_keywords",
+            "no_autocomplete_keywords",
+        ),
+        template: mcp_lens_template(arguments)?,
+        file_type: mcp_string(arguments, "file_type"),
+        share_with_team: mcp_bool_choice(arguments, "share_with_team", "no_share_with_team"),
+        share_copy_code: mcp_bool_choice(arguments, "share_copy_code", "no_share_copy_code"),
+    })
+}
+
+fn mcp_custom_bang_create_request(arguments: &Value) -> Result<CustomBangCreateRequest, KagiError> {
+    Ok(CustomBangCreateRequest {
+        name: mcp_required_string(arguments, "name")?,
+        trigger: mcp_required_string(arguments, "trigger")?,
+        template: mcp_string(arguments, "template"),
+        snap_domain: mcp_string(arguments, "snap_domain"),
+        regex_pattern: mcp_string(arguments, "regex_pattern"),
+        shortcut_menu: mcp_bool_choice(arguments, "shortcut_menu", "no_shortcut_menu"),
+        fmt_open_snap_domain: mcp_bool_choice(arguments, "open_snap_domain", "no_open_snap_domain"),
+        fmt_open_base_path: mcp_bool_choice(arguments, "open_base_path", "no_open_base_path"),
+        fmt_url_encode_placeholder: mcp_bool_choice(
+            arguments,
+            "encode_placeholder",
+            "no_encode_placeholder",
+        ),
+        fmt_url_encode_space_to_plus: mcp_bool_choice(
+            arguments,
+            "plus_for_space",
+            "no_plus_for_space",
+        ),
+    })
+}
+
+fn mcp_custom_bang_update_request(arguments: &Value) -> Result<CustomBangUpdateRequest, KagiError> {
+    Ok(CustomBangUpdateRequest {
+        target: mcp_required_string(arguments, "target")?,
+        name: mcp_string(arguments, "name"),
+        trigger: mcp_string(arguments, "trigger"),
+        template: mcp_string(arguments, "template"),
+        snap_domain: mcp_string(arguments, "snap_domain"),
+        regex_pattern: mcp_string(arguments, "regex_pattern"),
+        shortcut_menu: mcp_bool_choice(arguments, "shortcut_menu", "no_shortcut_menu"),
+        fmt_open_snap_domain: mcp_bool_choice(arguments, "open_snap_domain", "no_open_snap_domain"),
+        fmt_open_base_path: mcp_bool_choice(arguments, "open_base_path", "no_open_base_path"),
+        fmt_url_encode_placeholder: mcp_bool_choice(
+            arguments,
+            "encode_placeholder",
+            "no_encode_placeholder",
+        ),
+        fmt_url_encode_space_to_plus: mcp_bool_choice(
+            arguments,
+            "plus_for_space",
+            "no_plus_for_space",
+        ),
+    })
+}
+
+fn mcp_search_options(arguments: &Value) -> Result<SearchRequestOptions, KagiError> {
+    Ok(SearchRequestOptions {
+        snap: mcp_string(arguments, "snap"),
+        lens: mcp_string(arguments, "lens"),
+        region: mcp_string(arguments, "region"),
+        time: mcp_search_time(arguments)?,
+        from_date: mcp_string(arguments, "from_date"),
+        to_date: mcp_string(arguments, "to_date"),
+        limit: mcp_usize(arguments, "limit")?,
+        order: mcp_search_order(arguments)?,
+        verbatim: mcp_bool(arguments, "verbatim"),
+        personalized: mcp_bool(arguments, "personalized"),
+        no_personalized: mcp_bool(arguments, "no_personalized"),
+    })
+}
+
+fn mcp_news_search_request(arguments: &Value) -> Result<search::NewsSearchRequest, KagiError> {
+    Ok(search::NewsSearchRequest {
+        query: mcp_required_string(arguments, "query")?,
+        region: mcp_string(arguments, "region"),
+        freshness: mcp_news_freshness(arguments)?,
+        order: mcp_news_order(arguments)?,
+        dir_desc: mcp_bool(arguments, "dir_desc"),
+        limit: mcp_usize(arguments, "limit")?,
+    })
+}
+
+fn mcp_validate_url_or_text(
+    url: Option<&str>,
+    text: Option<&str>,
+    tool_name: &str,
+) -> Result<(), KagiError> {
+    match (
+        url.map(str::trim).filter(|value| !value.is_empty()),
+        text.map(str::trim).filter(|value| !value.is_empty()),
+    ) {
+        (Some(_), None) | (None, Some(_)) => Ok(()),
+        (Some(_), Some(_)) => Err(KagiError::Config(format!(
+            "{tool_name} accepts exactly one of url or text, not both"
+        ))),
+        (None, None) => Err(KagiError::Config(format!(
+            "{tool_name} requires url or text"
+        ))),
+    }
+}
+
+fn mcp_required_string(arguments: &Value, key: &str) -> Result<String, KagiError> {
+    mcp_string(arguments, key).ok_or_else(|| {
+        KagiError::Config(format!(
+            "MCP argument `{key}` is required and must be a non-empty string"
+        ))
+    })
+}
+
+fn mcp_string(arguments: &Value, key: &str) -> Option<String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn mcp_string_or(arguments: &Value, key: &str, default: &str) -> String {
+    mcp_string(arguments, key).unwrap_or_else(|| default.to_string())
+}
+
+fn mcp_bool(arguments: &Value, key: &str) -> bool {
+    arguments.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn mcp_bool_or(arguments: &Value, key: &str, default: bool) -> bool {
+    arguments
+        .get(key)
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
+}
+
+fn mcp_bool_option(arguments: &Value, key: &str) -> Option<bool> {
+    arguments.get(key).and_then(Value::as_bool)
+}
+
+fn mcp_bool_choice(arguments: &Value, enabled: &str, disabled: &str) -> Option<bool> {
+    match (mcp_bool(arguments, enabled), mcp_bool(arguments, disabled)) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
+fn mcp_u64(arguments: &Value, key: &str) -> Result<Option<u64>, KagiError> {
+    match arguments.get(key) {
+        Some(value) => value.as_u64().map(Some).ok_or_else(|| {
+            KagiError::Config(format!("MCP argument `{key}` must be a positive integer"))
+        }),
+        None => Ok(None),
+    }
+}
+
+fn mcp_u64_or(arguments: &Value, key: &str, default: u64) -> Result<u64, KagiError> {
+    Ok(mcp_u64(arguments, key)?.unwrap_or(default))
+}
+
+fn mcp_u32(arguments: &Value, key: &str) -> Result<Option<u32>, KagiError> {
+    mcp_u64(arguments, key)?
+        .map(|value| {
+            u32::try_from(value).map_err(|_| {
+                KagiError::Config(format!("MCP argument `{key}` is too large for a u32"))
+            })
+        })
+        .transpose()
+}
+
+fn mcp_u32_or(arguments: &Value, key: &str, default: u32) -> Result<u32, KagiError> {
+    Ok(mcp_u32(arguments, key)?.unwrap_or(default))
+}
+
+fn mcp_usize(arguments: &Value, key: &str) -> Result<Option<usize>, KagiError> {
+    mcp_u64(arguments, key)?
+        .map(|value| {
+            usize::try_from(value).map_err(|_| {
+                KagiError::Config(format!(
+                    "MCP argument `{key}` is too large for this platform"
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn mcp_usize_or(arguments: &Value, key: &str, default: usize) -> Result<usize, KagiError> {
+    Ok(mcp_usize(arguments, key)?.unwrap_or(default))
+}
+
+fn mcp_string_array(arguments: &Value, key: &str) -> Result<Vec<String>, KagiError> {
+    let values = arguments
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            KagiError::Config(format!("MCP argument `{key}` must be an array of strings"))
+        })?;
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    KagiError::Config(format!(
+                        "MCP argument `{key}` must contain only non-empty strings"
+                    ))
+                })
+        })
+        .collect()
+}
+
+fn mcp_string_array_or_empty(arguments: &Value, key: &str) -> Result<Vec<String>, KagiError> {
+    if arguments.get(key).is_none() {
+        Ok(Vec::new())
+    } else {
+        mcp_string_array(arguments, key)
+    }
+}
+
+fn mcp_path_array(arguments: &Value, key: &str) -> Result<Vec<PathBuf>, KagiError> {
+    mcp_string_array_or_empty(arguments, key)
+        .map(|values| values.into_iter().map(PathBuf::from).collect())
+}
+
+fn mcp_search_time(arguments: &Value) -> Result<Option<SearchTime>, KagiError> {
+    mcp_string(arguments, "time")
+        .map(|value| match value.as_str() {
+            "day" => Ok(SearchTime::Day),
+            "week" => Ok(SearchTime::Week),
+            "month" => Ok(SearchTime::Month),
+            "year" => Ok(SearchTime::Year),
+            _ => Err(KagiError::Config(format!(
+                "unsupported time `{value}`. Use day, week, month, or year"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_search_order(arguments: &Value) -> Result<Option<SearchOrder>, KagiError> {
+    mcp_string(arguments, "order")
+        .map(|value| match value.as_str() {
+            "default" => Ok(SearchOrder::Default),
+            "recency" => Ok(SearchOrder::Recency),
+            "website" => Ok(SearchOrder::Website),
+            "trackers" => Ok(SearchOrder::Trackers),
+            _ => Err(KagiError::Config(format!(
+                "unsupported order `{value}`. Use default, recency, website, or trackers"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_news_freshness(arguments: &Value) -> Result<Option<search::NewsFreshness>, KagiError> {
+    mcp_string(arguments, "freshness")
+        .map(|value| match value.as_str() {
+            "day" => Ok(search::NewsFreshness::Day),
+            "week" => Ok(search::NewsFreshness::Week),
+            "month" => Ok(search::NewsFreshness::Month),
+            _ => Err(KagiError::Config(format!(
+                "unsupported freshness `{value}`. Use day, week, or month"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_news_order(arguments: &Value) -> Result<Option<search::NewsSearchOrder>, KagiError> {
+    mcp_string(arguments, "order")
+        .map(|value| match value.as_str() {
+            "default" => Ok(search::NewsSearchOrder::Default),
+            "recency" => Ok(search::NewsSearchOrder::Recency),
+            "website" => Ok(search::NewsSearchOrder::Website),
+            _ => Err(KagiError::Config(format!(
+                "unsupported news order `{value}`. Use default, recency, or website"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_news_filter_mode(arguments: &Value) -> Result<Option<NewsFilterMode>, KagiError> {
+    mcp_string(arguments, "filter_mode")
+        .map(|value| match value.as_str() {
+            "hide" => Ok(NewsFilterMode::Hide),
+            "blur" => Ok(NewsFilterMode::Blur),
+            _ => Err(KagiError::Config(format!(
+                "unsupported filter_mode `{value}`. Use hide or blur"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_news_filter_scope(arguments: &Value) -> Result<Option<NewsFilterScope>, KagiError> {
+    mcp_string(arguments, "filter_scope")
+        .map(|value| match value.as_str() {
+            "title" => Ok(NewsFilterScope::Title),
+            "summary" => Ok(NewsFilterScope::Summary),
+            "all" => Ok(NewsFilterScope::All),
+            _ => Err(KagiError::Config(format!(
+                "unsupported filter_scope `{value}`. Use title, summary, or all"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_lens_template(arguments: &Value) -> Result<Option<String>, KagiError> {
+    mcp_string(arguments, "template")
+        .map(|value| match value.as_str() {
+            "default" => Ok("0".to_string()),
+            "news" => Ok("1".to_string()),
+            _ => Err(KagiError::Config(format!(
+                "unsupported lens template `{value}`. Use default or news"
+            ))),
+        })
+        .transpose()
+}
+
+fn mcp_site_pref_mode(arguments: &Value) -> Result<local::SitePreferenceMode, KagiError> {
+    match mcp_required_string(arguments, "mode")?.as_str() {
+        "block" => Ok(local::SitePreferenceMode::Block),
+        "lower" => Ok(local::SitePreferenceMode::Lower),
+        "normal" => Ok(local::SitePreferenceMode::Normal),
+        "higher" => Ok(local::SitePreferenceMode::Higher),
+        "pin" => Ok(local::SitePreferenceMode::Pin),
+        value => Err(KagiError::Config(format!(
+            "unsupported site preference mode `{value}`. Use block, lower, normal, higher, or pin"
+        ))),
+    }
+}
+
+fn mcp_output_format(arguments: &Value, default: &OutputFormat) -> Result<OutputFormat, KagiError> {
+    match mcp_string(arguments, "format").as_deref() {
+        None => Ok(default.clone()),
+        Some("json") => Ok(OutputFormat::Json),
+        Some("toon") => Ok(OutputFormat::Toon),
+        Some("pretty") => Ok(OutputFormat::Pretty),
+        Some("compact") => Ok(OutputFormat::Compact),
+        Some("markdown") => Ok(OutputFormat::Markdown),
+        Some("csv") => Ok(OutputFormat::Csv),
+        Some(value) => Err(KagiError::Config(format!(
+            "unsupported output format `{value}`. Use json, toon, pretty, compact, markdown, or csv"
+        ))),
+    }
+}
+
+fn mcp_quick_format(
+    arguments: &Value,
+    default: &OutputFormat,
+) -> Result<QuickOutputFormat, KagiError> {
+    match mcp_output_format(arguments, default)? {
+        OutputFormat::Json | OutputFormat::Csv => Ok(QuickOutputFormat::Json),
+        OutputFormat::Toon => Ok(QuickOutputFormat::Toon),
+        OutputFormat::Pretty => Ok(QuickOutputFormat::Pretty),
+        OutputFormat::Compact => Ok(QuickOutputFormat::Compact),
+        OutputFormat::Markdown => Ok(QuickOutputFormat::Markdown),
+    }
+}
+
+fn mcp_assistant_format(
+    arguments: &Value,
+    default: &OutputFormat,
+) -> Result<AssistantOutputFormat, KagiError> {
+    match mcp_output_format(arguments, default)? {
+        OutputFormat::Json | OutputFormat::Csv => Ok(AssistantOutputFormat::Json),
+        OutputFormat::Toon => Ok(AssistantOutputFormat::Toon),
+        OutputFormat::Pretty => Ok(AssistantOutputFormat::Pretty),
+        OutputFormat::Compact => Ok(AssistantOutputFormat::Compact),
+        OutputFormat::Markdown => Ok(AssistantOutputFormat::Markdown),
+    }
+}
+
+fn output_format_from_assistant(format: AssistantOutputFormat) -> OutputFormat {
+    match format {
+        AssistantOutputFormat::Json => OutputFormat::Json,
+        AssistantOutputFormat::Toon => OutputFormat::Toon,
+        AssistantOutputFormat::Pretty => OutputFormat::Pretty,
+        AssistantOutputFormat::Compact => OutputFormat::Compact,
+        AssistantOutputFormat::Markdown => OutputFormat::Markdown,
+    }
+}
+
+fn mcp_output<T: Serialize>(value: &T, format: OutputFormat) -> Result<String, KagiError> {
+    match format {
+        OutputFormat::Toon => {
+            let value = serde_json::to_value(value)?;
+            Ok(toon::encode(&value, None))
+        }
+        OutputFormat::Compact => serde_json::to_string(value).map_err(KagiError::from),
+        OutputFormat::Json | OutputFormat::Pretty | OutputFormat::Markdown | OutputFormat::Csv => {
+            serde_json::to_string_pretty(value).map_err(KagiError::from)
+        }
+    }
+}
+
+fn format_search_response(
+    response: &SearchResponse,
+    format: &OutputFormat,
+    template: Option<&str>,
+    use_color: bool,
+) -> Result<String, KagiError> {
+    if let Some(template) = template {
+        return Ok(format_template_response(response, template));
+    }
+    match format {
+        OutputFormat::Pretty => Ok(format_pretty_response(response, use_color)),
+        OutputFormat::Toon => {
+            let value = serde_json::to_value(response)?;
+            Ok(toon::encode(&value, None))
+        }
+        OutputFormat::Compact => serde_json::to_string(response).map_err(KagiError::from),
+        OutputFormat::Markdown => Ok(format_markdown_response(response)),
+        OutputFormat::Csv => Ok(format_csv_response(response)),
+        OutputFormat::Json => serde_json::to_string_pretty(response).map_err(KagiError::from),
+    }
+}
+
+fn format_news_search_response(
+    response: &NewsSearchResponse,
+    format: &OutputFormat,
+    use_color: bool,
+) -> Result<String, KagiError> {
+    match format {
+        OutputFormat::Pretty => Ok(format_pretty_news_response(response, use_color)),
+        OutputFormat::Markdown => Ok(format_markdown_news_response(response)),
+        OutputFormat::Csv => Ok(format_csv_news_response(response)),
+        other => mcp_output(response, other.clone()),
+    }
+}
+
+fn format_quick_response(
+    response: &QuickResponse,
+    format: QuickOutputFormat,
+    use_color: bool,
+) -> Result<String, KagiError> {
+    match format {
+        QuickOutputFormat::Pretty => Ok(format_quick_pretty(response, use_color)),
+        QuickOutputFormat::Toon => {
+            let value = serde_json::to_value(response)?;
+            Ok(toon::encode(&value, None))
+        }
+        QuickOutputFormat::Compact => serde_json::to_string(response).map_err(KagiError::from),
+        QuickOutputFormat::Markdown => Ok(format_quick_markdown(response)),
+        QuickOutputFormat::Json => serde_json::to_string_pretty(response).map_err(KagiError::from),
+    }
+}
+
+fn format_assistant_response(
+    response: &crate::types::AssistantPromptResponse,
+    format: AssistantOutputFormat,
+    use_color: bool,
+) -> Result<String, KagiError> {
+    match format {
+        AssistantOutputFormat::Pretty => Ok(format_assistant_pretty(response, use_color)),
+        AssistantOutputFormat::Toon => {
+            let value = serde_json::to_value(response)?;
+            Ok(toon::encode(&value, None))
+        }
+        AssistantOutputFormat::Compact => serde_json::to_string(response).map_err(KagiError::from),
+        AssistantOutputFormat::Markdown => Ok(format_assistant_markdown(response)),
+        AssistantOutputFormat::Json => {
+            serde_json::to_string_pretty(response).map_err(KagiError::from)
+        }
+    }
 }
 
 #[cfg(test)]

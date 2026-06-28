@@ -1369,6 +1369,14 @@ pub struct McpArgs {
     /// Print one JSON-RPC response per line
     #[arg(long)]
     pub json_lines: bool,
+
+    /// Default output format for MCP tools when a tool call omits `format`
+    #[arg(long, value_name = "FORMAT", value_enum)]
+    pub default_output: Option<OutputFormat>,
+
+    /// Expose MCP tools that mutate Kagi account or local CLI state
+    #[arg(long)]
+    pub enable_mutating_tools: bool,
 }
 
 #[derive(Debug, Args)]
