@@ -7,6 +7,16 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi auth` now offers to install the Kagi MCP server after credentials are saved.
+- Added `kagi mcp install`, `kagi mcp setup`, and `kagi mcp auth` to configure Kagi MCP for supported AI agents without starting the stdio MCP server.
+- Added guided MCP setup for Claude Code, Claude Desktop, Codex, Cursor, VS Code, Windsurf, Gemini CLI, OpenCode, Cline, Roo Code, Droid, and Antigravity CLI.
+
+### Changed
+
+- MCP setup merges Kagi into existing agent configuration files and preserves unrelated MCP servers instead of replacing the full config.
+
 ## [0.13.0]
 
 ### Added

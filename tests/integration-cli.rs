@@ -1081,6 +1081,371 @@ fn auth_set_saves_api_key_and_legacy_api_token_separately() {
 }
 
 #[test]
+fn mcp_install_writes_cursor_global_config() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "cursor",
+            "--kagi-path",
+            "/usr/local/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("MCP setup complete"));
+
+    let raw = fs::read_to_string(tempdir.path().join(".cursor").join("mcp.json"))
+        .expect("cursor MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("cursor MCP config should parse");
+    assert_eq!(
+        config["mcpServers"]["kagi-mcp"],
+        json!({
+            "command": "/usr/local/bin/kagi",
+            "args": ["mcp"]
+        })
+    );
+}
+
+#[test]
+fn mcp_install_preserves_existing_json_mcp_servers() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir.path().join(".cursor").join("mcp.json");
+    fs::create_dir_all(path.parent().expect("cursor config has parent"))
+        .expect("cursor config directory should create");
+    fs::write(
+        &path,
+        r#"{
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": ["run", "github-mcp"]
+    }
+  }
+}
+"#,
+    )
+    .expect("cursor config should seed");
+
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "cursor",
+            "--kagi-path",
+            "/usr/local/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(path).expect("cursor MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("cursor MCP config should parse");
+    assert_eq!(
+        config["mcpServers"]["github"],
+        json!({
+            "command": "docker",
+            "args": ["run", "github-mcp"]
+        })
+    );
+    assert_eq!(
+        config["mcpServers"]["kagi-mcp"],
+        json!({
+            "command": "/usr/local/bin/kagi",
+            "args": ["mcp"]
+        })
+    );
+}
+
+#[test]
+fn mcp_install_writes_opencode_config_without_removing_existing_settings() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir
+        .path()
+        .join(".config")
+        .join("opencode")
+        .join("opencode.json");
+    fs::create_dir_all(path.parent().expect("opencode config has parent"))
+        .expect("opencode config directory should create");
+    fs::write(
+        &path,
+        r#"{
+  // OpenCode accepts JSONC, so setup should parse this instead of failing.
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5",
+}
+"#,
+    )
+    .expect("opencode config should seed");
+
+    let output = run_kagi(
+        &[
+            "mcp",
+            "setup",
+            "--target",
+            "opencode",
+            "--kagi-path",
+            "/opt/kagi/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(path).expect("opencode config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("opencode config should parse");
+    assert_eq!(
+        config["mcp"]["kagi-mcp"],
+        json!({
+            "type": "local",
+            "command": ["/opt/kagi/bin/kagi", "mcp"],
+            "enabled": true
+        })
+    );
+    assert_eq!(config["model"], "anthropic/claude-sonnet-4-5");
+}
+
+#[test]
+fn mcp_install_writes_codex_config_without_client_cli() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir.path().join(".codex").join("config.toml");
+    fs::create_dir_all(path.parent().expect("codex config has parent"))
+        .expect("codex config directory should create");
+    fs::write(
+        &path,
+        r#"[mcp_servers.github]
+command = "docker"
+args = ["run", "github-mcp"]
+
+[model_providers.local]
+name = "local"
+"#,
+    )
+    .expect("Codex config should seed");
+
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "codex",
+            "--kagi-path",
+            "/tmp/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(path).expect("Codex config should be written");
+    let config: toml::Value = toml::from_str(&raw).expect("Codex config should parse");
+    assert_eq!(
+        config["mcp_servers"]["github"]["command"].as_str(),
+        Some("docker")
+    );
+    assert_eq!(
+        config["mcp_servers"]["kagi-mcp"]["command"].as_str(),
+        Some("/tmp/kagi")
+    );
+    assert_eq!(
+        config["model_providers"]["local"]["name"].as_str(),
+        Some("local")
+    );
+    assert_eq!(
+        config["mcp_servers"]["kagi-mcp"]["args"]
+            .as_array()
+            .expect("args should be an array")
+            .iter()
+            .map(|value| value.as_str().expect("arg should be a string"))
+            .collect::<Vec<_>>(),
+        vec!["mcp"]
+    );
+}
+
+#[test]
+fn mcp_install_writes_vs_code_user_config_without_client_cli() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "vs-code",
+            "--kagi-path",
+            "/usr/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(
+        tempdir
+            .path()
+            .join(".config")
+            .join("Code")
+            .join("User")
+            .join("mcp.json"),
+    )
+    .expect("VS Code MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("VS Code MCP config should parse");
+    assert_eq!(
+        config["servers"]["kagi-mcp"],
+        json!({
+            "command": "/usr/bin/kagi",
+            "args": ["mcp"]
+        })
+    );
+}
+
+#[test]
+fn mcp_install_writes_roo_code_extension_config() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "roo-code",
+            "--kagi-path",
+            "/usr/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let path = tempdir
+        .path()
+        .join(".config")
+        .join("Code")
+        .join("User")
+        .join("globalStorage")
+        .join("rooveterinaryinc.roo-cline")
+        .join("settings")
+        .join("cline_mcp_settings.json");
+    let raw = fs::read_to_string(path).expect("Roo Code MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("Roo Code MCP config should parse");
+    assert_eq!(
+        config["mcpServers"]["kagi-mcp"],
+        json!({
+            "command": "/usr/bin/kagi",
+            "args": ["mcp"],
+            "disabled": false,
+            "autoApprove": []
+        })
+    );
+}
+
+#[test]
+fn mcp_install_writes_droid_user_config() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "droid",
+            "--kagi-path",
+            "/usr/local/bin/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(tempdir.path().join(".factory").join("mcp.json"))
+        .expect("Droid MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("Droid MCP config should parse");
+    assert_eq!(
+        config["mcpServers"]["kagi-mcp"],
+        json!({
+            "type": "stdio",
+            "command": "/usr/local/bin/kagi",
+            "args": ["mcp"],
+            "disabled": false
+        })
+    );
+}
+
+#[test]
+fn mcp_install_writes_antigravity_cli_config() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "antigravity",
+            "--kagi-path",
+            "/opt/kagi",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(
+        tempdir
+            .path()
+            .join(".gemini")
+            .join("antigravity-cli")
+            .join("mcp_config.json"),
+    )
+    .expect("Antigravity MCP config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("Antigravity MCP config should parse");
+    assert_eq!(
+        config["mcpServers"]["kagi-mcp"],
+        json!({
+            "command": "/opt/kagi",
+            "args": ["mcp"]
+        })
+    );
+}
+
+#[test]
+fn mcp_install_dry_run_does_not_require_client_cli() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "codex",
+            "--kagi-path",
+            "/tmp/kagi",
+            "--dry-run",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("MCP setup plan"));
+    assert!(stdout.contains("Codex CLI (ok): write"));
+    assert!(stdout.contains(".codex/config.toml"));
+}
+
+#[test]
+fn mcp_install_requires_target_when_not_interactive() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(&["mcp", "install"], &[], tempdir.path());
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("MCP setup needs an interactive terminal"));
+    assert!(stderr.contains("--target"));
+}
+
+#[test]
 fn summarize_url_command_prints_structured_json() {
     let server = MockServer::start();
     let _summarize = server.mock(|when, then| {

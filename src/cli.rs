@@ -42,6 +42,35 @@ pub enum ErrorOutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// AI agent or harness that can be configured to launch `kagi mcp`.
+pub enum McpClient {
+    /// Claude Code CLI, configured through `claude mcp add`
+    ClaudeCode,
+    /// Claude Desktop, configured through `claude_desktop_config.json`
+    ClaudeDesktop,
+    /// OpenAI Codex CLI, configured through `~/.codex/config.toml`
+    Codex,
+    /// Cursor editor, configured through `~/.cursor/mcp.json`
+    Cursor,
+    /// VS Code with Copilot, configured through user `mcp.json`
+    VsCode,
+    /// Windsurf Cascade, configured through `~/.codeium/mcp_config.json`
+    Windsurf,
+    /// Google Gemini CLI, configured through `~/.gemini/settings.json`
+    Gemini,
+    /// OpenCode, configured through `~/.config/opencode/opencode.json`
+    Opencode,
+    /// Cline CLI, configured through `~/.cline/mcp.json`
+    Cline,
+    /// Roo Code VS Code extension, configured through its global storage MCP settings
+    RooCode,
+    /// Factory Droid CLI, configured through `~/.factory/mcp.json`
+    Droid,
+    /// Google Antigravity CLI, configured through its MCP config JSON
+    Antigravity,
+}
+
 /// Output format options for search results
 #[derive(Debug, Clone, ValueEnum)]
 /// Output format for search results.
@@ -1366,6 +1395,9 @@ pub struct WatchArgs {
 #[derive(Debug, Args)]
 /// Arguments for the `mcp` subcommand.
 pub struct McpArgs {
+    #[command(subcommand)]
+    pub command: Option<McpSubcommand>,
+
     /// Print one JSON-RPC response per line
     #[arg(long)]
     pub json_lines: bool,
@@ -1377,6 +1409,41 @@ pub struct McpArgs {
     /// Expose MCP tools that mutate Kagi account or local CLI state
     #[arg(long)]
     pub enable_mutating_tools: bool,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+/// Subcommands for configuring the native Kagi MCP server in other clients.
+pub enum McpSubcommand {
+    /// Install `kagi mcp` into one or more AI agents
+    Install(McpSetupArgs),
+    /// Alias for `kagi mcp install`
+    Setup(McpSetupArgs),
+    /// Alias for `kagi mcp install`
+    Auth(McpSetupArgs),
+}
+
+#[derive(Debug, Args, Clone)]
+/// Arguments for MCP client setup commands.
+pub struct McpSetupArgs {
+    /// Agent or harness to configure; repeat to install into several targets
+    #[arg(long = "target", value_name = "CLIENT", value_enum)]
+    pub targets: Vec<McpClient>,
+
+    /// Configure every supported target
+    #[arg(long, conflicts_with = "targets")]
+    pub all: bool,
+
+    /// Override the MCP server name written to client configuration
+    #[arg(long, value_name = "NAME", default_value = "kagi-mcp")]
+    pub server_name: String,
+
+    /// Override the kagi executable path used by client launchers
+    #[arg(long, value_name = "PATH")]
+    pub kagi_path: Option<PathBuf>,
+
+    /// Show the changes or commands without writing files or running client CLIs
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]

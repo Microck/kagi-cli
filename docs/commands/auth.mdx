@@ -36,6 +36,14 @@ The wizard flow is:
 6. validates the selected credential
 7. saves to `~/.config/kagi-cli/config.toml`
 8. warns if an environment variable will still override what you saved
+9. optionally offers to install `kagi mcp` into one or more AI agents
+
+The MCP install offer is skipped outside a real terminal. To run it later:
+
+```bash
+kagi mcp install
+kagi mcp install --target codex --target cursor
+```
 
 ### Session Link Path
 

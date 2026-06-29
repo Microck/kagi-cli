@@ -6,6 +6,7 @@ mod cli;
 mod error;
 mod http;
 mod local;
+mod mcp_install;
 mod parser;
 mod quick;
 mod search;
@@ -739,7 +740,18 @@ async fn run() -> Result<(), KagiError> {
             print_json(&response)
         }
         Commands::Watch(args) => run_watch(args, profile.as_deref()).await,
-        Commands::Mcp(args) => run_mcp(args, profile.as_deref()).await,
+        Commands::Mcp(args) => {
+            if let Some(command) = args.command.clone() {
+                let setup_args = match command {
+                    cli::McpSubcommand::Install(setup_args)
+                    | cli::McpSubcommand::Setup(setup_args)
+                    | cli::McpSubcommand::Auth(setup_args) => setup_args,
+                };
+                return mcp_install::run_mcp_setup(setup_args);
+            }
+
+            run_mcp(args, profile.as_deref()).await
+        }
         Commands::Notify(args) => run_notify(args, profile.as_deref()).await,
         Commands::History(command) => run_history(command.command),
         Commands::SitePref(command) => run_site_pref(command.command),

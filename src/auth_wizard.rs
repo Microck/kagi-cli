@@ -14,6 +14,7 @@ use crate::auth::{
     save_credentials_with_preference,
 };
 use crate::error::KagiError;
+use crate::mcp_install;
 use crate::search;
 use crate::types::FastGptRequest;
 
@@ -262,6 +263,7 @@ pub async fn run_auth_wizard() -> Result<(), KagiError> {
         "Saved",
         format_saved_summary(&saved_inventory),
     ))?;
+    mcp_install::offer_mcp_setup_after_auth()?;
     wizard_io(cliclack::note("Try This Next", next_steps(kind)))?;
 
     match validation_result {

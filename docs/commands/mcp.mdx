@@ -11,7 +11,41 @@ Run a stdio JSON-RPC server that exposes Kagi tools for agents.
 
 ```bash
 kagi mcp [--default-output json|toon|pretty|compact|markdown|csv] [--enable-mutating-tools]
+kagi mcp install [--target CLIENT]... [--all] [--dry-run]
+kagi mcp setup [--target CLIENT]... [--all] [--dry-run]
+kagi mcp auth [--target CLIENT]... [--all] [--dry-run]
 ```
+
+## Install into an AI agent
+
+`kagi mcp install`, `kagi mcp setup`, and `kagi mcp auth` are aliases for the same setup flow. On a TTY, the command asks which agents to configure. In scripts, pass one or more `--target` values:
+
+```bash
+kagi mcp install --target codex --target cursor
+kagi mcp install --all
+kagi mcp install --target opencode --dry-run
+```
+
+Supported targets:
+
+| Target | Setup method |
+| --- | --- |
+| `claude-code` | Runs `claude mcp add --scope user kagi-mcp -- <kagi> mcp` when available, otherwise writes `~/.claude.json` |
+| `claude-desktop` | Writes the documented Claude Desktop JSON config on macOS or Windows |
+| `codex` | Adds the `kagi-mcp` server under `mcp_servers` in `~/.codex/config.toml` |
+| `cursor` | Writes `~/.cursor/mcp.json` under `mcpServers` |
+| `vs-code` | Writes the VS Code user `mcp.json` under `servers` |
+| `windsurf` | Writes `~/.codeium/mcp_config.json` under `mcpServers` |
+| `gemini` | Writes `~/.gemini/settings.json` under `mcpServers` |
+| `opencode` | Parses JSONC and writes `~/.config/opencode/opencode.json` under `mcp` |
+| `cline` | Writes `~/.cline/mcp.json` under `mcpServers` |
+| `roo-code` | Writes Roo Code extension MCP settings under VS Code-compatible global storage |
+| `droid` | Writes `~/.factory/mcp.json` under `mcpServers` |
+| `antigravity` | Writes `~/.gemini/antigravity-cli/mcp_config.json` under `mcpServers` |
+
+Use `--server-name <NAME>` to choose a different MCP server key, or `--kagi-path <PATH>` if the client needs a specific executable path. By default, setup uses the currently running `kagi` executable.
+
+Setup merges into existing config and preserves other MCP servers. It updates only the selected server key, which defaults to `kagi-mcp`.
 
 ## Use with Codex
 
