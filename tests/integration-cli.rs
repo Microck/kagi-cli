@@ -1,7 +1,9 @@
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
@@ -2001,12 +2003,9 @@ fn mcp_tools_list_declares_input_schemas() {
     for tool in tools {
         let schema = &tool["inputSchema"];
         assert_eq!(schema["type"], "object", "schema type for {tool:?}");
-        let properties = schema["properties"]
-            .as_object()
-            .unwrap_or_else(|| panic!("expected schema properties for {tool:?}"));
         assert!(
-            !properties.is_empty(),
-            "expected non-empty schema properties for {tool:?}"
+            schema["properties"].is_object(),
+            "expected schema properties object for {tool:?}"
         );
     }
 
@@ -2033,6 +2032,198 @@ fn mcp_tools_list_declares_input_schemas() {
     assert_eq!(
         tool_named(tools, "kagi_news")["inputSchema"]["properties"]["category"]["default"],
         json!("world")
+    );
+    assert!(
+        tool_named(tools, "kagi_assistant_models").is_object(),
+        "expected assistant model catalog tool"
+    );
+    assert!(
+        tool_named(tools, "kagi_fastgpt").is_object(),
+        "expected FastGPT tool"
+    );
+    assert!(
+        tool_named(tools, "kagi_translate").is_object(),
+        "expected translate tool"
+    );
+    assert!(
+        !tools.iter().any(|tool| tool["name"] == "kagi_lens_create"),
+        "mutating tools should not be exposed by default"
+    );
+}
+
+#[test]
+fn mcp_tools_list_exposes_mutating_tools_when_enabled() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp", "--enable-mutating-tools"],
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n",
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let tools = response["result"]["tools"].as_array().expect("tools array");
+    assert!(
+        tool_named(tools, "kagi_lens_create").is_object(),
+        "expected mutating lens tool when enabled"
+    );
+    assert!(
+        tool_named(tools, "kagi_site_pref_set").is_object(),
+        "expected local-state mutating tool when enabled"
+    );
+    assert!(
+        tool_named(tools, "kagi_cli").is_object(),
+        "expected CLI parity escape hatch when mutating tools are enabled"
+    );
+}
+
+#[test]
+fn mcp_malformed_json_returns_parse_error_and_keeps_server_alive() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        "not json\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\"}\n",
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let responses: Vec<Value> = stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each line is valid JSON"))
+        .collect();
+    assert_eq!(responses.len(), 2);
+    assert_eq!(responses[0]["id"], Value::Null);
+    assert_eq!(responses[0]["error"]["code"], -32700);
+    assert_eq!(responses[1]["id"], 2);
+    assert_eq!(responses[1]["result"]["serverInfo"]["name"], "kagi-cli");
+}
+
+#[test]
+fn mcp_unknown_tool_returns_json_rpc_error() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_nope",
+            "arguments": {}
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &[], tempdir.path());
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["id"], 1);
+    assert_eq!(response["error"]["code"], -32000);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("unsupported MCP tool")
+    );
+}
+
+#[test]
+fn mcp_cli_passthrough_runs_auth_free_commands_when_enabled() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_cli",
+            "arguments": { "args": ["--help"] }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(
+        &["mcp", "--enable-mutating-tools"],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let payload: Value = serde_json::from_str(text).expect("inner json parses");
+    assert_eq!(payload["success"], true);
+    assert!(
+        payload["stdout"]
+            .as_str()
+            .expect("stdout")
+            .contains("Agent usage:"),
+        "expected passthrough help output, got:\n{payload}"
+    );
+}
+
+#[test]
+fn mcp_cli_passthrough_closes_stdin_when_payload_is_omitted() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kagi"));
+    child
+        .args(["mcp", "--enable-mutating-tools"])
+        .current_dir(tempdir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    isolate_command_home(&mut child, tempdir.path());
+    let mut child = child.spawn().expect("mcp server should spawn");
+    let mut stdin = child.stdin.take().expect("mcp stdin should be piped");
+    let stdout = child.stdout.take().expect("mcp stdout should be piped");
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let read = reader.read_line(&mut line);
+        let _ = tx.send(read.map(|_| line));
+    });
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_cli",
+            "arguments": { "args": ["batch"] }
+        }
+    });
+    writeln!(stdin, "{request}").expect("request should write");
+    stdin.flush().expect("request should flush");
+
+    let line = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("kagi_cli should return without inheriting the open MCP stdin")
+        .expect("mcp stdout should read");
+    drop(stdin);
+    let status = child
+        .wait()
+        .expect("mcp server should exit after stdin closes");
+    assert!(status.success(), "mcp server should exit successfully");
+
+    let response: Value = serde_json::from_str(&line).expect("mcp response should parse");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let payload: Value = serde_json::from_str(text).expect("inner json parses");
+    assert_eq!(payload["success"], false);
+    assert!(
+        payload["stderr"]
+            .as_str()
+            .expect("stderr")
+            .contains("no queries were provided"),
+        "expected batch EOF error, got:\n{payload}"
     );
 }
 
@@ -2083,6 +2274,222 @@ fn mcp_extract_tool_call_returns_markdown() {
         response["result"]["content"][0]["text"],
         "# Article\n\nExtracted content."
     );
+}
+
+#[test]
+fn mcp_extract_explicit_json_overrides_default_output() {
+    let server = MockServer::start();
+    let _extract = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/extract")
+            .header("authorization", "Bearer test-api-key")
+            .json_body(json!({
+                "pages": [
+                    {
+                        "url": "https://example.com/article"
+                    }
+                ],
+                "format": "json"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": {
+                    "trace": "trace-1",
+                    "node": "test",
+                    "ms": 12
+                },
+                "data": [
+                    {
+                        "url": "https://example.com/article",
+                        "markdown": "# Article\n\nExtracted content."
+                    }
+                ]
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_extract",
+            "arguments": {
+                "url": "https://example.com/article",
+                "format": "json"
+            }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(
+        &["mcp", "--default-output", "toon"],
+        &stdin,
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let body: Value = serde_json::from_str(text).expect("inner extract should stay JSON");
+    assert_eq!(
+        body["data"][0]["markdown"],
+        "# Article\n\nExtracted content."
+    );
+}
+
+#[test]
+fn mcp_search_uses_default_output_format() {
+    let server = MockServer::start();
+    let _search = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v1/search")
+            .json_body(json!({ "query": "rust" }))
+            .header("authorization", "Bearer test-api-key");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(search_payload(
+                "Rust",
+                "https://www.rust-lang.org",
+                "Rust homepage.",
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_search",
+            "arguments": { "query": "rust" }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(
+        &["mcp", "--default-output", "toon"],
+        &stdin,
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    assert!(
+        text.contains("data["),
+        "expected TOON output from default format, got:\n{text}"
+    );
+    assert!(
+        serde_json::from_str::<Value>(text).is_err(),
+        "expected TOON text, not JSON"
+    );
+}
+
+#[test]
+fn mcp_batch_search_rejects_zero_concurrency() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_batch_search",
+            "arguments": {
+                "queries": ["rust"],
+                "concurrency": 0
+            }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &stdin,
+        &[("KAGI_API_KEY", API_KEY)],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["error"]["code"], -32000);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("concurrency must be at least 1")
+    );
+}
+
+#[test]
+fn mcp_assistant_thread_export_json_overrides_default_output() {
+    let server = MockServer::start();
+    let _thread = server.mock(|when, then| {
+        when.method(POST)
+            .path("/assistant/thread_open")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "focus": {
+                    "thread_id": "thread-1",
+                    "branch_id": "00000000-0000-4000-0000-000000000000"
+                }
+            }));
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body(concat!(
+                "hi:{\"v\":\"test\",\"trace\":\"trace-thread\"}\0\n",
+                "folders.json:[]\0\n",
+                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
+                "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hello back</p>\",\"md\":\"Hello back\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
+            ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "kagi_assistant_thread_export",
+            "arguments": {
+                "thread_id": "thread-1",
+                "format": "json"
+            }
+        }
+    });
+    let mut stdin = serde_json::to_string(&request).expect("request serializes");
+    stdin.push('\n');
+
+    let output = run_kagi_with_stdin(
+        &["mcp", "--default-output", "toon"],
+        &stdin,
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content");
+    let body: Value = serde_json::from_str(text).expect("inner export should stay JSON");
+    assert_eq!(body["thread"]["id"], "thread-1");
+    assert_eq!(body["messages"][0]["markdown"], "Hello back");
 }
 
 #[test]

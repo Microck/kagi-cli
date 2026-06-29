@@ -10,7 +10,7 @@ Run a stdio JSON-RPC server that exposes Kagi tools for agents.
 ## Synopsis
 
 ```bash
-kagi mcp
+kagi mcp [--default-output json|toon|pretty|compact|markdown|csv] [--enable-mutating-tools]
 ```
 
 ## Use with Codex
@@ -63,14 +63,48 @@ To use a named profile from `./.kagi.toml`, put `--profile` after `mcp`:
 codex mcp add kagi-work -- "$(command -v kagi)" mcp --profile work
 ```
 
+Use TOON by default for token-efficient agent context:
+
+```bash
+codex mcp add kagi-mcp -- "$(command -v kagi)" mcp --default-output toon
+```
+
+Expose account and local-state mutation tools only when you want an agent to manage settings:
+
+```bash
+codex mcp add kagi-admin -- "$(command -v kagi)" mcp --enable-mutating-tools
+```
+
 ## Tools
 
-- `kagi_search` - search Kagi
-- `kagi_summarize` - summarize a URL or text through the public API
-- `kagi_extract` - extract a page's full content as markdown through the current `/api/v1` Extract API. Uses `KAGI_API_KEY` directly. Accepts `url`.
-- `kagi_quick` - get a Kagi Quick Answer
-- `kagi_news` - fetch Kagi News stories (no auth required). Accepts `category` (default `world`), `limit` (default `12`), and `lang` (default `default`).
-- `kagi_news_search` - search the News tab of kagi.com and return story clusters (session token required). Accepts `query`, optional `region`, `freshness` (`day`/`week`/`month`), `order` (`default`/`recency`/`website`), and `limit`.
+Default read/query tools:
+
+- `kagi_search` and `kagi_batch_search` - web search, News-tab search, filters, lenses, snaps, dates, ordering, templates, follow summaries, cache options, and output formats.
+- `kagi_summarize` - public API or subscriber summarizer with engine, summary type, target language, length, cache, and local cache options.
+- `kagi_extract` - Extract API markdown, JSON, compact JSON, or TOON output.
+- `kagi_quick` - Quick Answer with lens, cache, and output options.
+- `kagi_news`, `kagi_news_categories`, `kagi_news_chaos`, and `kagi_news_filter_presets` - public Kagi News feed and metadata.
+- `kagi_news_search` - subscriber News-tab search clusters.
+- `kagi_assistant`, `kagi_assistant_models`, `kagi_assistant_thread_list`, `kagi_assistant_thread_get`, and `kagi_assistant_thread_export` - Assistant prompt and thread reads.
+- `kagi_assistant_custom_list` and `kagi_assistant_custom_get` - read saved assistant definitions.
+- `kagi_ask_page` - page-focused Assistant question.
+- `kagi_translate` - Kagi Translate text mode.
+- `kagi_fastgpt` - FastGPT API answers.
+- `kagi_enrich_web` and `kagi_enrich_news` - enrichment indexes.
+- `kagi_smallweb` - Small Web feed.
+- `kagi_lens_list`, `kagi_lens_get`, `kagi_custom_bang_list`, `kagi_custom_bang_get`, `kagi_redirect_list`, and `kagi_redirect_get` - read account search settings.
+- `kagi_auth_status` and `kagi_auth_check` - inspect and validate selected credentials.
+- `kagi_history_list`, `kagi_history_stats`, and `kagi_site_pref_list` - inspect local CLI state.
+
+Tools exposed only with `--enable-mutating-tools`:
+
+- `kagi_assistant_thread_delete`
+- `kagi_assistant_custom_create`, `kagi_assistant_custom_update`, `kagi_assistant_custom_delete`
+- `kagi_lens_create`, `kagi_lens_update`, `kagi_lens_delete`, `kagi_lens_enable`, `kagi_lens_disable`
+- `kagi_custom_bang_create`, `kagi_custom_bang_update`, `kagi_custom_bang_delete`
+- `kagi_redirect_create`, `kagi_redirect_update`, `kagi_redirect_delete`, `kagi_redirect_enable`, `kagi_redirect_disable`
+- `kagi_site_pref_set`, `kagi_site_pref_remove`
+- `kagi_cli` - run any non-`mcp` `kagi` command by passing an `args` array and optional `stdin`. Use this for exact CLI parity when a workflow is not modeled as a structured MCP tool.
 
 The server reads one JSON-RPC request per stdin line and writes one JSON-RPC response per stdout line. This keeps the implementation dependency-light and easy to supervise from agent runners.
 
