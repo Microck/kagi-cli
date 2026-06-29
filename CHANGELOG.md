@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.14.0]
+
 ### Added
 
 - `kagi auth` now offers to install the Kagi MCP server after credentials are saved.
