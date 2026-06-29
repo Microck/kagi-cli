@@ -7,6 +7,24 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.13.0]
+
+### Added
+
+- `kagi mcp` now exposes CLI-parity read/query tools for Search, batch search, Summarize, Extract, Quick Answer, News, Assistant, Translate, FastGPT, enrichment, Small Web, lenses, custom bangs, redirects, auth status, history, and local site preferences.
+- Added `kagi mcp --default-output <FORMAT>` so MCP clients can set a server-wide default such as `toon` while individual tool calls can still override output where supported.
+- Added `kagi mcp --enable-mutating-tools` to opt into account or local-state mutation tools, including lens, custom bang, redirect, site preference, Assistant settings, and `kagi_cli` passthrough workflows.
+
+### Changed
+
+- MCP tool calls now return JSON-RPC errors for unsupported tools and recover cleanly from malformed JSON input without stopping the server.
+- MCP Extract, Assistant thread export, and other explicit JSON output modes now honor the caller's requested JSON format even when the server default output is TOON or compact.
+
+### Fixed
+
+- `kagi_cli` MCP passthrough no longer inherits the open MCP stdin connection when no explicit stdin payload is supplied, preventing stdin-reading commands from hanging the server.
+- `kagi_batch_search` now rejects `concurrency: 0` before spawning workers instead of creating a zero-permit semaphore that never completes.
+
 ## [0.12.0]
 
 ### Added
