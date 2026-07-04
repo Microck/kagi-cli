@@ -3869,8 +3869,8 @@ fn parse_assistant_thread_open_stream(
 
 fn parse_assistant_thread_open_html(html: &str) -> Result<AssistantThread, KagiError> {
     let document = Html::parse_fragment(html);
-    let thread_selector = selector(".thread")?;
-    let title_selector = selector(".title")?;
+    let thread_selector = Selector::parse(".thread").expect("valid CSS selector");
+    let title_selector = Selector::parse(".title").expect("valid CSS selector");
 
     let element = document
         .select(&thread_selector)
@@ -3890,6 +3890,11 @@ fn parse_assistant_thread_open_html(html: &str) -> Result<AssistantThread, KagiE
         .filter(|value| !value.is_empty())
         .ok_or_else(|| KagiError::Parse("assistant thread html missing title".to_string()))?;
 
+    let folder_ids = serde_json::from_str::<Vec<String>>(
+        element.value().attr("data-folders").unwrap_or("[]"),
+    )
+    .unwrap_or_default();
+
     Ok(AssistantThread {
         id,
         title,
@@ -3905,7 +3910,7 @@ fn parse_assistant_thread_open_html(html: &str) -> Result<AssistantThread, KagiE
             .attr("data-public")
             .is_some_and(|value| value == "true"),
         branch_id: String::new(),
-        folder_ids: Vec::new(),
+        folder_ids,
     })
 }
 
@@ -3915,11 +3920,6 @@ fn format_received_frame_tags(tags: &[String]) -> String {
     } else {
         tags.join(", ")
     }
-}
-
-fn selector(value: &str) -> Result<Selector, KagiError> {
-    Selector::parse(value)
-        .map_err(|error| KagiError::Parse(format!("failed to parse selector `{value}`: {error:?}")))
 }
 
 fn parse_assistant_thread_list_stream(
@@ -5862,6 +5862,7 @@ mod tests {
             "    data-saved=\"false\"\n",
             "    data-public=\"false\"\n",
             "    data-tags=\"[]\"\n",
+            "    data-folders='[\"folder-1\", \"folder-2\"]'\n",
             "    data-snippet=\"none\"\n",
             "    >\n",
             "  <i title=\"Temporary\">temp</i>\n",
@@ -5883,7 +5884,7 @@ mod tests {
         assert!(parsed.thread.created_at.is_empty());
         assert!(parsed.thread.expires_at.is_empty());
         assert!(parsed.thread.branch_id.is_empty());
-        assert!(parsed.thread.folder_ids.is_empty());
+        assert_eq!(parsed.thread.folder_ids, vec!["folder-1", "folder-2"]);
         assert_eq!(parsed.messages.len(), 1);
     }
 
