@@ -3890,10 +3890,9 @@ fn parse_assistant_thread_open_html(html: &str) -> Result<AssistantThread, KagiE
         .filter(|value| !value.is_empty())
         .ok_or_else(|| KagiError::Parse("assistant thread html missing title".to_string()))?;
 
-    let folder_ids = serde_json::from_str::<Vec<String>>(
-        element.value().attr("data-folders").unwrap_or("[]"),
-    )
-    .unwrap_or_default();
+    let folder_ids =
+        serde_json::from_str::<Vec<String>>(element.value().attr("data-folders").unwrap_or("[]"))
+            .unwrap_or_default();
 
     Ok(AssistantThread {
         id,
