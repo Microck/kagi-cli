@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.14.1]
+
+### Fixed
+
+- Assistant `thread_open` no longer fails on new threads after Kagi's backend URL change. When the `thread.json` stream frame is absent, the parser now falls back to the `thread.html` frame to extract thread metadata. The error message for missing thread frames now lists which stream tags were received to aid future debugging.
+
 ## [0.14.0]
 
 ### Added

@@ -7,7 +7,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use reqwest::multipart;
 use reqwest::{Client, StatusCode, Url, header};
-use scraper::Html;
+use scraper::{Html, Selector};
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
@@ -3780,12 +3780,15 @@ fn parse_assistant_thread_open_stream(
     let mut meta = AssistantMeta::default();
     let mut folders = Vec::new();
     let mut thread = None;
+    let mut thread_html = None;
     let mut messages = None;
+    let mut received_tags = Vec::new();
 
     for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
         let Some((tag, payload)) = frame.split_once(':') else {
             continue;
         };
+        received_tags.push(tag.to_string());
 
         match tag {
             "hi" => {
@@ -3806,6 +3809,9 @@ fn parse_assistant_thread_open_stream(
                         KagiError::Parse(format!("failed to parse assistant thread frame: {error}"))
                     })?;
                 thread = Some(AssistantThread::from(payload));
+            }
+            "thread.html" => {
+                thread_html = Some(payload.to_string());
             }
             "messages.json" => {
                 let payloads: Vec<AssistantMessagePayload> = serde_json::from_str(payload)
@@ -3840,20 +3846,80 @@ fn parse_assistant_thread_open_stream(
         }
     }
 
+    let thread = match (thread, thread_html) {
+        (Some(thread), _) => Ok(thread),
+        (None, Some(html)) => parse_assistant_thread_open_html(&html),
+        (None, None) => Err(KagiError::Parse(format!(
+            "assistant thread open response did not include a thread.json or thread.html frame (received tags: {})",
+            format_received_frame_tags(&received_tags)
+        ))),
+    }?;
+
     Ok(AssistantThreadOpenResponse {
         meta,
         folders,
-        thread: thread.ok_or_else(|| {
-            KagiError::Parse(
-                "assistant thread open response did not include a thread.json frame".to_string(),
-            )
-        })?,
+        thread,
         messages: messages.ok_or_else(|| {
             KagiError::Parse(
                 "assistant thread open response did not include a messages.json frame".to_string(),
             )
         })?,
     })
+}
+
+fn parse_assistant_thread_open_html(html: &str) -> Result<AssistantThread, KagiError> {
+    let document = Html::parse_fragment(html);
+    let thread_selector = Selector::parse(".thread").expect("valid CSS selector");
+    let title_selector = Selector::parse(".title").expect("valid CSS selector");
+
+    let element = document
+        .select(&thread_selector)
+        .next()
+        .ok_or_else(|| KagiError::Parse("assistant thread html missing thread item".to_string()))?;
+    let id = element
+        .value()
+        .attr("data-code")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| KagiError::Parse("assistant thread html missing data-code".to_string()))?
+        .to_string();
+    let title = element
+        .select(&title_selector)
+        .next()
+        .map(|node| node.text().collect::<String>().trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| KagiError::Parse("assistant thread html missing title".to_string()))?;
+
+    let folder_ids = serde_json::from_str::<Vec<String>>(
+        element.value().attr("data-folders").unwrap_or("[]"),
+    )
+    .unwrap_or_default();
+
+    Ok(AssistantThread {
+        id,
+        title,
+        ack: String::new(),
+        created_at: String::new(),
+        expires_at: String::new(),
+        saved: element
+            .value()
+            .attr("data-saved")
+            .is_some_and(|value| value == "true"),
+        shared: element
+            .value()
+            .attr("data-public")
+            .is_some_and(|value| value == "true"),
+        branch_id: String::new(),
+        folder_ids,
+    })
+}
+
+fn format_received_frame_tags(tags: &[String]) -> String {
+    if tags.is_empty() {
+        "<none>".to_string()
+    } else {
+        tags.join(", ")
+    }
 }
 
 fn parse_assistant_thread_list_stream(
@@ -5784,6 +5850,59 @@ mod tests {
         assert_eq!(parsed.thread.id, "thread-1");
         assert_eq!(parsed.messages.len(), 1);
         assert_eq!(parsed.messages[0].trace_id.as_deref(), Some("trace-msg"));
+    }
+
+    #[test]
+    fn parses_assistant_thread_open_stream_with_thread_html_fallback() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-open-html\"}\0\n",
+            "tags.json:[]\0\n",
+            "thread.html:<li class=\"thread\"\n",
+            "    data-code=\"bb8254ea-4b02-4353-be53-b1bd8632e55e\"\n",
+            "    data-saved=\"false\"\n",
+            "    data-public=\"false\"\n",
+            "    data-tags=\"[]\"\n",
+            "    data-folders='[\"folder-1\", \"folder-2\"]'\n",
+            "    data-snippet=\"none\"\n",
+            "    >\n",
+            "  <i title=\"Temporary\">temp</i>\n",
+            "  <a href=\"/assistant/thread/bb8254ea-4b02-4353-be53-b1bd8632e55e\">\n",
+            "    <span class=\"title\">Testing Conversation</span>\n",
+            "  </a>\n",
+            "</li>\0\n",
+            "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"bb8254ea-4b02-4353-be53-b1bd8632e55e\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
+        );
+
+        let parsed = parse_assistant_thread_open_stream(raw).expect("thread open parses from html");
+
+        assert_eq!(parsed.meta.trace.as_deref(), Some("trace-open-html"));
+        assert_eq!(parsed.thread.id, "bb8254ea-4b02-4353-be53-b1bd8632e55e");
+        assert_eq!(parsed.thread.title, "Testing Conversation");
+        assert!(!parsed.thread.saved);
+        assert!(!parsed.thread.shared);
+        assert!(parsed.thread.ack.is_empty());
+        assert!(parsed.thread.created_at.is_empty());
+        assert!(parsed.thread.expires_at.is_empty());
+        assert!(parsed.thread.branch_id.is_empty());
+        assert_eq!(parsed.thread.folder_ids, vec!["folder-1", "folder-2"]);
+        assert_eq!(parsed.messages.len(), 1);
+    }
+
+    #[test]
+    fn reports_received_tags_when_thread_open_stream_has_no_thread_frame() {
+        let raw = concat!(
+            "hi:{\"v\":\"202603171911.stage.707e740\",\"trace\":\"trace-open-missing\"}\0\n",
+            "tags.json:[]\0\n",
+            "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
+        );
+
+        let error = parse_assistant_thread_open_stream(raw)
+            .expect_err("missing thread frame should fail to parse");
+
+        assert_eq!(
+            error.to_string(),
+            "parse error: assistant thread open response did not include a thread.json or thread.html frame (received tags: hi, tags.json, messages.json)"
+        );
     }
 
     #[test]
