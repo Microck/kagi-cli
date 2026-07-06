@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.14.2]
+
 ### Fixed
 
 - Assistant `thread list`, `thread get`, `thread export`, and `thread delete` now use Kagi's current Assistant conversation API, so new `assistant.kagi.com/chat/<uuid>` chats work instead of failing on missing legacy stream frames.
