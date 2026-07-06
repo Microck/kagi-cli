@@ -9,10 +9,12 @@ use std::collections::HashSet;
 use scraper::{Html, Selector};
 
 use crate::error::KagiError;
+#[cfg(test)]
+use crate::types::AssistantThreadSummary;
 use crate::types::{
     AssistantModelCatalog, AssistantModelOption, AssistantProfileDetails, AssistantProfileSummary,
-    AssistantThreadSummary, CustomBangDetails, CustomBangSummary, LensDetails, LensSummary,
-    NewsSearchCluster, NewsSearchResult, RedirectRuleDetails, RedirectRuleSummary, SearchResult,
+    CustomBangDetails, CustomBangSummary, LensDetails, LensSummary, NewsSearchCluster,
+    NewsSearchResult, RedirectRuleDetails, RedirectRuleSummary, SearchResult,
 };
 
 /// Parse Kagi search results from HTML.
@@ -180,6 +182,7 @@ fn extract_news_item(
 ///
 /// # Errors
 /// Returns `KagiError::Parse` if expected elements or attributes are missing.
+#[cfg(test)]
 pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSummary>, KagiError> {
     let document = Html::parse_fragment(html);
     let thread_selector = selector(".thread-list .thread")?;

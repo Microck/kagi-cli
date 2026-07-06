@@ -22,6 +22,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_API_TOKEN",
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
+        "KAGI_ASSISTANT_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
@@ -56,6 +57,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_API_TOKEN",
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
+        "KAGI_ASSISTANT_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
@@ -317,6 +319,7 @@ fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
     vec![
         ("KAGI_SESSION_TOKEN", "test-session".to_string()),
         ("KAGI_BASE_URL", server.base_url()),
+        ("KAGI_ASSISTANT_BASE_URL", server.base_url()),
     ]
 }
 
@@ -1891,42 +1894,65 @@ fn news_command_resolves_category_and_prints_json() {
 #[test]
 fn assistant_thread_list_paginates_with_cursor_id() {
     let server = MockServer::start();
-    let _first_page = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/thread_list")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .header("content-type", "application/json")
-            .json_body(json!({ "limit": 100 }));
+    let _folders = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/folders")
+            .header("cookie", "kagi_session=test-session");
         then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                "folders.json:[]\0\n",
-                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-1\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"First snippet\\\"><a href=\\\"/assistant/thread-1\\\"><div class=\\\"title\\\">First Thread</div><div class=\\\"excerpt\\\">First snippet</div></a></li></ul></div>\",\"next_cursor\":{\"ack\":\"2026-02-11T16:22:13Z\",\"created_at\":\"2026-02-11T16:22:13Z\",\"id\":\"cursor-123\"},\"has_more\":true,\"count\":1,\"total_counts\":{\"all\":2}}\0\n"
-            ));
+            .header("content-type", "application/json")
+            .json_body(json!([]));
     });
-    let _second_page = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/thread_list")
+    let _first_page = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/conversations")
             .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
+            .query_param("limit", "100")
+            .query_param("all", "true")
+            .query_param_missing("after_id");
+        then.status(200)
             .header("content-type", "application/json")
             .json_body(json!({
-                "limit": 100,
-                "cursor": {
-                    "ack": "2026-02-11T16:22:13Z",
-                    "created_at": "2026-02-11T16:22:13Z",
-                    "id": "cursor-123"
-                }
+                "items": [{
+                    "conversation": {
+                        "uuid": "thread-1",
+                        "title": "First Thread",
+                        "created_at": "2026-02-11T16:22:13Z",
+                        "updated_at": "2026-02-11T16:22:13Z",
+                        "is_saved": false,
+                        "is_shared": false,
+                        "folder_uuid": null
+                    },
+                    "rank": 0,
+                    "snippet": "First snippet"
+                }],
+                "has_more": true
             }));
+    });
+    let _second_page = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/conversations")
+            .header("cookie", "kagi_session=test-session")
+            .query_param("limit", "100")
+            .query_param("all", "true")
+            .query_param("after_id", "thread-1");
         then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-list\"}\0\n",
-                "folders.json:[]\0\n",
-                "thread_list.html:{\"html\":\"<div class=\\\"hide-if-no-threads\\\"><ul class=\\\"thread-list\\\"><li class=\\\"thread\\\" data-code=\\\"thread-2\\\" data-saved=\\\"false\\\" data-public=\\\"false\\\" data-folders='[]' data-snippet=\\\"Second snippet\\\"><a href=\\\"/assistant/thread-2\\\"><div class=\\\"title\\\">Second Thread</div><div class=\\\"excerpt\\\">Second snippet</div></a></li></ul></div>\",\"next_cursor\":null,\"has_more\":false,\"count\":1,\"total_counts\":null}\0\n"
-            ));
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "items": [{
+                    "conversation": {
+                        "uuid": "thread-2",
+                        "title": "Second Thread",
+                        "created_at": "2026-02-12T16:22:13Z",
+                        "updated_at": "2026-02-12T16:22:13Z",
+                        "is_saved": false,
+                        "is_shared": false,
+                        "folder_uuid": null
+                    },
+                    "rank": 1,
+                    "snippet": "Second snippet"
+                }],
+                "has_more": false
+            }));
     });
 
     let tempdir = TempDir::new().expect("tempdir");
@@ -1939,7 +1965,6 @@ fn assistant_thread_list_paginates_with_cursor_id() {
 
     assert_success(&output);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
-    assert_eq!(body["meta"]["trace"], "trace-list");
     assert_eq!(body["threads"][0]["id"], "thread-1");
     assert_eq!(body["threads"][1]["id"], "thread-2");
     assert_eq!(body["pagination"]["count"], 2);
@@ -2801,26 +2826,59 @@ fn mcp_batch_search_rejects_zero_concurrency() {
 #[test]
 fn mcp_assistant_thread_export_json_overrides_default_output() {
     let server = MockServer::start();
+    let _folders = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/folders")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!([]));
+    });
     let _thread = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/thread_open")
+        when.method(GET)
+            .path("/api/conversations/thread-1/init")
             .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
+            .header("accept", "application/json");
+        then.status(200)
             .header("content-type", "application/json")
             .json_body(json!({
-                "focus": {
-                    "thread_id": "thread-1",
-                    "branch_id": "00000000-0000-4000-0000-000000000000"
+                "conversation": {
+                    "uuid": "thread-1",
+                    "title": "Greeting",
+                    "created_at": "2026-03-16T06:19:07Z",
+                    "updated_at": "2026-03-16T06:20:07Z",
+                    "is_saved": false,
+                    "is_shared": false,
+                    "folder_uuid": null
+                },
+                "active_branch": {
+                    "uuid": "branch-1",
+                    "conversation_uuid": "thread-1",
+                    "is_default": true,
+                    "message_count": 2,
+                    "updated_at": "2026-03-16T06:20:07Z"
+                },
+                "branches": [],
+                "messages": {
+                    "items": [
+                        {
+                            "uuid": "msg-user",
+                            "role": "user",
+                            "content": "Hello",
+                            "created_at": "2026-03-16T06:19:07Z"
+                        },
+                        {
+                            "uuid": "msg-assistant",
+                            "role": "assistant",
+                            "content": "Hello back",
+                            "html_content": "<p>Hello back</p>",
+                            "created_at": "2026-03-16T06:20:07Z",
+                            "references": []
+                        }
+                    ],
+                    "has_more": false
                 }
             }));
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-thread\"}\0\n",
-                "folders.json:[]\0\n",
-                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                "messages.json:[{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hello back</p>\",\"md\":\"Hello back\",\"metadata\":\"\",\"documents\":[],\"trace_id\":\"trace-msg\"}]\0\n"
-            ));
     });
 
     let tempdir = TempDir::new().expect("tempdir");
@@ -2854,6 +2912,7 @@ fn mcp_assistant_thread_export_json_overrides_default_output() {
         .expect("text content");
     let body: Value = serde_json::from_str(text).expect("inner export should stay JSON");
     assert_eq!(body["thread"]["id"], "thread-1");
+    assert_eq!(body["messages"][0]["prompt"], "Hello");
     assert_eq!(body["messages"][0]["markdown"], "Hello back");
 }
 

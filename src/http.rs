@@ -12,10 +12,12 @@ const USER_AGENT: &str = concat!(
     " (+https://github.com/Microck/kagi-cli)"
 );
 const DEFAULT_KAGI_BASE_URL: &str = "https://kagi.com";
+const DEFAULT_KAGI_ASSISTANT_BASE_URL: &str = "https://assistant.kagi.com";
 const DEFAULT_KAGI_NEWS_BASE_URL: &str = "https://news.kagi.com";
 const DEFAULT_KAGI_TRANSLATE_BASE_URL: &str = "https://translate.kagi.com";
 
 pub const KAGI_BASE_URL_ENV: &str = "KAGI_BASE_URL";
+pub const KAGI_ASSISTANT_BASE_URL_ENV: &str = "KAGI_ASSISTANT_BASE_URL";
 pub const KAGI_NEWS_BASE_URL_ENV: &str = "KAGI_NEWS_BASE_URL";
 pub const KAGI_TRANSLATE_BASE_URL_ENV: &str = "KAGI_TRANSLATE_BASE_URL";
 
@@ -144,6 +146,21 @@ pub fn kagi_url(path: &str) -> String {
     )
 }
 
+/// Builds a full Kagi Assistant URL from a path, using the `KAGI_ASSISTANT_BASE_URL`
+/// env override or the default current Assistant origin.
+///
+/// # Arguments
+/// * `path` - Assistant API path (e.g. `"/api/conversations"`). Absolute URLs are returned unchanged.
+///
+/// # Returns
+/// The complete URL string.
+pub fn kagi_assistant_url(path: &str) -> String {
+    build_url(
+        &base_url_from_env(KAGI_ASSISTANT_BASE_URL_ENV, DEFAULT_KAGI_ASSISTANT_BASE_URL),
+        path,
+    )
+}
+
 /// Builds a full Kagi News API URL from a path, using the `KAGI_NEWS_BASE_URL` env override or the default.
 ///
 /// # Arguments
@@ -214,8 +231,9 @@ fn build_url(base: &str, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        KAGI_BASE_URL_ENV, KAGI_NEWS_BASE_URL_ENV, KAGI_TRANSLATE_BASE_URL_ENV, kagi_news_url,
-        kagi_translate_url, kagi_url,
+        KAGI_ASSISTANT_BASE_URL_ENV, KAGI_BASE_URL_ENV, KAGI_NEWS_BASE_URL_ENV,
+        KAGI_TRANSLATE_BASE_URL_ENV, kagi_assistant_url, kagi_news_url, kagi_translate_url,
+        kagi_url,
     };
     use crate::test_support::lock_env;
 
@@ -232,10 +250,15 @@ mod tests {
         let _guard = lock_env();
 
         remove_env_var(KAGI_BASE_URL_ENV);
+        remove_env_var(KAGI_ASSISTANT_BASE_URL_ENV);
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
 
         assert_eq!(kagi_url("/api/v1/search"), "https://kagi.com/api/v1/search");
+        assert_eq!(
+            kagi_assistant_url("/api/conversations"),
+            "https://assistant.kagi.com/api/conversations"
+        );
         assert_eq!(
             kagi_news_url("/api/batches/latest"),
             "https://news.kagi.com/api/batches/latest"
@@ -251,23 +274,29 @@ mod tests {
         let _guard = lock_env();
 
         set_env_var(KAGI_BASE_URL_ENV, "http://127.0.0.1:9000/");
-        set_env_var(KAGI_NEWS_BASE_URL_ENV, "http://127.0.0.1:9001/");
-        set_env_var(KAGI_TRANSLATE_BASE_URL_ENV, "http://127.0.0.1:9002/");
+        set_env_var(KAGI_ASSISTANT_BASE_URL_ENV, "http://127.0.0.1:9001/");
+        set_env_var(KAGI_NEWS_BASE_URL_ENV, "http://127.0.0.1:9002/");
+        set_env_var(KAGI_TRANSLATE_BASE_URL_ENV, "http://127.0.0.1:9003/");
 
         assert_eq!(
             kagi_url("/api/v1/search"),
             "http://127.0.0.1:9000/api/v1/search"
         );
         assert_eq!(
+            kagi_assistant_url("/api/conversations"),
+            "http://127.0.0.1:9001/api/conversations"
+        );
+        assert_eq!(
             kagi_news_url("/api/batches/latest"),
-            "http://127.0.0.1:9001/api/batches/latest"
+            "http://127.0.0.1:9002/api/batches/latest"
         );
         assert_eq!(
             kagi_translate_url("/api/translate"),
-            "http://127.0.0.1:9002/api/translate"
+            "http://127.0.0.1:9003/api/translate"
         );
 
         remove_env_var(KAGI_BASE_URL_ENV);
+        remove_env_var(KAGI_ASSISTANT_BASE_URL_ENV);
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
     }
