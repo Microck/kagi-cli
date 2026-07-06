@@ -342,9 +342,10 @@ list or export Assistant threads:
 ```bash
 kagi assistant thread list
 kagi assistant thread export <THREAD_ID>
+kagi assistant thread get https://assistant.kagi.com/chat/<THREAD_ID>
 ```
 
-`kagi assistant thread list` automatically follows Kagi's pagination cursor so large chat histories are returned in one response.
+`kagi assistant thread list` automatically follows Kagi's pagination cursor so large chat histories are returned in one response. Thread get/export/delete commands also accept Kagi Assistant chat URLs.
 
 manage custom assistants:
 

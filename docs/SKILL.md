@@ -191,6 +191,7 @@ kagi assistant thread list
 
 # Get one thread as JSON
 kagi assistant thread get "<thread-id>"
+kagi assistant thread get "https://assistant.kagi.com/chat/<thread-id>"
 
 # Export thread
 kagi assistant thread export "<thread-id>" --format markdown > thread.md

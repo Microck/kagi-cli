@@ -193,15 +193,16 @@ List Assistant threads for the current account.
 kagi assistant thread list | jq -r '.threads[].id'
 ```
 
-### `kagi assistant thread get <THREAD_ID>`
+### `kagi assistant thread get <THREAD_ID_OR_CHAT_URL>`
 
-Fetch one thread with its messages.
+Fetch one thread with its messages. This accepts either the thread ID or a Kagi Assistant chat URL.
 
 ```bash
 kagi assistant thread get "$THREAD_ID"
+kagi assistant thread get "https://assistant.kagi.com/chat/$THREAD_ID"
 ```
 
-### `kagi assistant thread delete <THREAD_ID>`
+### `kagi assistant thread delete <THREAD_ID_OR_CHAT_URL>`
 
 Delete one thread.
 
@@ -209,7 +210,7 @@ Delete one thread.
 kagi assistant thread delete "$THREAD_ID"
 ```
 
-### `kagi assistant thread export <THREAD_ID>`
+### `kagi assistant thread export <THREAD_ID_OR_CHAT_URL>`
 
 Export one thread as markdown to stdout.
 
@@ -217,7 +218,7 @@ Export one thread as markdown to stdout.
 kagi assistant thread export "$THREAD_ID"
 ```
 
-### `kagi assistant thread export <THREAD_ID> --format json`
+### `kagi assistant thread export <THREAD_ID_OR_CHAT_URL> --format json`
 
 Return the thread as structured JSON instead of markdown. This emits the same envelope shape as `thread get`.
 
