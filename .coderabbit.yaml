@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - files: "CONTRIBUTING.md"
+        applyTo: "**/*"
+      - files: ".facts,docs/reference/output-contract.mdx"
+        applyTo: "src/**/*.rs,tests/**/*.rs"
+      - files: "docs/reference/auth-matrix.mdx"
+        applyTo: "src/auth*.rs,src/api.rs,src/http.rs,src/main.rs"
+      - files: "docs/commands/mcp.mdx"
+        applyTo: "src/main.rs,src/cli.rs,src/mcp_install.rs,tests/**/*.rs"
+      - files: "docs/release-runbook.md"
+        applyTo: "Cargo.toml,Cargo.lock,npm/**/*.cjs,npm/package.json,CHANGELOG.md,.github/workflows/release.yml,.github/workflows/npm-publish.yml"
+
+reviews:
+  path_instructions:
+    - path: "src/auth*.rs"
+      instructions: |
+        Treat credential selection, normalization, persistence, and display as a
+        security boundary. Flag changes that violate environment-over-config
+        precedence, confuse API keys, legacy API tokens, and session tokens, or
+        expose secret values through Debug output, status output, or errors.
+        Cite the changed code and the conflicting auth-matrix contract.
+    - path: "src/{api,http}.rs"
+      instructions: |
+        Check authenticated request changes against the command-to-credential
+        mapping in the auth matrix. Flag requests that attach the wrong
+        credential type, send credentials to an unintended endpoint, or include
+        raw credential values in errors or logs. Test-only base URL overrides are
+        intentional and are not findings by themselves.
+    - path: "src/main.rs"
+      instructions: |
+        When MCP tool definitions or dispatch change, flag any operation that
+        mutates Kagi account state or local CLI state unless it is hidden by
+        default, classified through the mutating-tool path, and gated by
+        --enable-mutating-tools. Cite the mismatched definition or dispatch arm.
+        Do not classify read-only status, list, get, search, or export tools as
+        mutations.
+    - path: "npm/**/*.cjs"
+      instructions: |
+        Treat the native binary installer as a supply-chain boundary. Flag
+        changes that allow non-HTTPS downloads, write or execute outside the
+        verified vendor target, expose a partial download instead of completing
+        a temporary file before rename, or map a platform target that the release
+        workflow does not build. GitHub's HTTPS release redirects are expected.
+  pre_merge_checks:
+    custom_checks:
+      - name: "Release metadata consistency"
+        mode: warning
+        instructions: |
+          Compare the package version in Cargo.toml with the kagi package entry
+          in Cargo.lock and the version in npm/package.json. Pass only when all
+          three versions are identical and CHANGELOG.md contains a matching
+          `## [X.Y.Z]` heading. Fail on any mismatch or missing heading. Return
+          Inconclusive only when one of those files cannot be inspected or its
+          version cannot be parsed.
