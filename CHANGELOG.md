@@ -7,6 +7,12 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.14.3]
+
+### Fixed
+
+- `llms.txt` now covers all sitemap pages (was 76%, now 100%). Added 9 missing command pages (batch, extract, history, mcp, notify, site-pref, skills, translate, watch) and reorganized command section into navigation-matching subgroups.
+
 ## [0.14.2]
 
 ### Fixed
