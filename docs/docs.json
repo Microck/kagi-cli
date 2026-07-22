@@ -1,6 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "name": "kagi",
+  "description": "Documentation for the kagi CLI, a command-line interface and MCP server for Kagi search, summarization, extraction, and automation.",
   "theme": "maple",
   "colors": {
     "primary": "#ffb319",
@@ -13,8 +14,23 @@
   },
   "favicon": "/images/favicon.png",
   "seo": {
+    "indexing": "navigable",
     "metatags": {
-      "canonical": "https://kagi.micr.dev"
+      "canonical": "https://kagi.micr.dev",
+      "og:site_name": "kagi CLI documentation",
+      "twitter:site": "@JustMicrock",
+      "twitter:creator": "@JustMicrock"
+    },
+    "organization": {
+      "id": "https://micr.dev/#identity",
+      "name": "Microck",
+      "url": "https://micr.dev",
+      "logo": "https://kagi.micr.dev/images/kagi-cli-logo-light.svg",
+      "sameAs": [
+        "https://github.com/Microck",
+        "https://x.com/JustMicrock",
+        "https://www.youtube.com/@Microck"
+      ]
     }
   },
   "contextual": {

@@ -30,3 +30,8 @@
 - label: kagi extract --filter reads HTTPS URLs from stdin and writes one compact JSONL record per input in order, including per-item errors without corrupting stdout
   command: cargo test --test integration-cli extract_filter_prints_ordered_jsonl_records -- --exact
   tags: [implemented]
+
+# docs
+
+## seo
+- the kagi documentation publishes a canonical site description and Microck publisher identity while retaining Mintlify generated per-page metadata, structured data, robots directives, and sitemap behavior without changing page content @implemented
