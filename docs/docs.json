@@ -15,7 +15,7 @@
   "favicon": "/images/favicon.png",
   "seo": {
     "indexing": "navigable",
-    "trailingSlash": true,
+    "trailingSlash": false,
     "metatags": {
       "og:site_name": "kagi CLI documentation",
       "twitter:site": "@JustMicrock",
