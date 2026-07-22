@@ -15,6 +15,7 @@
   "favicon": "/images/favicon.png",
   "seo": {
     "indexing": "navigable",
+    "trailingSlash": true,
     "metatags": {
       "canonical": "https://kagi.micr.dev",
       "og:site_name": "kagi CLI documentation",
