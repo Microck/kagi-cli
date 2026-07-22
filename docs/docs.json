@@ -17,7 +17,6 @@
     "indexing": "navigable",
     "trailingSlash": true,
     "metatags": {
-      "canonical": "https://kagi.micr.dev",
       "og:site_name": "kagi CLI documentation",
       "twitter:site": "@JustMicrock",
       "twitter:creator": "@JustMicrock"
