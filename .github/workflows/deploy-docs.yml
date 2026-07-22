@@ -1,0 +1,35 @@
+name: Deploy documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-mintlify-docs
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Trigger Mintlify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger documentation deployment
+        env:
+          MINTLIFY_DEPLOY_COOKIE: ${{ secrets.MINTLIFY_DEPLOY_COOKIE }}
+        run: |
+          set -euo pipefail
+          test -n "${MINTLIFY_DEPLOY_COOKIE:-}"
+          curl -fsS -X POST \
+            -H "accept: */*" \
+            -H "content-type: application/json" \
+            -H "origin: https://app.mintlify.com" \
+            -H "referer: https://app.mintlify.com/kagi-cli/kagi-cli" \
+            -H "cookie: ${MINTLIFY_DEPLOY_COOKIE}" \
+            https://app.mintlify.com/api/deployment/update/kagi-cli

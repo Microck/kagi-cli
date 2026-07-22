@@ -37,3 +37,8 @@
 - label: the kagi documentation publishes a canonical site description, Microck publisher identity, and slash-consistent canonical-domain URLs while retaining Mintlify generated per-page metadata, structured data, and robots directives without changing page content
   command: cd docs && mintlify validate
   tags: [implemented]
+
+## deployment
+- label: documentation changes pushed to main trigger the configured Mintlify deployment endpoint without requiring a package release
+  command: ruby -e 'require "yaml"; YAML.safe_load_file(ARGV.fetch(0), aliases: true)' .github/workflows/deploy-docs.yml
+  tags: [implemented]
