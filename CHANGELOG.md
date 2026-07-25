@@ -7,6 +7,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- `kagi assistant` and `kagi ask-page` now use Kagi's current Assistant conversation API instead of the removed legacy prompt endpoint.
+
 ## [0.14.3]
 
 ### Fixed
