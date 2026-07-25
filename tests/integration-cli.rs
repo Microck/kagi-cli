@@ -326,30 +326,13 @@ fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
 #[test]
 fn assistant_prompt_stream_reads_query_from_stdin() {
     let server = MockServer::start();
-    let prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .json_body(json!({
-                "focus": {
-                    "thread_id": null,
-                    "branch_id": "00000000-0000-4000-0000-000000000000",
-                    "prompt": "do a little dance",
-                    "message_id": null,
-                },
-                "profile": {},
-            }));
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-stdin\"}\0\n",
-                "thread.json:{\"id\":\"thread-stdin\",\"title\":\"Stdin test\",\"ack\":\"2026-06-07T00:00:00Z\",\"created_at\":\"2026-06-07T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"streaming\",\"prompt\":\"do a little dance\",\"md\":\"dance\",\"documents\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-stdin\",\"thread_id\":\"thread-stdin\",\"created_at\":\"2026-06-07T00:00:00Z\",\"state\":\"done\",\"prompt\":\"do a little dance\",\"md\":\"dance-ok\",\"documents\":[]}\0\n",
-            ));
-    });
-
+    let current_prompt = mock_current_assistant_prompt(
+        &server,
+        "do a little dance",
+        Some("dance"),
+        "dance-ok",
+        None,
+    );
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
     let output = run_kagi_with_stdin(
@@ -360,7 +343,7 @@ fn assistant_prompt_stream_reads_query_from_stdin() {
     );
 
     assert_success(&output);
-    prompt.assert_calls(1);
+    current_prompt.assert_calls(1);
     assert_eq!(String::from_utf8_lossy(&output.stdout), "dance-ok\n");
 }
 
@@ -415,29 +398,124 @@ fn assistant_list_html() -> &'static str {
     "#
 }
 
-fn assistant_prompt_stream_body(markdown: &str) -> String {
-    let hello = json!({ "v": "test", "trace": "trace-contract" });
-    let thread = json!({
-        "id": "thread-contract",
-        "title": "Contract",
-        "ack": "2026-06-07T00:00:00Z",
-        "created_at": "2026-06-07T00:00:00Z",
-        "saved": false,
-        "shared": false,
-        "branch_id": "00000000-0000-4000-0000-000000000000",
-        "folder_ids": []
+fn mock_current_assistant_prompt<'a>(
+    server: &'a MockServer,
+    expected_message: &str,
+    first_markdown: Option<&str>,
+    final_markdown: &str,
+    expected_profile_id: Option<&str>,
+) -> httpmock::Mock<'a> {
+    server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/conversations")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/json");
+        then.status(200).json_body(json!({
+            "conversation": {
+                "uuid": "thread-current",
+                "title": "New chat",
+                "created_at": "2026-07-25T00:00:00Z",
+                "updated_at": "2026-07-25T00:00:00Z",
+                "is_saved": false,
+                "is_shared": false,
+                "folder_uuid": null
+            },
+            "default_branch": {
+                "uuid": "branch-current",
+                "is_default": true
+            }
+        }));
     });
-    let message = json!({
-        "id": "msg-contract",
-        "thread_id": "thread-contract",
-        "created_at": "2026-06-07T00:00:00Z",
-        "state": "done",
-        "prompt": "contract prompt",
-        "md": markdown,
-        "documents": []
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/conversations/thread-current/init")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/json");
+        then.status(200).json_body(json!({
+            "conversation": {
+                "uuid": "thread-current",
+                "title": "Current Assistant",
+                "created_at": "2026-07-25T00:00:00Z",
+                "updated_at": "2026-07-25T00:00:00Z",
+                "is_saved": false,
+                "is_shared": false,
+                "folder_uuid": null
+            },
+            "active_branch": {
+                "uuid": "branch-current",
+                "is_default": true
+            },
+            "branches": [{
+                "uuid": "branch-current",
+                "is_default": true
+            }],
+            "messages": {
+                "items": [],
+                "has_more": false
+            }
+        }));
     });
-
-    format!("hi:{hello}\0\nthread.json:{thread}\0\nnew_message.json:{message}\0\n")
+    let expected_profile_fragment = expected_profile_id
+        .map(|profile_id| format!("\"profile_uuid\":\"{profile_id}\""))
+        .unwrap_or_default();
+    let message = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/branches/branch-current/messages")
+            .header("cookie", "kagi_session=test-session")
+            .header("content-type", "application/json")
+            .body_includes(expected_message)
+            .body_includes(&expected_profile_fragment);
+        then.status(200).json_body(json!({
+            "conversation": {
+                "uuid": "thread-current",
+                "title": "New chat",
+                "created_at": "2026-07-25T00:00:00Z",
+                "updated_at": "2026-07-25T00:00:00Z",
+                "is_saved": false,
+                "is_shared": false,
+                "folder_uuid": null
+            },
+            "branch": {
+                "uuid": "branch-current",
+                "is_default": true
+            },
+            "user_message": {
+                "uuid": "user-current",
+                "role": "user",
+                "content": expected_message,
+                "created_at": "2026-07-25T00:00:00Z",
+                "references": [],
+                "attachments": []
+            }
+        }));
+    });
+    let mut frames = String::new();
+    if let Some(first_markdown) = first_markdown {
+        frames.push_str(&format!(
+            "data: {}\n\n",
+            json!({"text": first_markdown, "is_final": false})
+        ));
+    }
+    frames.push_str(&format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "text": final_markdown,
+            "html_content": format!("<p>{final_markdown}</p>"),
+            "conversation_title": "Current Assistant",
+            "assistant_message_uuid": "assistant-current",
+            "is_final": true
+        })
+    ));
+    server.mock(move |when, then| {
+        when.method(GET)
+            .path("/api/branches/branch-current/stream")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "text/event-stream");
+        then.status(200)
+            .header("content-type", "text/event-stream")
+            .body(frames);
+    });
+    message
 }
 
 fn search_payload(title: &str, url: &str, snippet: &str) -> Value {
@@ -1997,22 +2075,7 @@ fn assistant_models_prints_json_catalog() {
 #[test]
 fn assistant_stream_prints_text_deltas_by_default() {
     let server = MockServer::start();
-    let _prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .header("content-type", "application/json");
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}\0\n",
-                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}\0\n"
-            ));
-    });
-
+    mock_current_assistant_prompt(&server, "Hello", Some("Hel"), "Hello", None);
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
     let output = run_kagi(
@@ -2028,22 +2091,7 @@ fn assistant_stream_prints_text_deltas_by_default() {
 #[test]
 fn assistant_stream_can_print_ndjson_updates() {
     let server = MockServer::start();
-    let _prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .header("content-type", "application/json");
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}\0\n",
-                "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}\0\n"
-            ));
-    });
-
+    mock_current_assistant_prompt(&server, "Hello", Some("Hel"), "Hello", None);
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
     let output = run_kagi(
@@ -2064,24 +2112,41 @@ fn assistant_stream_can_print_ndjson_updates() {
 }
 
 #[test]
+fn assistant_resolves_name_to_profile_uuid() {
+    let server = MockServer::start();
+    let message =
+        mock_current_assistant_prompt(&server, "Hello", None, "Hello", Some("profile-once"));
+    let _profiles = server.mock(|when, then| {
+        when.method(GET)
+            .path("/html/settings/assistant")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).body(assistant_list_html());
+    });
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &["assistant", "--assistant", "Once", "Hello"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    message.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["message"]["profile"]["id"], "profile-once");
+    assert_eq!(body["message"]["profile"]["name"], "Once");
+}
+
+#[test]
 fn assistant_contract_decision_prints_validated_json() {
     let server = MockServer::start();
-    let prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .header("content-type", "application/json")
-            .body_includes("Assistant contract")
-            .body_includes("decision")
-            .body_includes("next_actions");
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(assistant_prompt_stream_body(
-                r#"{"decision":"ship","rationale":"tests pass","next_actions":["open PR"]}"#,
-            ));
-    });
-
+    let current_prompt = mock_current_assistant_prompt(
+        &server,
+        "Assistant contract",
+        None,
+        r#"{"decision":"ship","rationale":"tests pass","next_actions":["open PR"]}"#,
+        None,
+    );
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
     let output = run_kagi(
@@ -2091,7 +2156,7 @@ fn assistant_contract_decision_prints_validated_json() {
     );
 
     assert_success(&output);
-    prompt.assert_calls(1);
+    current_prompt.assert_calls(1);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["decision"], "ship");
     assert_eq!(body["rationale"], "tests pass");
@@ -2105,31 +2170,25 @@ fn assistant_contract_decision_prints_validated_json() {
 #[test]
 fn assistant_contract_file_rejects_missing_required_key() {
     let server = MockServer::start();
-    let prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream")
-            .header("content-type", "application/json")
-            .body_includes("Assistant contract")
-            .body_includes("verdict");
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(assistant_prompt_stream_body(r#"{"summary":"not enough"}"#));
-    });
-
+    let current_prompt = mock_current_assistant_prompt(
+        &server,
+        "Assistant contract",
+        None,
+        r#"{"summary":"not enough"}"#,
+        None,
+    );
     let tempdir = TempDir::new().expect("tempdir");
     let contract_path = tempdir.path().join("verdict-contract.json");
     fs::write(
         &contract_path,
         r#"{
-          "type": "object",
-          "required": ["summary", "verdict"],
-          "properties": {
-            "summary": { "type": "string" },
-            "verdict": { "type": "string" }
-          }
-        }"#,
+      "type": "object",
+      "required": ["summary", "verdict"],
+      "properties": {
+        "summary": { "type": "string" },
+        "verdict": { "type": "string" }
+      }
+    }"#,
     )
     .expect("contract file should write");
     let env = session_env(&server);
@@ -2149,7 +2208,7 @@ fn assistant_contract_file_rejects_missing_required_key() {
         !output.status.success(),
         "expected invalid contract output to fail"
     );
-    prompt.assert_calls(2);
+    current_prompt.assert_calls(2);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("assistant contract"),
@@ -2189,6 +2248,7 @@ fn completion_install_detects_fish_and_writes_completion_file() {
 #[test]
 fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     let server = MockServer::start();
+    mock_current_assistant_prompt(&server, "Hi", None, "ok", None);
     let _new_form = server.mock(|when, then| {
         when.method(GET)
             .path("/settings/custom_assistant")
@@ -2217,19 +2277,6 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
             .header("cookie", "kagi_session=test-session");
         then.status(200)
             .body(assistant_form_html("profile-once", "Once"));
-    });
-    let _prompt = server.mock(|when, then| {
-        when.method(POST)
-            .path("/assistant/prompt")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/vnd.kagi.stream");
-        then.status(200)
-            .header("content-type", "application/vnd.kagi.stream")
-            .body(concat!(
-                "hi:{\"v\":\"test\",\"trace\":\"trace-once\"}\0\n",
-                "thread.json:{\"id\":\"thread-once\",\"title\":\"Once\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                "new_message.json:{\"id\":\"msg-once\",\"thread_id\":\"thread-once\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hi\",\"md\":\"ok\",\"documents\":[]}\0\n"
-            ));
     });
     let _delete = server.mock(|when, then| {
         when.method(POST)
