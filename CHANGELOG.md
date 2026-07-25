@@ -7,6 +7,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi skills` now includes focused guides for research, page content, Assistant conversations, monitoring and automation, and account configuration.
+
 ### Fixed
 
 - `kagi assistant` and `kagi ask-page` now use Kagi's current Assistant conversation API instead of the removed legacy prompt endpoint.

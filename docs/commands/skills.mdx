@@ -16,6 +16,9 @@ kagi skills get kagi
 Skills ship with the installed CLI binary, so their command examples and
 credential guidance match that exact `kagi` version.
 
+The `kagi` skill is a router. It points to focused workflow skills so agents do
+not need to load the full command surface for every task.
+
 ## Synopsis
 
 ```bash
@@ -46,13 +49,27 @@ Print an embedded skill guide to stdout with frontmatter stripped.
 kagi skills get kagi
 ```
 
-The `kagi` skill covers the core CLI workflow, credential selection, output
-formats, search, extraction, summarization, Assistant workflows, News, MCP, and
-agent-safe usage patterns.
+Available skills:
 
-`--full` is accepted for Harbor-style compatibility. Kagi currently ships only
-the core skill body, so `--full` prints the same body until extra embedded
-references are added.
+| Skill | Use for |
+| --- | --- |
+| `kagi` | Route an unclear Kagi task |
+| `kagi-research` | Search, Quick Answer, News, source discovery, and verification |
+| `kagi-content` | Extraction, summarization, page questions, and translation |
+| `kagi-assistant` | Conversations, threads, attachments, and custom assistants |
+| `kagi-monitoring` | Batch, watch, notifications, history, caching, and MCP |
+| `kagi-account-config` | Auth, profiles, lenses, bangs, redirects, and site preferences |
+
+Load the router when the workflow is unclear, or load a focused skill directly:
+
+```bash
+kagi skills get kagi
+kagi skills get kagi-research
+kagi skills get kagi-content
+```
+
+`--full` is accepted for Harbor-style compatibility. The current embedded
+skills have no separate references, so `--full` prints the same body as `get`.
 
 ```bash
 kagi skills get kagi --full
@@ -65,11 +82,12 @@ Print the embedded skill locator.
 ```bash
 kagi skills path
 kagi skills path kagi
+kagi skills path kagi-research
 ```
 
 Because Kagi embeds skills into the Rust binary instead of installing a
 filesystem skill directory, this returns `embedded://skills` or
-`embedded://skills/kagi`.
+`embedded://skills/<NAME>`.
 
 ## Authentication
 

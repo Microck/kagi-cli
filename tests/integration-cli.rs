@@ -261,11 +261,20 @@ fn skills_list_and_path_are_auth_free() {
 
     let list = run_kagi(&["skills"], &[], tempdir.path());
     assert_success(&list);
-    assert!(
-        String::from_utf8_lossy(&list.stdout).contains("kagi                 Core CLI usage guide"),
-        "expected core skill listing, got:\n{}",
-        String::from_utf8_lossy(&list.stdout)
-    );
+    let stdout = String::from_utf8_lossy(&list.stdout);
+    for skill in [
+        "kagi",
+        "kagi-research",
+        "kagi-content",
+        "kagi-assistant",
+        "kagi-monitoring",
+        "kagi-account-config",
+    ] {
+        assert!(
+            stdout.contains(skill),
+            "expected {skill} in skill listing, got:\n{stdout}"
+        );
+    }
 
     let path = run_kagi(&["skills", "path"], &[], tempdir.path());
     assert_success(&path);
