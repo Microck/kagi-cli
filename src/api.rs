@@ -62,7 +62,7 @@ const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
 const KAGI_NEWS_BATCH_CATEGORIES_PATH: &str = "/api/batches";
 const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
-const KAGI_ASSISTANT_PROMPT_PATH: &str = "/assistant/prompt";
+const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/conversations";
 const KAGI_SETTINGS_ASSISTANT_PATH: &str = "/html/settings/assistant";
 const KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH: &str = "/settings/custom_assistant";
 const KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH: &str = "/settings/ast/profiles/update";
@@ -90,7 +90,7 @@ const KAGI_TRANSLATE_ALTERNATIVES_PATH: &str = "/api/alternative-translations";
 const KAGI_TRANSLATE_ALIGNMENTS_PATH: &str = "/api/text-alignments";
 const KAGI_TRANSLATE_SUGGESTIONS_PATH: &str = "/api/translation-suggestions";
 const KAGI_TRANSLATE_WORD_INSIGHTS_PATH: &str = "/api/word-insights";
-const ASSISTANT_ZERO_BRANCH_UUID: &str = "00000000-0000-4000-0000-000000000000";
+
 const TRANSLATE_BOOTSTRAP_MAX_ATTEMPTS: usize = 3;
 const TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR: &str =
     "translate bootstrap did not mint a translate_session cookie";
@@ -598,29 +598,7 @@ pub async fn execute_assistant_prompt(
     request: &AssistantPromptRequest,
     token: &str,
 ) -> Result<AssistantPromptResponse, KagiError> {
-    let body = match build_assistant_prompt_payload(request)? {
-        AssistantPromptPayload::Json(state) => {
-            execute_assistant_stream(
-                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
-                &state,
-                token,
-                "Assistant prompt",
-            )
-            .await?
-        }
-        AssistantPromptPayload::Multipart { state, attachments } => {
-            execute_assistant_multipart_stream(
-                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
-                &state,
-                &attachments,
-                token,
-                "Assistant prompt",
-            )
-            .await?
-        }
-    };
-
-    parse_assistant_prompt_stream(&body)
+    execute_current_assistant_prompt(request, token, &mut |_| Ok(())).await
 }
 
 /// Sends a prompt to Kagi Assistant and calls `on_event` for every message update.
@@ -634,27 +612,271 @@ pub async fn execute_assistant_prompt_stream<F>(
 where
     F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
 {
-    let response = match build_assistant_prompt_payload(request)? {
-        AssistantPromptPayload::Json(state) => {
-            send_assistant_stream_request(
-                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
-                &state,
-                token,
-            )
-            .await?
+    execute_current_assistant_prompt(request, token, &mut on_event).await
+}
+
+async fn execute_current_assistant_prompt<F>(
+    request: &AssistantPromptRequest,
+    token: &str,
+    on_event: &mut F,
+) -> Result<AssistantPromptResponse, KagiError>
+where
+    F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
+{
+    if token.trim().is_empty() {
+        return Err(KagiError::Auth(
+            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
+        ));
+    }
+
+    let query = normalize_assistant_query(&request.query)?;
+    let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
+    let attachments = request
+        .attachments
+        .iter()
+        .map(|path| load_assistant_attachment(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (profile_id, selected_profile) = if let Some(selector) = request.profile_id.as_deref() {
+        let assistants = execute_custom_assistant_list(token).await?;
+        let assistant = resolve_custom_assistant_ref(&assistants, selector, false)?;
+        (Some(assistant.id.clone()), Some(json!(assistant)))
+    } else {
+        (
+            None,
+            request
+                .model
+                .as_ref()
+                .map(|model| json!({ "model_name": model })),
+        )
+    };
+    let (_conversation, branch) =
+        prepare_current_assistant_conversation(thread_id.as_deref(), request, token).await?;
+    let attachment_uuids = upload_current_assistant_attachments(attachments, token).await?;
+
+    let mut payload = Map::new();
+    payload.insert("message".to_string(), Value::String(query.clone()));
+    if !attachment_uuids.is_empty() {
+        payload.insert(
+            "attachment_uuids".to_string(),
+            Value::Array(attachment_uuids.into_iter().map(Value::String).collect()),
+        );
+    }
+    if let Some(profile_id) = profile_id {
+        payload.insert("profile_uuid".to_string(), Value::String(profile_id));
+    }
+    if let Some(model) = request.model.as_deref() {
+        payload.insert("model_name".to_string(), Value::String(model.to_string()));
+    }
+    if let Some(lens_id) = request.lens_id {
+        payload.insert("lens_id".to_string(), Value::from(lens_id));
+    }
+    if let Some(internet_access) = request.internet_access {
+        payload.insert("enable_search".to_string(), Value::Bool(internet_access));
+    }
+    if let Some(personalizations) = request.personalizations {
+        payload.insert("personalization".to_string(), Value::Bool(personalizations));
+    }
+
+    let client = http::client_assistant_stream()?;
+    let response = client
+        .post(http::kagi_assistant_url(&format!(
+            "/api/branches/{}/messages",
+            branch.uuid
+        )))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&Value::Object(payload))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+    let sent: CurrentAssistantPromptMessageResponse =
+        read_current_assistant_json_response(response, "Assistant prompt").await?;
+
+    let response = client
+        .get(http::kagi_assistant_url(&format!(
+            "/api/branches/{}/stream",
+            sent.branch.uuid
+        )))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "text/event-stream")
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    handle_current_assistant_prompt_stream(
+        response,
+        sent.conversation,
+        sent.branch,
+        sent.user_message,
+        query,
+        selected_profile,
+        on_event,
+    )
+    .await
+}
+
+async fn prepare_current_assistant_conversation(
+    thread_id: Option<&str>,
+    request: &AssistantPromptRequest,
+    token: &str,
+) -> Result<(CurrentAssistantConversation, CurrentAssistantBranch), KagiError> {
+    let client = http::client_assistant_stream()?;
+    if let Some(thread_id) = thread_id {
+        validate_current_assistant_path_id("assistant thread id", thread_id)?;
+        let response = client
+            .get(http::kagi_assistant_url(&format!(
+                "/api/conversations/{thread_id}/init"
+            )))
+            .header(header::COOKIE, format!("kagi_session={token}"))
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(map_transport_error)?;
+        let initialized: CurrentAssistantConversationInitResponse =
+            read_current_assistant_json_response(response, "Assistant conversation init").await?;
+        let branch = initialized.selected_branch().ok_or_else(|| {
+            KagiError::Parse("Assistant conversation did not include an active branch".to_string())
+        })?;
+        return Ok((initialized.conversation, branch));
+    }
+
+    let mut payload = Map::new();
+    if let Some(model) = request.model.as_deref() {
+        payload.insert("model_name".to_string(), Value::String(model.to_string()));
+    }
+    let response = client
+        .post(http::kagi_assistant_url(KAGI_ASSISTANT_CONVERSATIONS_PATH))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "application/json")
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&Value::Object(payload))
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+    let created: CurrentAssistantConversationCreateResponse =
+        read_current_assistant_json_response(response, "Assistant conversation create").await?;
+    Ok((created.conversation, created.default_branch))
+}
+
+async fn upload_current_assistant_attachments(
+    attachments: Vec<AssistantAttachmentPayload>,
+    token: &str,
+) -> Result<Vec<String>, KagiError> {
+    let client = http::client_assistant_stream()?;
+    let mut uuids = Vec::with_capacity(attachments.len());
+    for attachment in attachments {
+        let part = multipart::Part::bytes(attachment.bytes)
+            .file_name(attachment.filename)
+            .mime_str(&attachment.content_type)
+            .map_err(|error| {
+                KagiError::Config(format!(
+                    "invalid assistant attachment content type: {error}"
+                ))
+            })?;
+        let response = client
+            .post(http::kagi_assistant_url("/api/upload"))
+            .header(header::COOKIE, format!("kagi_session={token}"))
+            .multipart(multipart::Form::new().part("file", part))
+            .send()
+            .await
+            .map_err(map_transport_error)?;
+        let uploaded: CurrentAssistantUploadResponse =
+            read_current_assistant_json_response(response, "Assistant attachment upload").await?;
+        uuids.push(uploaded.uuid);
+    }
+    Ok(uuids)
+}
+
+async fn handle_current_assistant_prompt_stream<F>(
+    response: reqwest::Response,
+    conversation: CurrentAssistantConversation,
+    branch: CurrentAssistantBranch,
+    user_message: CurrentAssistantMessage,
+    prompt: String,
+    selected_profile: Option<Value>,
+    on_event: &mut F,
+) -> Result<AssistantPromptResponse, KagiError>
+where
+    F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
+{
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = http::read_error_body(response, "Assistant prompt stream").await;
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(KagiError::Auth(format!(
+                "invalid or expired Kagi session token for Assistant prompt stream: HTTP {status}{}",
+                assistant_error_suffix(&body)
+            )));
         }
-        AssistantPromptPayload::Multipart { state, attachments } => {
-            send_assistant_multipart_stream_request(
-                &http::kagi_url(KAGI_ASSISTANT_PROMPT_PATH),
-                &state,
-                &attachments,
-                token,
-            )
-            .await?
+        return Err(KagiError::Network(format!(
+            "Kagi Assistant prompt stream failed: HTTP {status}{}",
+            assistant_error_suffix(&body)
+        )));
+    }
+
+    let mut parser = CurrentAssistantPromptParser::new(
+        conversation,
+        branch,
+        user_message,
+        prompt,
+        selected_profile,
+    );
+    let mut pending = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| {
+            KagiError::Network(format!(
+                "failed to read Assistant prompt stream response body: {error}"
+            ))
+        })?;
+        pending.extend_from_slice(&chunk);
+        while let Some(frame) = take_next_assistant_sse_frame(&mut pending)? {
+            if let Some(event) = parser.process_sse_frame(&frame)? {
+                on_event(&event)?;
+            }
         }
+    }
+    if !pending.is_empty() {
+        let tail = String::from_utf8(pending).map_err(|error| {
+            KagiError::Parse(format!(
+                "Assistant prompt stream ended with invalid UTF-8: {error}"
+            ))
+        })?;
+        if !tail.trim().is_empty()
+            && let Some(event) = parser.process_sse_frame(&tail)?
+        {
+            on_event(&event)?;
+        }
+    }
+    parser.finish()
+}
+
+fn take_next_assistant_sse_frame(pending: &mut Vec<u8>) -> Result<Option<String>, KagiError> {
+    let lf = pending
+        .windows(2)
+        .position(|window| window == b"\n\n")
+        .map(|index| (index, 2));
+    let crlf = pending
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| (index, 4));
+    let delimiter = match (lf, crlf) {
+        (Some(lf), Some(crlf)) => Some(if lf.0 < crlf.0 { lf } else { crlf }),
+        (Some(lf), None) => Some(lf),
+        (None, Some(crlf)) => Some(crlf),
+        (None, None) => None,
+    };
+    let Some((index, delimiter_len)) = delimiter else {
+        return Ok(None);
     };
 
-    handle_assistant_prompt_stream_response(response, "Assistant prompt", &mut on_event).await
+    let frame = String::from_utf8(pending[..index].to_vec()).map_err(|error| {
+        KagiError::Parse(format!(
+            "Assistant prompt stream frame contained invalid UTF-8: {error}"
+        ))
+    })?;
+    pending.drain(..index + delimiter_len);
+    Ok(Some(frame))
 }
 
 /// Lists Assistant base models exposed by the custom assistant form.
@@ -3317,102 +3539,12 @@ fn looks_like_logged_out_page(body: &str) -> bool {
         .all(|marker| body.contains(marker))
 }
 
-fn assistant_profile_payload(request: &AssistantPromptRequest) -> Value {
-    let mut payload = serde_json::Map::new();
-
-    if let Some(profile_id) = request
-        .profile_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        payload.insert("id".to_string(), Value::String(profile_id.to_string()));
-    }
-
-    if let Some(model) = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        payload.insert("model".to_string(), Value::String(model.to_string()));
-    }
-
-    if let Some(lens_id) = request.lens_id {
-        payload.insert("lens_id".to_string(), json!(lens_id));
-    }
-
-    if let Some(internet_access) = request.internet_access {
-        payload.insert("internet_access".to_string(), Value::Bool(internet_access));
-    }
-
-    if let Some(personalizations) = request.personalizations {
-        payload.insert(
-            "personalizations".to_string(),
-            Value::Bool(personalizations),
-        );
-    }
-
-    Value::Object(payload)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AssistantAttachmentPayload {
     path: PathBuf,
     filename: String,
     content_type: String,
     bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum AssistantPromptPayload {
-    Json(Value),
-    Multipart {
-        state: Value,
-        attachments: Vec<AssistantAttachmentPayload>,
-    },
-}
-
-fn assistant_prompt_state(
-    request: &AssistantPromptRequest,
-    query: String,
-    thread_id: Option<String>,
-) -> Value {
-    json!({
-        "focus": {
-            "thread_id": thread_id,
-            "branch_id": ASSISTANT_ZERO_BRANCH_UUID,
-            "prompt": query,
-            "message_id": Value::Null,
-        },
-        "profile": assistant_profile_payload(request),
-    })
-}
-
-fn build_assistant_prompt_payload(
-    request: &AssistantPromptRequest,
-) -> Result<AssistantPromptPayload, KagiError> {
-    let query = normalize_assistant_query(&request.query)?;
-    let thread_id = normalize_assistant_thread_id(request.thread_id.as_deref())?;
-    let state = assistant_prompt_state(request, query, thread_id);
-
-    if request.attachments.is_empty() {
-        return Ok(AssistantPromptPayload::Json(state));
-    }
-
-    Ok(AssistantPromptPayload::Multipart {
-        state,
-        attachments: load_assistant_attachments(&request.attachments)?,
-    })
-}
-
-fn load_assistant_attachments(
-    paths: &[PathBuf],
-) -> Result<Vec<AssistantAttachmentPayload>, KagiError> {
-    paths
-        .iter()
-        .map(|path| load_assistant_attachment(path))
-        .collect()
 }
 
 fn load_assistant_attachment(path: &Path) -> Result<AssistantAttachmentPayload, KagiError> {
@@ -3445,243 +3577,6 @@ fn load_assistant_attachment(path: &Path) -> Result<AssistantAttachmentPayload, 
             .to_string(),
         bytes,
     })
-}
-
-async fn execute_assistant_stream(
-    url: &str,
-    payload: &Value,
-    token: &str,
-    surface: &str,
-) -> Result<String, KagiError> {
-    let response = send_assistant_stream_request(url, payload, token).await?;
-    handle_assistant_stream_response(response, surface).await
-}
-
-async fn send_assistant_stream_request(
-    url: &str,
-    payload: &Value,
-    token: &str,
-) -> Result<reqwest::Response, KagiError> {
-    if token.trim().is_empty() {
-        return Err(KagiError::Auth(
-            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
-        ));
-    }
-
-    let client = http::client_assistant_stream()?;
-    client
-        .post(url)
-        .header(header::COOKIE, format!("kagi_session={token}"))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(header::ACCEPT, "application/vnd.kagi.stream")
-        .json(payload)
-        .send()
-        .await
-        .map_err(map_transport_error)
-}
-
-async fn execute_assistant_multipart_stream(
-    url: &str,
-    state: &Value,
-    attachments: &[AssistantAttachmentPayload],
-    token: &str,
-    surface: &str,
-) -> Result<String, KagiError> {
-    let response = send_assistant_multipart_stream_request(url, state, attachments, token).await?;
-    handle_assistant_stream_response(response, surface).await
-}
-
-async fn send_assistant_multipart_stream_request(
-    url: &str,
-    state: &Value,
-    attachments: &[AssistantAttachmentPayload],
-    token: &str,
-) -> Result<reqwest::Response, KagiError> {
-    if token.trim().is_empty() {
-        return Err(KagiError::Auth(
-            "missing Kagi session token (expected KAGI_SESSION_TOKEN)".to_string(),
-        ));
-    }
-
-    let client = http::client_assistant_stream()?;
-    let state_json = serde_json::to_vec(state).map_err(|error| {
-        KagiError::Config(format!(
-            "failed to serialize Assistant prompt upload state: {error}"
-        ))
-    })?;
-    let state_part = multipart::Part::bytes(state_json)
-        .mime_str("application/json")
-        .map_err(|error| {
-            KagiError::Config(format!(
-                "failed to set Assistant upload state MIME type: {error}"
-            ))
-        })?;
-    let mut form = multipart::Form::new().part("state", state_part);
-
-    for attachment in attachments {
-        let file_part = multipart::Part::bytes(attachment.bytes.clone())
-            .file_name(attachment.filename.clone())
-            .mime_str(&attachment.content_type)
-            .map_err(|error| {
-                KagiError::Config(format!(
-                    "failed to set Assistant attachment MIME type for '{}': {error}",
-                    attachment.path.display()
-                ))
-            })?;
-        form = form.part("file", file_part);
-    }
-
-    client
-        .post(url)
-        .header(header::COOKIE, format!("kagi_session={token}"))
-        .header(header::ACCEPT, "application/vnd.kagi.stream")
-        .multipart(form)
-        .send()
-        .await
-        .map_err(map_transport_error)
-}
-
-async fn handle_assistant_stream_response(
-    response: reqwest::Response,
-    surface: &str,
-) -> Result<String, KagiError> {
-    match response.status() {
-        StatusCode::OK => {
-            let body = response.text().await.map_err(|error| {
-                KagiError::Network(format!("failed to read {surface} response body: {error}"))
-            })?;
-
-            if looks_like_html_document(&body) {
-                return Err(KagiError::Auth(
-                    "invalid or expired Kagi session token".to_string(),
-                ));
-            }
-
-            Ok(body)
-        }
-        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
-            let body = http::read_error_body(response, surface).await;
-            Err(KagiError::Auth(format!(
-                "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
-                format_client_error_suffix(&body)
-            )))
-        }
-        status if status.is_client_error() => {
-            let body = http::read_error_body(response, surface).await;
-            Err(KagiError::Config(format!(
-                "Kagi {surface} request rejected: HTTP {status}{}",
-                format_client_error_suffix(&body)
-            )))
-        }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}{}",
-            {
-                let body = http::read_error_body(response, surface).await;
-                if body.trim().is_empty() {
-                    String::new()
-                } else if looks_like_html_document(&body) {
-                    let stripped = strip_html_to_text(&body);
-                    let normalized_surface = surface.to_ascii_lowercase();
-                    if normalized_surface.contains("thread") {
-                        "; the thread id may be invalid or no longer available".to_string()
-                    } else if stripped.is_empty() {
-                        String::new()
-                    } else {
-                        format!("; {stripped}")
-                    }
-                } else {
-                    format_client_error_suffix(&body)
-                }
-            }
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi {surface} response status: HTTP {status}"
-        ))),
-    }
-}
-
-async fn handle_assistant_prompt_stream_response<F>(
-    response: reqwest::Response,
-    surface: &str,
-    on_event: &mut F,
-) -> Result<AssistantPromptResponse, KagiError>
-where
-    F: FnMut(&AssistantPromptStreamEvent) -> Result<(), KagiError>,
-{
-    match response.status() {
-        StatusCode::OK => {
-            let mut parser = AssistantPromptStreamParser::default();
-            let mut pending = String::new();
-            let mut stream = response.bytes_stream();
-
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|error| {
-                    KagiError::Network(format!("failed to read {surface} response body: {error}"))
-                })?;
-                pending.push_str(&String::from_utf8_lossy(&chunk));
-
-                while let Some(index) = pending.find("\0\n") {
-                    let frame = pending[..index].to_string();
-                    pending.drain(..index + 2);
-                    if let Some(event) = parser.process_frame(&frame)? {
-                        on_event(&event)?;
-                    }
-                }
-            }
-
-            if looks_like_html_document(&pending) {
-                return Err(KagiError::Auth(
-                    "invalid or expired Kagi session token".to_string(),
-                ));
-            }
-
-            if !pending.trim().is_empty()
-                && let Some(event) = parser.process_frame(&pending)?
-            {
-                on_event(&event)?;
-            }
-
-            parser.finish()
-        }
-        status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
-            let body = http::read_error_body(response, surface).await;
-            Err(KagiError::Auth(format!(
-                "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
-                format_client_error_suffix(&body)
-            )))
-        }
-        status if status.is_client_error() => {
-            let body = http::read_error_body(response, surface).await;
-            Err(KagiError::Config(format!(
-                "Kagi {surface} request rejected: HTTP {status}{}",
-                format_client_error_suffix(&body)
-            )))
-        }
-        status if status.is_server_error() => Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}{}",
-            {
-                let body = http::read_error_body(response, surface).await;
-                if body.trim().is_empty() {
-                    String::new()
-                } else {
-                    format_client_error_suffix(&body)
-                }
-            }
-        ))),
-        status => Err(KagiError::Network(format!(
-            "unexpected Kagi {surface} response status: HTTP {status}"
-        ))),
-    }
-}
-
-fn parse_assistant_prompt_stream(body: &str) -> Result<AssistantPromptResponse, KagiError> {
-    let mut parser = AssistantPromptStreamParser::default();
-
-    for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
-        parser.process_frame(frame)?;
-    }
-
-    parser.finish()
 }
 
 async fn fetch_current_assistant_json<T>(
@@ -3922,115 +3817,6 @@ fn nonempty_detail(value: &str) -> Option<String> {
         None
     } else {
         Some(detail)
-    }
-}
-
-#[derive(Default)]
-struct AssistantPromptStreamParser {
-    meta: AssistantMeta,
-    thread: Option<AssistantThread>,
-    message: Option<AssistantMessage>,
-    previous_markdown: String,
-}
-
-impl AssistantPromptStreamParser {
-    fn process_frame(
-        &mut self,
-        frame: &str,
-    ) -> Result<Option<AssistantPromptStreamEvent>, KagiError> {
-        let Some((tag, payload)) = frame.split_once(':') else {
-            return Ok(None);
-        };
-
-        match tag {
-            "hi" => {
-                let hello: AssistantHello = serde_json::from_str(payload).map_err(|error| {
-                    KagiError::Parse(format!("failed to parse assistant hello frame: {error}"))
-                })?;
-                self.meta.version = hello.v;
-                self.meta.trace = hello.trace;
-                Ok(None)
-            }
-            "thread.json" => {
-                let payload: AssistantThreadPayload =
-                    serde_json::from_str(payload).map_err(|error| {
-                        KagiError::Parse(format!("failed to parse assistant thread frame: {error}"))
-                    })?;
-                self.thread = Some(AssistantThread::from(payload));
-                Ok(None)
-            }
-            "new_message.json" => {
-                let payload: AssistantMessagePayload =
-                    serde_json::from_str(payload).map_err(|error| {
-                        KagiError::Parse(format!(
-                            "failed to parse assistant message frame: {error}"
-                        ))
-                    })?;
-                let message = assistant_message_from_payload(payload);
-                let markdown = message.markdown.as_deref().unwrap_or("");
-                let md_delta = markdown
-                    .strip_prefix(&self.previous_markdown)
-                    .unwrap_or(markdown)
-                    .to_string();
-                self.previous_markdown = markdown.to_string();
-                self.message = Some(message.clone());
-
-                Ok(Some(AssistantPromptStreamEvent {
-                    meta: self.meta.clone(),
-                    thread: self.thread.clone(),
-                    message,
-                    md_delta,
-                }))
-            }
-            "limit_notice.html" => {
-                let detail = strip_html_to_text(payload);
-                Err(KagiError::Config(if detail.is_empty() {
-                    "Kagi Assistant rate limited this request".to_string()
-                } else {
-                    detail
-                }))
-            }
-            "error.json" => Err(
-                assistant_json_error(payload, "Assistant prompt").unwrap_or_else(|| {
-                    KagiError::Config(String::from("Kagi Assistant prompt returned an error"))
-                }),
-            ),
-            "unauthorized" => Err(KagiError::Auth(
-                "invalid or expired Kagi session token".to_string(),
-            )),
-            _ => {
-                debug!(tag, "ignoring unknown assistant prompt stream frame");
-                Ok(None)
-            }
-        }
-    }
-
-    fn finish(self) -> Result<AssistantPromptResponse, KagiError> {
-        let thread = self.thread.ok_or_else(|| {
-            KagiError::Parse("assistant response did not include a thread.json frame".to_string())
-        })?;
-        let message = self.message.ok_or_else(|| {
-            KagiError::Parse(
-                "assistant response did not include a new_message.json frame".to_string(),
-            )
-        })?;
-
-        if message.state == "error" {
-            return Err(KagiError::Network(
-                message
-                    .markdown
-                    .as_deref()
-                    .or(message.reply_html.as_deref())
-                    .unwrap_or("Kagi Assistant returned an error state")
-                    .to_string(),
-            ));
-        }
-
-        Ok(AssistantPromptResponse {
-            meta: self.meta,
-            thread,
-            message,
-        })
     }
 }
 
@@ -4377,25 +4163,6 @@ fn parse_assistant_thread_cursor(cursor: &str) -> Option<Value> {
     serde_json::from_str::<Value>(cursor)
         .ok()
         .or_else(|| Some(json!({ "id": cursor })))
-}
-
-fn assistant_message_from_payload(payload: AssistantMessagePayload) -> AssistantMessage {
-    AssistantMessage {
-        id: payload.id,
-        thread_id: payload.thread_id,
-        created_at: payload.created_at,
-        branch_list: payload.branch_list,
-        state: payload.state,
-        prompt: payload.prompt,
-        reply_html: payload.reply,
-        markdown: payload.md,
-        references_html: payload.references_html,
-        references_markdown: payload.references_md,
-        metadata_html: payload.metadata,
-        documents: payload.documents,
-        profile: payload.profile,
-        trace_id: payload.trace_id,
-    }
 }
 
 fn format_assistant_thread_markdown(response: &AssistantThreadOpenResponse) -> String {
@@ -4933,10 +4700,59 @@ struct SubscriberSummaryStreamMessage {
     documents: Vec<Value>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Deserialize)]
 struct AssistantHello {
     v: Option<String>,
     trace: Option<String>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+struct AssistantMessagePayload {
+    id: String,
+    thread_id: String,
+    created_at: String,
+    #[serde(default)]
+    branch_list: Vec<String>,
+    state: String,
+    prompt: String,
+    #[serde(default)]
+    reply: Option<String>,
+    #[serde(default)]
+    md: Option<String>,
+    #[serde(default)]
+    references_html: Option<String>,
+    #[serde(default)]
+    references_md: Option<String>,
+    #[serde(default)]
+    metadata: Option<String>,
+    #[serde(default)]
+    documents: Vec<Value>,
+    #[serde(default)]
+    profile: Option<Value>,
+    #[serde(default)]
+    trace_id: Option<String>,
+}
+
+#[cfg(test)]
+fn assistant_message_from_payload(payload: AssistantMessagePayload) -> AssistantMessage {
+    AssistantMessage {
+        id: payload.id,
+        thread_id: payload.thread_id,
+        created_at: payload.created_at,
+        branch_list: payload.branch_list,
+        state: payload.state,
+        prompt: payload.prompt,
+        reply_html: payload.reply,
+        markdown: payload.md,
+        references_html: payload.references_html,
+        references_markdown: payload.references_md,
+        metadata_html: payload.metadata,
+        documents: payload.documents,
+        profile: payload.profile,
+        trace_id: payload.trace_id,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -4968,33 +4784,6 @@ impl From<AssistantThreadPayload> for AssistantThread {
             folder_ids: payload.folder_ids,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct AssistantMessagePayload {
-    id: String,
-    thread_id: String,
-    created_at: String,
-    #[serde(default)]
-    branch_list: Vec<String>,
-    state: String,
-    prompt: String,
-    #[serde(default)]
-    reply: Option<String>,
-    #[serde(default)]
-    md: Option<String>,
-    #[serde(default)]
-    references_html: Option<String>,
-    #[serde(default)]
-    references_md: Option<String>,
-    #[serde(default)]
-    metadata: Option<String>,
-    #[serde(default)]
-    documents: Vec<Value>,
-    #[serde(default)]
-    profile: Option<Value>,
-    #[serde(default)]
-    trace_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5059,6 +4848,192 @@ struct CurrentAssistantConversationInitResponse {
     #[serde(default)]
     branches: Vec<CurrentAssistantBranch>,
     messages: CurrentAssistantMessagesPage,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantConversationCreateResponse {
+    conversation: CurrentAssistantConversation,
+    default_branch: CurrentAssistantBranch,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantPromptMessageResponse {
+    conversation: CurrentAssistantConversation,
+    branch: CurrentAssistantBranch,
+    user_message: CurrentAssistantMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantUploadResponse {
+    uuid: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantPromptStreamFrame {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    html_content: Option<String>,
+    #[serde(default)]
+    conversation_title: Option<String>,
+    #[serde(default)]
+    assistant_message_uuid: Option<String>,
+    #[serde(default)]
+    trace_id: Option<String>,
+    #[serde(default)]
+    references: Vec<Value>,
+    #[serde(default)]
+    is_final: bool,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+struct CurrentAssistantPromptParser {
+    meta: AssistantMeta,
+    thread: AssistantThread,
+    message: AssistantMessage,
+    previous_markdown: String,
+    received_final: bool,
+}
+
+impl CurrentAssistantPromptParser {
+    fn new(
+        conversation: CurrentAssistantConversation,
+        branch: CurrentAssistantBranch,
+        user_message: CurrentAssistantMessage,
+        prompt: String,
+        selected_profile: Option<Value>,
+    ) -> Self {
+        let profile = match (
+            selected_profile,
+            current_assistant_message_profile(&user_message),
+        ) {
+            (Some(Value::Object(mut selected)), Some(Value::Object(current))) => {
+                selected.extend(current);
+                Some(Value::Object(selected))
+            }
+            (Some(selected), _) => Some(selected),
+            (None, current) => current,
+        };
+        let created_at = user_message
+            .created_at
+            .unwrap_or_else(|| conversation.created_at.clone());
+        let thread = AssistantThread {
+            id: conversation.uuid.clone(),
+            title: conversation.title,
+            ack: conversation.updated_at,
+            created_at: conversation.created_at,
+            expires_at: String::new(),
+            saved: conversation.is_saved,
+            shared: conversation.is_shared,
+            branch_id: branch.uuid,
+            folder_ids: conversation.folder_uuid.into_iter().collect(),
+        };
+        let message = AssistantMessage {
+            id: String::new(),
+            thread_id: thread.id.clone(),
+            created_at,
+            branch_list: Vec::new(),
+            state: "streaming".to_string(),
+            prompt,
+            reply_html: None,
+            markdown: Some(String::new()),
+            references_html: None,
+            references_markdown: None,
+            metadata_html: None,
+            documents: Vec::new(),
+            profile,
+            trace_id: None,
+        };
+        Self {
+            meta: AssistantMeta::default(),
+            thread,
+            message,
+            previous_markdown: String::new(),
+            received_final: false,
+        }
+    }
+
+    fn process_sse_frame(
+        &mut self,
+        frame: &str,
+    ) -> Result<Option<AssistantPromptStreamEvent>, KagiError> {
+        let payload = frame
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim_start)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if payload.is_empty() || payload == "[DONE]" {
+            return Ok(None);
+        }
+        let frame: CurrentAssistantPromptStreamFrame =
+            serde_json::from_str(&payload).map_err(|error| {
+                KagiError::Parse(format!(
+                    "failed to parse Assistant prompt stream frame: {error}"
+                ))
+            })?;
+        if let Some(error) = frame.error.filter(|error| !error.trim().is_empty()) {
+            return Err(KagiError::Config(error));
+        }
+        if let Some(title) = frame.conversation_title {
+            self.thread.title = title;
+        }
+        if let Some(trace_id) = frame.trace_id {
+            self.meta.trace = Some(trace_id.clone());
+            self.message.trace_id = Some(trace_id);
+        }
+        if let Some(message_id) = frame.assistant_message_uuid {
+            self.message.id = message_id;
+        }
+        if let Some(html) = frame.html_content {
+            self.message.reply_html = Some(html);
+        }
+        if !frame.references.is_empty() {
+            self.message.references_markdown =
+                current_assistant_references_markdown(&frame.references);
+        }
+        if let Some(markdown) = frame.text {
+            self.message.markdown = Some(markdown);
+        }
+        self.received_final |= frame.is_final;
+        self.message.state = if self.received_final {
+            "done".to_string()
+        } else {
+            "streaming".to_string()
+        };
+
+        let markdown = self.message.markdown.as_deref().unwrap_or("");
+        let md_delta = markdown
+            .strip_prefix(&self.previous_markdown)
+            .unwrap_or(markdown)
+            .to_string();
+        let has_update =
+            !md_delta.is_empty() || frame.is_final || self.message.reply_html.is_some();
+        self.previous_markdown = markdown.to_string();
+        if !has_update {
+            return Ok(None);
+        }
+        Ok(Some(AssistantPromptStreamEvent {
+            meta: self.meta.clone(),
+            thread: Some(self.thread.clone()),
+            message: self.message.clone(),
+            md_delta,
+        }))
+    }
+
+    fn finish(self) -> Result<AssistantPromptResponse, KagiError> {
+        if !self.received_final {
+            return Err(KagiError::Parse(
+                "Assistant prompt stream ended before a final response".to_string(),
+            ));
+        }
+        Ok(AssistantPromptResponse {
+            meta: self.meta,
+            thread: self.thread,
+            message: self.message,
+        })
+    }
 }
 
 impl CurrentAssistantConversationInitResponse {
@@ -5573,9 +5548,8 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, AssistantPromptPayload, AssistantPromptStreamParser, KagiEnvelope,
-        NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR, TranslateSuggestionContext,
-        apply_news_content_filters, build_ask_page_prompt, build_assistant_prompt_payload,
+        ApiErrorBody, KagiEnvelope, NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR,
+        TranslateSuggestionContext, apply_news_content_filters, build_ask_page_prompt,
         build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
@@ -5584,15 +5558,15 @@ mod tests {
         normalize_assistant_thread_id, normalize_assistant_thread_ref, normalize_aux_quality,
         normalize_custom_bang_trigger, normalize_lens_name, normalize_redirect_rule,
         normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_prompt_stream,
-        parse_assistant_thread_cursor, parse_assistant_thread_delete_stream,
-        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
-        parse_content_disposition_filename, parse_subscriber_summarize_stream,
-        parse_translate_detect_value, resolve_custom_assistant_ref, resolve_custom_bang_ref,
-        resolve_lens_ref, resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
+        normalize_subscriber_summary_type, parse_assistant_thread_cursor,
+        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
+        parse_assistant_thread_open_stream, parse_content_disposition_filename,
+        parse_subscriber_summarize_stream, parse_translate_detect_value,
+        resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
+        resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
         should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
-        text_contains_news_filter_keyword, translate_subscription_error_message,
-        validate_translate_request,
+        take_next_assistant_sse_frame, text_contains_news_filter_keyword,
+        translate_subscription_error_message, validate_translate_request,
     };
     use crate::api::{
         execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
@@ -6045,70 +6019,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_assistant_prompt_stream() {
-        let raw = concat!(
-            "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
-            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"expires_at\":\"2026-03-16T07:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-            "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
-        );
-
-        let parsed = parse_assistant_prompt_stream(raw).expect("assistant stream parses");
-        assert_eq!(parsed.meta.trace.as_deref(), Some("trace-123"));
-        assert_eq!(parsed.thread.id, "thread-1");
-        assert_eq!(parsed.message.markdown.as_deref(), Some("Hi"));
-        assert_eq!(
-            parsed.message.references_markdown.as_deref(),
-            Some("1. [Doc](https://example.com)")
-        );
-        assert_eq!(
-            parsed.message.branch_list,
-            vec!["00000000-0000-4000-0000-000000000000".to_string()]
-        );
-        assert_eq!(parsed.message.trace_id.as_deref(), Some("trace-message-1"));
-    }
-
-    #[test]
-    fn assistant_prompt_stream_events_include_markdown_delta() {
-        let mut parser = AssistantPromptStreamParser::default();
-        parser
-            .process_frame("hi:{\"v\":\"test\",\"trace\":\"trace-stream\"}")
-            .expect("hello should parse");
-        parser
-            .process_frame("thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}")
-            .expect("thread should parse");
-
-        let first = parser
-            .process_frame("new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"streaming\",\"prompt\":\"Hello\",\"md\":\"Hel\",\"documents\":[]}")
-            .expect("first message should parse")
-            .expect("first message should emit");
-        let second = parser
-            .process_frame("new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"Hello\",\"documents\":[]}")
-            .expect("second message should parse")
-            .expect("second message should emit");
-
-        assert_eq!(first.md_delta, "Hel");
-        assert_eq!(second.md_delta, "lo");
-        assert_eq!(second.meta.trace.as_deref(), Some("trace-stream"));
-        assert_eq!(
-            second.thread.as_ref().map(|thread| thread.id.as_str()),
-            Some("thread-1")
-        );
-    }
-
-    #[test]
-    fn parses_assistant_prompt_stream_without_expires_at() {
-        let raw = concat!(
-            "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"trace-123\"}\0\n",
-            "thread.json:{\"id\":\"thread-1\",\"title\":\"Greeting\",\"ack\":\"2026-03-16T06:19:07Z\",\"created_at\":\"2026-03-16T06:19:07Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-            "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T06:19:07Z\",\"branch_list\":[\"00000000-0000-4000-0000-000000000000\"],\"state\":\"done\",\"prompt\":\"Hello\",\"reply\":\"<p>Hi</p>\",\"md\":\"Hi\",\"references_html\":\"<ol><li>Doc</li></ol>\",\"references_md\":\"1. [Doc](https://example.com)\",\"metadata\":\"<li>meta</li>\",\"documents\":[],\"trace_id\":\"trace-message-1\"}\0\n"
-        );
-
-        let parsed = parse_assistant_prompt_stream(raw).expect("assistant stream parses");
-        assert_eq!(parsed.thread.id, "thread-1");
-        assert!(parsed.thread.expires_at.is_empty());
-    }
-
-    #[test]
     fn parses_assistant_thread_cursor_from_cursor_payload() {
         assert_eq!(
             parse_assistant_thread_cursor(
@@ -6439,93 +6349,65 @@ mod tests {
     }
 
     #[test]
-    fn builds_json_assistant_prompt_payload_without_attachments() {
-        let request = AssistantPromptRequest {
-            query: "  hello  ".to_string(),
-            thread_id: Some("  thread-1  ".to_string()),
-            attachments: Vec::new(),
-            profile_id: Some("research".to_string()),
-            model: Some("gpt-5-mini".to_string()),
-            lens_id: Some(2),
-            internet_access: Some(true),
-            personalizations: Some(false),
-        };
+    fn assistant_sse_frames_preserve_split_utf8_and_crlf_delimiters() {
+        let encoded = "data: {\"text\":\"hello 🙂\"}\r\n\r\n".as_bytes();
+        let emoji_start = encoded
+            .windows("🙂".len())
+            .position(|window| window == "🙂".as_bytes())
+            .expect("emoji should be present");
+        let mut pending = encoded[..emoji_start + 1].to_vec();
 
-        match build_assistant_prompt_payload(&request).expect("payload should build") {
-            AssistantPromptPayload::Json(state) => {
-                assert_eq!(state["focus"]["prompt"], "hello");
-                assert_eq!(state["focus"]["thread_id"], "thread-1");
-                assert_eq!(
-                    state["focus"]["branch_id"],
-                    "00000000-0000-4000-0000-000000000000"
-                );
-                assert_eq!(state["profile"]["id"], "research");
-                assert_eq!(state["profile"]["model"], "gpt-5-mini");
-                assert_eq!(state["profile"]["lens_id"], 2);
-                assert_eq!(state["profile"]["internet_access"], true);
-                assert_eq!(state["profile"]["personalizations"], false);
-            }
-            other => panic!("expected json assistant payload, got {other:?}"),
-        }
+        assert!(
+            take_next_assistant_sse_frame(&mut pending)
+                .expect("partial frame should be valid")
+                .is_none()
+        );
+
+        pending.extend_from_slice(&encoded[emoji_start + 1..]);
+        let frame = take_next_assistant_sse_frame(&mut pending)
+            .expect("complete frame should be valid")
+            .expect("complete frame should be returned");
+        assert_eq!(frame, "data: {\"text\":\"hello 🙂\"}");
+        assert!(pending.is_empty());
     }
 
-    #[test]
-    fn builds_multipart_assistant_prompt_payload_with_attachments() {
-        let tempdir = TempDir::new().expect("tempdir");
-        let attachment_path = tempdir.path().join("note.txt");
-        fs::write(&attachment_path, "attached-note").expect("attachment should write");
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn rejects_missing_assistant_attachment_before_creating_conversation() {
+        use httpmock::Method::POST;
+        use httpmock::MockServer;
 
-        let request = AssistantPromptRequest {
-            query: "Reply with exactly: attached-note".to_string(),
-            thread_id: None,
-            attachments: vec![attachment_path.clone()],
-            profile_id: None,
-            model: Some("gpt-5-mini".to_string()),
-            lens_id: None,
-            internet_access: Some(false),
-            personalizations: Some(false),
-        };
-
-        match build_assistant_prompt_payload(&request).expect("payload should build") {
-            AssistantPromptPayload::Multipart { state, attachments } => {
-                assert_eq!(
-                    state["focus"]["prompt"],
-                    "Reply with exactly: attached-note"
-                );
-                assert_eq!(state["profile"]["model"], "gpt-5-mini");
-                assert_eq!(state["profile"]["internet_access"], false);
-                assert_eq!(attachments.len(), 1);
-                assert_eq!(attachments[0].path, attachment_path);
-                assert_eq!(attachments[0].filename, "note.txt");
-                assert_eq!(attachments[0].content_type, "text/plain");
-                assert_eq!(attachments[0].bytes, b"attached-note");
-            }
-            other => panic!("expected multipart assistant payload, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn rejects_missing_assistant_attachment() {
+        let server = MockServer::start();
+        let conversation = server.mock(|when, then| {
+            when.method(POST).path("/api/conversations");
+            then.status(500);
+        });
         let missing = PathBuf::from("/tmp/definitely-missing-kagi-assistant-attachment.txt");
-        let request = AssistantPromptRequest {
-            query: "hello".to_string(),
-            thread_id: None,
-            attachments: vec![missing.clone()],
-            profile_id: None,
-            model: None,
-            lens_id: None,
-            internet_access: None,
-            personalizations: None,
-        };
+        let _env_guard = lock_env();
+        let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
+        let error = execute_assistant_prompt(
+            &AssistantPromptRequest {
+                query: "hello".to_string(),
+                thread_id: None,
+                attachments: vec![missing.clone()],
+                profile_id: None,
+                model: None,
+                lens_id: None,
+                internet_access: None,
+                personalizations: None,
+            },
+            "test-session",
+        )
+        .await
+        .expect_err("missing attachment should fail");
 
-        let error =
-            build_assistant_prompt_payload(&request).expect_err("missing attachment should fail");
         assert!(
             error
                 .to_string()
                 .contains("failed to read assistant attachment")
         );
         assert!(error.to_string().contains(&missing.display().to_string()));
+        conversation.assert_calls(0);
     }
 
     #[tokio::test]
@@ -6535,30 +6417,66 @@ mod tests {
         use httpmock::MockServer;
 
         let server = MockServer::start();
-        let _prompt = server.mock(|when, then| {
+        let _conversation = server.mock(|when, then| {
+            when.method(POST).path("/api/conversations");
+            then.status(200).json_body(json!({
+                "conversation": {
+                    "uuid": "thread-1",
+                    "title": "Upload test",
+                    "created_at": "2026-04-24T00:00:00Z",
+                    "updated_at": "2026-04-24T00:00:00Z",
+                    "is_saved": false,
+                    "is_shared": false
+                },
+                "default_branch": {"uuid": "branch-1", "is_default": true}
+            }));
+        });
+        let _upload = server.mock(|when, then| {
             when.method(POST)
-                .path("/assistant/prompt")
-                .header("cookie", "kagi_session=test-session")
-                .header("accept", "application/vnd.kagi.stream")
-                .body_includes("name=\"state\"")
-                .body_includes("name=\"file\"; filename=\"note.txt\"")
-                .body_includes("\"prompt\":\"Reply with exactly: attached-note\"")
+                .path("/api/upload")
                 .body_includes("attached-note");
+            then.status(200).json_body(json!({"uuid": "attachment-1"}));
+        });
+        let _message = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/branches/branch-1/messages")
+                .body_includes("attachment-1")
+                .body_includes("Reply with exactly: attached-note");
+            then.status(200).json_body(json!({
+                "conversation": {
+                    "uuid": "thread-1",
+                    "title": "Upload test",
+                    "created_at": "2026-04-24T00:00:00Z",
+                    "updated_at": "2026-04-24T00:00:00Z",
+                    "is_saved": false,
+                    "is_shared": false
+                },
+                "branch": {"uuid": "branch-1", "is_default": true},
+                "user_message": {
+                    "uuid": "user-1",
+                    "role": "user",
+                    "content": "Reply with exactly: attached-note",
+                    "created_at": "2026-04-24T00:00:00Z"
+                }
+            }));
+        });
+        let _stream = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/api/branches/branch-1/stream");
             then.status(200)
-                .header("content-type", "application/vnd.kagi.stream")
+                .header("content-type", "text/event-stream")
                 .body(concat!(
-                    "hi:{\"v\":\"test\",\"trace\":\"trace-upload\"}\0\n",
-                    "thread.json:{\"id\":\"thread-1\",\"title\":\"Upload test\",\"ack\":\"2026-04-24T00:00:00Z\",\"created_at\":\"2026-04-24T00:00:00Z\",\"expires_at\":\"2026-04-24T01:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                    "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-04-24T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Reply with exactly: attached-note\",\"reply_html\":\"attached-note\",\"md\":\"attached-note\",\"references_html\":\"\",\"references_markdown\":\"\",\"metadata_html\":\"\",\"documents\":[],\"profile\":null}\0\n"
+                    "data: {\"text\":\"attached-note\",\"html_content\":\"<p>attached-note</p>\",",
+                    "\"assistant_message_uuid\":\"msg-1\",\"is_final\":true}\n\n",
+                    "data: [DONE]\n\n"
                 ));
         });
-
         let tempdir = TempDir::new().expect("tempdir");
         let attachment_path = tempdir.path().join("note.txt");
         fs::write(&attachment_path, "attached-note").expect("attachment should write");
 
         let _env_guard = lock_env();
-        let _base_url_env = set_env_var("KAGI_BASE_URL", &server.base_url());
+        let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
         let response = execute_assistant_prompt(
             &AssistantPromptRequest {
                 query: "Reply with exactly: attached-note".to_string(),
@@ -6575,8 +6493,16 @@ mod tests {
         .await
         .expect("assistant prompt should succeed");
 
-        assert_eq!(response.meta.trace.as_deref(), Some("trace-upload"));
+        assert_eq!(response.thread.id, "thread-1");
         assert_eq!(response.message.markdown.as_deref(), Some("attached-note"));
+        assert_eq!(
+            response
+                .message
+                .profile
+                .as_ref()
+                .and_then(|profile| { profile.get("model_name").and_then(Value::as_str) }),
+            Some("gpt-5-mini")
+        );
     }
 
     #[tokio::test]
@@ -6586,23 +6512,55 @@ mod tests {
         use httpmock::MockServer;
 
         let server = MockServer::start();
-        let _prompt = server.mock(|when, then| {
+        let _conversation = server.mock(|when, then| {
+            when.method(POST).path("/api/conversations");
+            then.status(200).json_body(json!({
+                "conversation": {
+                    "uuid": "thread-delayed",
+                    "title": "Delayed test",
+                    "created_at": "2026-05-01T00:00:00Z",
+                    "updated_at": "2026-05-01T00:00:00Z",
+                    "is_saved": false,
+                    "is_shared": false
+                },
+                "default_branch": {"uuid": "branch-delayed", "is_default": true}
+            }));
+        });
+        let _message = server.mock(|when, then| {
             when.method(POST)
-                .path("/assistant/prompt")
-                .header("cookie", "kagi_session=test-session")
-                .header("accept", "application/vnd.kagi.stream");
+                .path("/api/branches/branch-delayed/messages");
+            then.status(200).json_body(json!({
+                "conversation": {
+                    "uuid": "thread-delayed",
+                    "title": "Delayed test",
+                    "created_at": "2026-05-01T00:00:00Z",
+                    "updated_at": "2026-05-01T00:00:00Z",
+                    "is_saved": false,
+                    "is_shared": false
+                },
+                "branch": {"uuid": "branch-delayed", "is_default": true},
+                "user_message": {
+                    "uuid": "user-delayed",
+                    "role": "user",
+                    "content": "Hello",
+                    "created_at": "2026-05-01T00:00:00Z"
+                }
+            }));
+        });
+        let _stream = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/api/branches/branch-delayed/stream");
             then.status(200)
-                .header("content-type", "application/vnd.kagi.stream")
+                .header("content-type", "text/event-stream")
                 .delay(Duration::from_millis(200))
                 .body(concat!(
-                    "hi:{\"v\":\"test\",\"trace\":\"trace-delayed\"}\0\n",
-                    "thread.json:{\"id\":\"thread-delayed\",\"title\":\"Delayed test\",\"ack\":\"2026-05-01T00:00:00Z\",\"created_at\":\"2026-05-01T00:00:00Z\",\"saved\":false,\"shared\":false,\"branch_id\":\"00000000-0000-4000-0000-000000000000\",\"folder_ids\":[]}\0\n",
-                    "new_message.json:{\"id\":\"msg-delayed\",\"thread_id\":\"thread-delayed\",\"created_at\":\"2026-05-01T00:00:00Z\",\"state\":\"done\",\"prompt\":\"Hello\",\"md\":\"delayed-ok\",\"documents\":[]}\0\n"
+                    "data: {\"text\":\"delayed-ok\",",
+                    "\"assistant_message_uuid\":\"msg-delayed\",\"is_final\":true}\n\n",
+                    "data: [DONE]\n\n"
                 ));
         });
-
         let _env_guard = lock_env();
-        let _base_url_env = set_env_var("KAGI_BASE_URL", &server.base_url());
+        let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
         let response = execute_assistant_prompt(
             &AssistantPromptRequest {
                 query: "Hello".to_string(),
@@ -6619,7 +6577,7 @@ mod tests {
         .await
         .expect("delayed assistant prompt should succeed");
 
-        assert_eq!(response.meta.trace.as_deref(), Some("trace-delayed"));
+        assert_eq!(response.thread.id, "thread-delayed");
         assert_eq!(response.message.markdown.as_deref(), Some("delayed-ok"));
     }
 
