@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.15.0]
+
 ### Added
 
 - `kagi skills` now includes focused guides for research, page content, Assistant conversations, monitoring and automation, and account configuration.
