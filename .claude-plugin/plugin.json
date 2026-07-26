@@ -1,0 +1,14 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "kagi",
+  "version": "0.15.0",
+  "description": "Kagi CLI skills for research, page content, Assistant, monitoring, and account configuration.",
+  "author": {
+    "name": "Microck",
+    "url": "https://github.com/Microck"
+  },
+  "homepage": "https://github.com/Microck/kagi-cli#readme",
+  "repository": "https://github.com/Microck/kagi-cli",
+  "license": "MIT",
+  "keywords": ["kagi", "search", "cli", "research", "assistant"]
+}

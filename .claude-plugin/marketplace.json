@@ -1,0 +1,26 @@
+{
+  "name": "kagi-cli",
+  "owner": {
+    "name": "Microck",
+    "url": "https://github.com/Microck"
+  },
+  "metadata": {
+    "description": "Marketplace for the Kagi CLI plugin.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "kagi",
+      "source": "./",
+      "description": "Kagi CLI skills for research, page content, Assistant, monitoring, and account configuration.",
+      "version": "0.15.0",
+      "author": {
+        "name": "Microck",
+        "url": "https://github.com/Microck"
+      },
+      "homepage": "https://github.com/Microck/kagi-cli#readme",
+      "license": "MIT",
+      "keywords": ["kagi", "search", "cli", "research", "assistant"]
+    }
+  ]
+}
