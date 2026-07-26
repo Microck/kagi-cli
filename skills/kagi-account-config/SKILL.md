@@ -9,7 +9,7 @@ allowed-tools: Bash(kagi:*)
 Inspect current state before changing it. Never print, echo, or paste stored
 credential values into output.
 
-## Credential Model
+## Credential model
 
 | Credential | Main capabilities |
 | --- | --- |
@@ -19,9 +19,9 @@ credential values into output.
 
 Environment variables override `.kagi.toml`. `--profile NAME` selects a named
 profile. Base search prefers session auth when both search credentials are
-available unless `preferred_auth = "api"` is configured.
+available, unless `preferred_auth = "api"` is configured.
 
-## Inspect And Verify Auth
+## Inspect and verify auth
 
 ```bash
 kagi auth status
@@ -38,7 +38,7 @@ kagi auth
 kagi auth set --session-token "https://kagi.com/search?token=..."
 ```
 
-Do not pass secrets on a shared shell command line. Prefer the interactive
+Never pass secrets on a shared shell command line. Prefer the interactive
 wizard or protected environment injection in shared environments.
 
 ## Profiles
@@ -50,9 +50,9 @@ kagi --profile work auth status
 kagi --profile personal search "query" --format toon
 ```
 
-Verify the selected profile before any setting mutation.
+Verify the selected profile before changing any setting.
 
-## Search Settings
+## Search settings
 
 Inspect before creating, updating, or deleting:
 
@@ -73,10 +73,10 @@ kagi bang custom create \
   --template "https://docs.rs/releases/search?query=%s"
 ```
 
-Use each command's `--help` for mutation-specific flags. Do not delete or
-overwrite account settings without explicit user intent.
+Use each command's `--help` for the flags a mutation needs. Never delete or
+overwrite an account setting unless the user asked for it.
 
-## Custom Assistants
+## Custom assistants
 
 ```bash
 kagi assistant custom list
@@ -86,12 +86,12 @@ kagi assistant custom get "Researcher"
 Conversation and thread use belongs in `kagi-assistant`. This skill owns the
 account-level configuration of custom assistants.
 
-## Completion Criteria
+## Completion criteria
 
 Configuration work is complete when:
 
-- the active profile and credential source are known;
+- you know the active profile and credential source;
 - the requested setting is visible through its read command;
 - no secret value appears in output or persisted scripts;
 - unrelated account settings remain unchanged; and
-- destructive changes were explicitly requested.
+- you made a destructive change only when the user asked for it.
