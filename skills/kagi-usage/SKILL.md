@@ -41,7 +41,8 @@ depth the user asked for.
 | Independent personal sites | `kagi smallweb` |
 | Several independent queries | `kagi batch` |
 
-`quick`, search filters, and the subscriber search path require session auth.
+`quick`, session-only search controls, and the subscriber search path require
+session auth.
 The current Search API uses `KAGI_API_KEY`. Public `news` and `smallweb` need no
 credentials.
 
@@ -102,7 +103,8 @@ filter the News vertical.
 
 ## Work with one page
 
-Never run a web search when the user already supplied the source.
+Work from the source the user supplied. Search the web only when the task needs
+evidence that page cannot give.
 
 | Outcome | Command | Credential |
 | --- | --- | --- |
