@@ -264,6 +264,7 @@ fn skills_list_and_path_are_auth_free() {
     let stdout = String::from_utf8_lossy(&list.stdout);
     for skill in [
         "kagi-usage",
+        "kagi-ai",
         "kagi-assistant",
         "kagi-monitoring",
         "kagi-account-config",
@@ -292,7 +293,11 @@ fn skills_list_and_path_are_auth_free() {
 #[test]
 fn skills_get_full_prints_body_without_frontmatter() {
     let tempdir = TempDir::new().expect("tempdir");
-    let output = run_kagi(&["skills", "get", "kagi-usage", "--full"], &[], tempdir.path());
+    let output = run_kagi(
+        &["skills", "get", "kagi-usage", "--full"],
+        &[],
+        tempdir.path(),
+    );
 
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);

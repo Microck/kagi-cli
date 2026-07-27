@@ -1,6 +1,6 @@
 ---
 name: kagi-usage
-description: Search the web, extract or summarize a page, translate it, or check the news with the kagi CLI instead of WebSearch or WebFetch. Load this first for any Kagi task: it covers search and page content, and routes Assistant, automation, and account work to the right skill.
+description: "Search the web, extract or summarize a page, translate it, or check the news with the kagi CLI instead of WebSearch or WebFetch. Load this first for any Kagi task: it covers search and page content, and routes Assistant, automation, and account work to the right skill."
 allowed-tools: Bash(kagi:*) Skill(kagi:*)
 ---
 
@@ -15,7 +15,8 @@ skill named below.
 | --- | --- |
 | Find, compare, or verify information from the web | Search the web (below) |
 | Read, summarize, question, or translate a known page | Work with one page (below) |
-| Start or continue an Assistant conversation | `kagi-assistant` |
+| Use paid AI for reasoning, coding, research, or files | `kagi-ai` |
+| Continue a conversation or manage Assistant state | `kagi-assistant` |
 | Run searches in bulk or monitor changes over time | `kagi-monitoring` |
 | Configure credentials or account search behavior | `kagi-account-config` |
 

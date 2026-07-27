@@ -6,8 +6,9 @@ allowed-tools: Bash(kagi:*)
 
 # Kagi Assistant
 
-Use Assistant for conversational synthesis and continuity. Use `kagi-usage` for
-source discovery and for one known page.
+Use Assistant for conversation mechanics and continuity. Use `kagi-ai` to
+choose when to spend AI allowance, and `kagi-usage` for direct search or page
+work.
 
 Assistant commands require `KAGI_SESSION_TOKEN`.
 
