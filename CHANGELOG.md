@@ -7,12 +7,22 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
-## [0.15.0]
+## [0.16.0]
 
 ### Added
 
 - Install the repository as a Claude Code plugin through its bundled marketplace manifest.
-- `kagi skills` now includes a unified `kagi-usage` guide for search and page content, a `kagi-ai` guide for spending Assistant allowance, and focused guides for Assistant conversations, monitoring and automation, and account configuration.
+- Use `kagi-ai` to select cost-aware Kagi Assistant, Research, Summarizer, Translate, and file-analysis workflows.
+
+### Changed
+
+- Consolidate the former `kagi`, `kagi-research`, and `kagi-content` guides into the unified `kagi-usage` skill.
+
+## [0.15.0]
+
+### Added
+
+- `kagi skills` now includes focused guides for research, page content, Assistant conversations, monitoring and automation, and account configuration.
 
 ### Fixed
 

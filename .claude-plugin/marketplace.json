@@ -13,7 +13,7 @@
       "name": "kagi",
       "source": "./",
       "description": "Kagi CLI skills for research, page content, Assistant, monitoring, and account configuration.",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "author": {
         "name": "Microck",
         "url": "https://github.com/Microck"

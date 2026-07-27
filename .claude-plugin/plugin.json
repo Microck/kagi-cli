@@ -1,7 +1,7 @@
 {
 	"$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "kagi",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Kagi CLI skills for research, page content, Assistant, monitoring, and account configuration.",
   "author": {
     "name": "Microck",
