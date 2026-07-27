@@ -8,11 +8,10 @@ pub struct EmbeddedSkill {
 }
 
 /// Core skill name used by `kagi skills`.
-pub const KAGI_SKILL: &str = "kagi";
+pub const KAGI_SKILL: &str = "kagi-usage";
 
-const KAGI_SKILL_SOURCE: &str = include_str!("../skills/kagi/SKILL.md");
-const KAGI_RESEARCH_SKILL_SOURCE: &str = include_str!("../skills/kagi-research/SKILL.md");
-const KAGI_CONTENT_SKILL_SOURCE: &str = include_str!("../skills/kagi-content/SKILL.md");
+const KAGI_SKILL_SOURCE: &str = include_str!("../skills/kagi-usage/SKILL.md");
+const KAGI_AI_SKILL_SOURCE: &str = include_str!("../skills/kagi-ai/SKILL.md");
 const KAGI_ASSISTANT_SKILL_SOURCE: &str = include_str!("../skills/kagi-assistant/SKILL.md");
 const KAGI_MONITORING_SKILL_SOURCE: &str = include_str!("../skills/kagi-monitoring/SKILL.md");
 const KAGI_ACCOUNT_CONFIG_SKILL_SOURCE: &str =
@@ -21,18 +20,13 @@ const KAGI_ACCOUNT_CONFIG_SKILL_SOURCE: &str =
 const SKILLS: &[EmbeddedSkill] = &[
     EmbeddedSkill {
         name: KAGI_SKILL,
-        description: "Route Kagi CLI tasks to the right embedded workflow skill",
+        description: "Search the web, read pages, and route other Kagi tasks to their skill",
         source: KAGI_SKILL_SOURCE,
     },
     EmbeddedSkill {
-        name: "kagi-research",
-        description: "Research a topic with Kagi Search, Quick Answer, News, and source follow-up",
-        source: KAGI_RESEARCH_SKILL_SOURCE,
-    },
-    EmbeddedSkill {
-        name: "kagi-content",
-        description: "Extract, summarize, question, or translate web page content",
-        source: KAGI_CONTENT_SKILL_SOURCE,
+        name: "kagi-ai",
+        description: "Spend Kagi AI allowance on reasoning, research, coding, and file analysis",
+        source: KAGI_AI_SKILL_SOURCE,
     },
     EmbeddedSkill {
         name: "kagi-assistant",
@@ -144,9 +138,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "kagi",
-                "kagi-research",
-                "kagi-content",
+                "kagi-usage",
+                "kagi-ai",
                 "kagi-assistant",
                 "kagi-monitoring",
                 "kagi-account-config",
@@ -163,5 +156,9 @@ mod tests {
                 "{name} should expose a frontmatter-free skill body"
             );
         }
+
+        let ai = skill_content("kagi-ai").expect("kagi-ai should be embedded");
+        assert!(ai.contains("Assistant allowance"));
+        assert!(ai.contains("kagi assistant"));
     }
 }

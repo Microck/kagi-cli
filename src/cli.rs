@@ -258,14 +258,14 @@ Features:
 - Full Kagi API coverage with session token support
 
 Agent usage:
-    kagi skills get kagi
+    kagi skills get kagi-usage
 
     Skills ship with the CLI and are always version-matched. They include
     workflow patterns, credential guidance, and copy-paste examples. Prefer
     this over guessing commands from flag docs alone.
 
     skills [list]            List available skills
-    skills get kagi          Core CLI usage guide
+    skills get kagi-usage    Core CLI usage guide
     skills get <name>        Load a specialized skill
     skills path [name]       Print the embedded skill locator",
     propagate_version = true

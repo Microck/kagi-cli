@@ -128,8 +128,8 @@ fn help_points_agents_to_agent_guide() {
         "expected agent help section, got:\n{stdout}"
     );
     assert!(
-        stdout.contains("kagi skills get kagi"),
-        "expected help to mention kagi skills get kagi, got:\n{stdout}"
+        stdout.contains("kagi skills get kagi-usage"),
+        "expected help to mention kagi skills get kagi-usage, got:\n{stdout}"
     );
     assert!(
         stdout.contains("skills [list]"),
@@ -241,7 +241,7 @@ fn agent_command_prints_embedded_skill_guide_without_auth() {
 #[test]
 fn skills_get_prints_core_guide_without_auth() {
     let tempdir = TempDir::new().expect("tempdir");
-    let output = run_kagi(&["skills", "get", "kagi"], &[], tempdir.path());
+    let output = run_kagi(&["skills", "get", "kagi-usage"], &[], tempdir.path());
 
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -250,7 +250,7 @@ fn skills_get_prints_core_guide_without_auth() {
         "expected markdown skill guide, got:\n{stdout}"
     );
     assert!(
-        stdout.contains("kagi skills get kagi"),
+        stdout.contains("kagi skills get <name>"),
         "expected skills command guidance, got:\n{stdout}"
     );
 }
@@ -263,9 +263,8 @@ fn skills_list_and_path_are_auth_free() {
     assert_success(&list);
     let stdout = String::from_utf8_lossy(&list.stdout);
     for skill in [
-        "kagi",
-        "kagi-research",
-        "kagi-content",
+        "kagi-usage",
+        "kagi-ai",
         "kagi-assistant",
         "kagi-monitoring",
         "kagi-account-config",
@@ -283,18 +282,22 @@ fn skills_list_and_path_are_auth_free() {
         "embedded://skills"
     );
 
-    let skill_path = run_kagi(&["skills", "path", "kagi"], &[], tempdir.path());
+    let skill_path = run_kagi(&["skills", "path", "kagi-usage"], &[], tempdir.path());
     assert_success(&skill_path);
     assert_eq!(
         String::from_utf8_lossy(&skill_path.stdout).trim(),
-        "embedded://skills/kagi"
+        "embedded://skills/kagi-usage"
     );
 }
 
 #[test]
 fn skills_get_full_prints_body_without_frontmatter() {
     let tempdir = TempDir::new().expect("tempdir");
-    let output = run_kagi(&["skills", "get", "kagi", "--full"], &[], tempdir.path());
+    let output = run_kagi(
+        &["skills", "get", "kagi-usage", "--full"],
+        &[],
+        tempdir.path(),
+    );
 
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);

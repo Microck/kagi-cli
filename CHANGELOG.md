@@ -11,7 +11,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ### Added
 
-- `kagi skills` now includes focused guides for research, page content, Assistant conversations, monitoring and automation, and account configuration.
+- Install the repository as a Claude Code plugin through its bundled marketplace manifest.
+- `kagi skills` now includes a unified `kagi-usage` guide for search and page content, a `kagi-ai` guide for spending Assistant allowance, and focused guides for Assistant conversations, monitoring and automation, and account configuration.
 
 ### Fixed
 

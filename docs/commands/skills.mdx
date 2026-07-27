@@ -10,14 +10,15 @@ Load embedded, version-matched usage guidance for agents and automation.
 The top-level help points agents here first:
 
 ```bash
-kagi skills get kagi
+kagi skills get kagi-usage
 ```
 
 Skills ship with the installed CLI binary, so their command examples and
 credential guidance match that exact `kagi` version.
 
-The `kagi` skill is a router. It points to focused workflow skills so agents do
-not need to load the full command surface for every task.
+The `kagi-usage` skill covers search and page content directly, and points to
+the focused workflow skills so agents do not need to load the full command
+surface for every task.
 
 ## Synopsis
 
@@ -29,7 +30,7 @@ kagi skills path [NAME]
 kagi agent
 ```
 
-`kagi agent` is a convenience alias for `kagi skills get kagi`.
+`kagi agent` is a convenience alias for `kagi skills get kagi-usage`.
 
 ## `kagi skills`
 
@@ -46,33 +47,33 @@ kagi skills list
 Print an embedded skill guide to stdout with frontmatter stripped.
 
 ```bash
-kagi skills get kagi
+kagi skills get kagi-usage
 ```
 
 Available skills:
 
 | Skill | Use for |
 | --- | --- |
-| `kagi` | Route an unclear Kagi task |
-| `kagi-research` | Search, Quick Answer, News, source discovery, and verification |
-| `kagi-content` | Extraction, summarization, page questions, and translation |
+| `kagi-usage` | Search, page content, and routing for any other Kagi task |
+| `kagi-ai` | Paid AI reasoning, coding, research, file analysis, and model selection |
 | `kagi-assistant` | Conversations, threads, attachments, and custom assistants |
 | `kagi-monitoring` | Batch, watch, notifications, history, caching, and MCP |
 | `kagi-account-config` | Auth, profiles, lenses, bangs, redirects, and site preferences |
 
-Load the router when the workflow is unclear, or load a focused skill directly:
+Load `kagi-usage` for search and page work, or load a focused skill directly:
 
 ```bash
-kagi skills get kagi
-kagi skills get kagi-research
-kagi skills get kagi-content
+kagi skills get kagi-usage
+kagi skills get kagi-ai
+kagi skills get kagi-assistant
+kagi skills get kagi-monitoring
 ```
 
 `--full` is accepted for Harbor-style compatibility. The current embedded
 skills have no separate references, so `--full` prints the same body as `get`.
 
 ```bash
-kagi skills get kagi --full
+kagi skills get kagi-usage --full
 ```
 
 ## `kagi skills path`
@@ -81,8 +82,8 @@ Print the embedded skill locator.
 
 ```bash
 kagi skills path
-kagi skills path kagi
-kagi skills path kagi-research
+kagi skills path kagi-usage
+kagi skills path kagi-assistant
 ```
 
 Because Kagi embeds skills into the Rust binary instead of installing a
