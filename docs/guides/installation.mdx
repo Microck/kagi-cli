@@ -17,6 +17,7 @@ The *kagi* CLI can be installed through several methods:
 | Package Managers | System integration | Low | Automatic |
 | GitHub Releases | Specific versions | Medium | Manual |
 | Build from Source | Development, customization | High | Manual |
+| Nix Flake | NixOS, Home Manager, reproducible installs | Medium | Manual |
 
 ## Quick Install (Recommended)
 
@@ -190,6 +191,26 @@ cargo install --path .
 ```
 
 **Note on crates.io:** The package is not currently published to crates.io because both `kagi` and `kagi-cli` names are already taken. GitHub Releases remain the canonical distribution method.
+
+### Nix / NixOS
+
+The repository includes a flake for Nix users. It provides the CLI package, a runnable app, shell completions, and a development shell.
+
+Run the CLI without installing it:
+
+```bash
+nix run github:Microck/kagi-cli -- search "rust async"
+```
+
+Install it into your Nix profile:
+
+```bash
+nix profile install github:Microck/kagi-cli
+```
+
+For NixOS or Home Manager, add `github:Microck/kagi-cli` as a flake input. Use `kagi.packages.${system}.default` for the package or `kagi.overlays.default` in your package set.
+
+Authentication works the same as with other installation methods. Run `kagi auth` after installation or set the required Kagi environment variable.
 
 ## Manual Installation from GitHub Releases
 

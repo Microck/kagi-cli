@@ -68,6 +68,23 @@ scoop install kagi
 yay -S kagi-cli
 ```
 
+### nix / nixos
+
+run it without installing:
+
+```bash
+nix run github:Microck/kagi-cli -- search "rust async"
+```
+
+install it into your Nix profile:
+
+```bash
+nix profile install github:Microck/kagi-cli
+```
+
+for NixOS or home-manager, add the flake as an input and use its default
+package or `overlays.default`.
+
 ### auth
 
 run the guided setup:
