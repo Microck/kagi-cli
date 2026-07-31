@@ -18,8 +18,8 @@ rustPlatform.buildRustPackage {
   # reqwest uses rustls-tls, so the package does not need OpenSSL or pkg-config.
   nativeBuildInputs = [ installShellFiles ];
 
-  # The test suite uses local mock servers and can run in the sandbox.
-  doCheck = true;
+  # Skip tests when the build host cannot execute the target binary.
+  doCheck = stdenv.buildPlatform.canExecute stdenv.hostPlatform;
 
   postInstall = lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     installShellCompletion --cmd kagi \
