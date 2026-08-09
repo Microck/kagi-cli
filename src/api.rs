@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use tokio::time::sleep;
 use tracing::debug;
 
@@ -25,33 +25,33 @@ use crate::http::{self, map_transport_error};
 #[cfg(test)]
 use crate::parser::parse_assistant_thread_list;
 use crate::parser::{
-    parse_assistant_model_catalog, parse_assistant_profile_form, parse_assistant_profile_list,
-    parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
-    parse_redirect_form, parse_redirect_list,
+    parse_assistant_profile_form, parse_assistant_profile_list, parse_custom_bang_form,
+    parse_custom_bang_list, parse_lens_form, parse_lens_list, parse_redirect_form,
+    parse_redirect_list,
 };
 #[cfg(test)]
 use crate::types::ApiMeta;
 use crate::types::{
     AlternativeTranslationsResponse, AskPageRequest, AskPageResponse, AskPageSource,
-    AssistantMessage, AssistantMeta, AssistantModelCatalog, AssistantProfileCreateRequest,
-    AssistantProfileDetails, AssistantProfileSummary, AssistantProfileUpdateRequest,
-    AssistantPromptRequest, AssistantPromptResponse, AssistantPromptStreamEvent, AssistantThread,
-    AssistantThreadDeleteResponse, AssistantThreadExportResponse, AssistantThreadListResponse,
-    AssistantThreadOpenResponse, AssistantThreadPagination, AssistantThreadSummary,
-    CustomBangCreateRequest, CustomBangDetails, CustomBangSummary, CustomBangUpdateRequest,
-    DeletedResourceResponse, EnrichResponse, ExtractPageInput, ExtractRequest, ExtractResponse,
-    FastGptRequest, FastGptResponse, LensCreateRequest, LensDetails, LensSummary,
-    LensUpdateRequest, NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse,
-    NewsCategoryMetadata, NewsCategoryMetadataList, NewsChaos, NewsChaosResponse,
-    NewsContentFilterSummary, NewsFilterPresetListEntry, NewsFilterPresetListResponse,
-    NewsLatestBatch, NewsResolvedCategory, NewsStoriesPayload, NewsStoriesResponse,
-    NewsStoryContentFilterSummary, RedirectRuleCreateRequest, RedirectRuleDetails,
-    RedirectRuleSummary, RedirectRuleUpdateRequest, SmallWebFeed, SubscriberSummarization,
-    SubscriberSummarizeMeta, SubscriberSummarizeRequest, SubscriberSummarizeResponse,
-    SummarizeRequest, SummarizeResponse, TextAlignmentsResponse, ToggleResourceResponse,
-    TranslateBootstrapMetadata, TranslateCommandRequest, TranslateDetectedLanguage,
-    TranslateOptionState, TranslateResponse, TranslateTextResponse, TranslateWarning,
-    TranslationSuggestionsResponse, WordInsightsResponse,
+    AssistantMessage, AssistantMeta, AssistantModelCatalog, AssistantModelOption,
+    AssistantProfileCreateRequest, AssistantProfileDetails, AssistantProfileSummary,
+    AssistantProfileUpdateRequest, AssistantPromptRequest, AssistantPromptResponse,
+    AssistantPromptStreamEvent, AssistantThread, AssistantThreadDeleteResponse,
+    AssistantThreadExportResponse, AssistantThreadListResponse, AssistantThreadOpenResponse,
+    AssistantThreadPagination, AssistantThreadSummary, AssistantUsage, CustomBangCreateRequest,
+    CustomBangDetails, CustomBangSummary, CustomBangUpdateRequest, DeletedResourceResponse,
+    EnrichResponse, ExtractPageInput, ExtractRequest, ExtractResponse, FastGptRequest,
+    FastGptResponse, LensCreateRequest, LensDetails, LensSummary, LensUpdateRequest,
+    NewsBatchCategories, NewsBatchCategory, NewsCategoriesResponse, NewsCategoryMetadata,
+    NewsCategoryMetadataList, NewsChaos, NewsChaosResponse, NewsContentFilterSummary,
+    NewsFilterPresetListEntry, NewsFilterPresetListResponse, NewsLatestBatch, NewsResolvedCategory,
+    NewsStoriesPayload, NewsStoriesResponse, NewsStoryContentFilterSummary,
+    RedirectRuleCreateRequest, RedirectRuleDetails, RedirectRuleSummary, RedirectRuleUpdateRequest,
+    SmallWebFeed, SubscriberSummarization, SubscriberSummarizeMeta, SubscriberSummarizeRequest,
+    SubscriberSummarizeResponse, SummarizeRequest, SummarizeResponse, TextAlignmentsResponse,
+    ToggleResourceResponse, TranslateBootstrapMetadata, TranslateCommandRequest,
+    TranslateDetectedLanguage, TranslateOptionState, TranslateResponse, TranslateTextResponse,
+    TranslateWarning, TranslationSuggestionsResponse, WordInsightsResponse,
 };
 
 const KAGI_SUMMARIZE_PATH: &str = "/api/v0/summarize";
@@ -63,6 +63,7 @@ const KAGI_NEWS_BATCH_CATEGORIES_PATH: &str = "/api/batches";
 const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/conversations";
+const KAGI_ASSISTANT_INIT_PATH: &str = "/api/init";
 const KAGI_SETTINGS_ASSISTANT_PATH: &str = "/html/settings/assistant";
 const KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH: &str = "/settings/custom_assistant";
 const KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH: &str = "/settings/ast/profiles/update";
@@ -879,17 +880,17 @@ fn take_next_assistant_sse_frame(pending: &mut Vec<u8>) -> Result<Option<String>
     Ok(Some(frame))
 }
 
-/// Lists Assistant base models exposed by the custom assistant form.
+/// Lists every Assistant base model available to the authenticated account.
 pub async fn execute_assistant_model_catalog(
     token: &str,
 ) -> Result<AssistantModelCatalog, KagiError> {
-    let html = fetch_authenticated_html(
-        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH),
+    let response = fetch_current_assistant_json::<CurrentAssistantInitResponse>(
+        KAGI_ASSISTANT_INIT_PATH,
         token,
-        "custom assistant form",
+        "Assistant initialization",
     )
     .await?;
-    parse_assistant_model_catalog(&html)
+    Ok(response.models.into())
 }
 
 /// Lists all Kagi Assistant threads for the authenticated user.
@@ -4752,6 +4753,7 @@ fn assistant_message_from_payload(payload: AssistantMessagePayload) -> Assistant
         documents: payload.documents,
         profile: payload.profile,
         trace_id: payload.trace_id,
+        usage: None,
     }
 }
 
@@ -4851,6 +4853,41 @@ struct CurrentAssistantConversationInitResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct CurrentAssistantInitResponse {
+    models: CurrentAssistantModelCatalog,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantModelCatalog {
+    models: Vec<CurrentAssistantModel>,
+    default: String,
+}
+
+impl From<CurrentAssistantModelCatalog> for AssistantModelCatalog {
+    fn from(catalog: CurrentAssistantModelCatalog) -> Self {
+        Self {
+            models: catalog.models.into_iter().map(Into::into).collect(),
+            default: catalog.default,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantModel {
+    id: String,
+    display_name: String,
+}
+
+impl From<CurrentAssistantModel> for AssistantModelOption {
+    fn from(model: CurrentAssistantModel) -> Self {
+        Self {
+            id: model.id,
+            label: model.display_name,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct CurrentAssistantConversationCreateResponse {
     conversation: CurrentAssistantConversation,
     default_branch: CurrentAssistantBranch,
@@ -4882,6 +4919,8 @@ struct CurrentAssistantPromptStreamFrame {
     trace_id: Option<String>,
     #[serde(default)]
     references: Vec<Value>,
+    #[serde(default)]
+    usage: Option<CurrentAssistantUsage>,
     #[serde(default)]
     is_final: bool,
     #[serde(default)]
@@ -4944,6 +4983,7 @@ impl CurrentAssistantPromptParser {
             documents: Vec::new(),
             profile,
             trace_id: None,
+            usage: None,
         };
         Self {
             meta: AssistantMeta::default(),
@@ -4992,6 +5032,9 @@ impl CurrentAssistantPromptParser {
         if !frame.references.is_empty() {
             self.message.references_markdown =
                 current_assistant_references_markdown(&frame.references);
+        }
+        if let Some(usage) = frame.usage {
+            self.message.usage = Some(usage.into());
         }
         if let Some(markdown) = frame.text {
             self.message.markdown = Some(markdown);
@@ -5134,6 +5177,31 @@ struct CurrentAssistantMessage {
     model_name: Option<String>,
     #[serde(default)]
     model_version: Option<String>,
+    #[serde(default)]
+    input_tokens: Option<u64>,
+    #[serde(default)]
+    output_tokens: Option<u64>,
+    #[serde(default)]
+    cost_usd: Option<Number>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+    cost_usd: Number,
+}
+
+impl From<CurrentAssistantUsage> for AssistantUsage {
+    fn from(usage: CurrentAssistantUsage) -> Self {
+        Self {
+            prompt_tokens: usage.input_tokens,
+            completion_tokens: usage.output_tokens,
+            total_tokens: usage.total_tokens,
+            cost_usd: usage.cost_usd,
+        }
+    }
 }
 
 fn current_assistant_messages_to_legacy_turns(
@@ -5175,6 +5243,7 @@ fn current_message_pair_to_assistant_message(
     assistant: CurrentAssistantMessage,
 ) -> AssistantMessage {
     let profile = current_assistant_message_profile(&assistant);
+    let usage = current_assistant_message_usage(&assistant);
     AssistantMessage {
         id: assistant.uuid.or(user.uuid).unwrap_or_default(),
         thread_id: thread_id.to_string(),
@@ -5190,6 +5259,7 @@ fn current_message_pair_to_assistant_message(
         documents: assistant.attachments,
         profile,
         trace_id: None,
+        usage,
     }
 }
 
@@ -5212,6 +5282,7 @@ fn current_user_message_to_assistant_message(
         documents: user.attachments,
         profile: None,
         trace_id: None,
+        usage: None,
     }
 }
 
@@ -5220,6 +5291,7 @@ fn current_assistant_message_to_assistant_message(
     assistant: CurrentAssistantMessage,
 ) -> AssistantMessage {
     let profile = current_assistant_message_profile(&assistant);
+    let usage = current_assistant_message_usage(&assistant);
     AssistantMessage {
         id: assistant.uuid.unwrap_or_default(),
         thread_id: thread_id.to_string(),
@@ -5235,7 +5307,20 @@ fn current_assistant_message_to_assistant_message(
         documents: assistant.attachments,
         profile,
         trace_id: None,
+        usage,
     }
+}
+
+fn current_assistant_message_usage(message: &CurrentAssistantMessage) -> Option<AssistantUsage> {
+    let prompt_tokens = message.input_tokens?;
+    let completion_tokens = message.output_tokens?;
+    let cost_usd = message.cost_usd.clone()?;
+    Some(AssistantUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+        cost_usd,
+    })
 }
 
 fn current_assistant_message_profile(message: &CurrentAssistantMessage) -> Option<Value> {
@@ -6820,19 +6905,7 @@ mod tests {
         let catalog = super::execute_assistant_model_catalog(token)
             .await
             .expect("assistant model catalog should load");
-        catalog
-            .models
-            .iter()
-            .find(|model| model.selected)
-            .or_else(|| {
-                catalog
-                    .models
-                    .iter()
-                    .find(|model| model.id == "gpt-5-4-nano")
-            })
-            .or_else(|| catalog.models.first())
-            .map(|model| model.id.clone())
-            .expect("assistant model catalog should contain at least one model")
+        catalog.default
     }
 
     #[tokio::test]

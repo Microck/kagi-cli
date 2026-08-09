@@ -1014,7 +1014,7 @@ pub struct AssistantArgs {
 pub enum AssistantSubcommand {
     /// Manage Assistant threads
     Thread(AssistantThreadArgs),
-    /// List Assistant base-model slugs available to custom assistants
+    /// List every Assistant base model available to the current account
     Models,
     /// Manage custom assistants
     Custom(AssistantCustomArgs),
