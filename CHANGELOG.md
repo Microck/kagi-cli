@@ -7,6 +7,14 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi assistant models` now lists every base model available to the account without requiring a saved custom assistant.
+
+### Fixed
+
+- Assistant final stream events and thread responses now include prompt, completion, and total token counts plus the upstream USD cost when Kagi supplies usage data.
+
 ## [0.16.0]
 
 ### Added

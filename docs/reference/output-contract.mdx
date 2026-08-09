@@ -187,12 +187,34 @@ Single-URL extract prints markdown by default, or the full Extract API envelope 
     "created_at": "2026-03-16T06:19:07Z",
     "state": "done",
     "prompt": "Hello",
-    "markdown": "Hi"
+    "markdown": "Hi",
+    "usage": {
+      "prompt_tokens": 4314,
+      "completion_tokens": 2,
+      "total_tokens": 4316,
+      "cost_usd": 0.006192
+    }
   }
 }
 ```
 
 `kagi assistant --stream` writes incremental markdown deltas to stdout and flushes after each update. `kagi assistant --stream --stream-output json` writes the same stream as newline-delimited compact JSON events with an `md_delta` field plus the current `meta`, `thread`, and `message` snapshot.
+
+The final stream event and completed messages returned by `kagi assistant thread get` include `message.usage` when Kagi supplies token and cost data. `prompt_tokens` maps to Kagi's input tokens, `completion_tokens` maps to output tokens, and `total_tokens` is their sum when the thread API does not return a total.
+
+`kagi assistant models` reads the account-scoped Assistant catalog and returns every base model independently of saved custom assistants:
+
+```json
+{
+  "models": [
+    {
+      "id": "ki_quick",
+      "label": "Quick"
+    }
+  ],
+  "default": "ki_quick"
+}
+```
 
 `kagi assistant --contract <NAME>` and `kagi assistant --contract-file <PATH>` print only the validated contract JSON. Contract mode supports `--format json` and `--format compact`.
 

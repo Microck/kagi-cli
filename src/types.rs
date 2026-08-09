@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// A single search result from the Kagi search API.
@@ -425,6 +425,15 @@ pub struct AssistantThread {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Token and cost accounting for one completed Assistant message.
+pub struct AssistantUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd: Number,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// A single message within an assistant thread.
 pub struct AssistantMessage {
     pub id: String,
@@ -450,6 +459,8 @@ pub struct AssistantMessage {
     pub profile: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<AssistantUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -471,17 +482,17 @@ pub struct AssistantPromptStreamEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-/// One model option from the Assistant custom-profile form.
+/// One base model available to the authenticated Assistant account.
 pub struct AssistantModelOption {
     pub id: String,
     pub label: String,
-    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Stable JSON shape for Assistant model catalog output.
 pub struct AssistantModelCatalog {
     pub models: Vec<AssistantModelOption>,
+    pub default: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

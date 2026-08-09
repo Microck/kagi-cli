@@ -5623,6 +5623,7 @@ mod tests {
                 documents: vec![],
                 profile: None,
                 trace_id: None,
+                usage: None,
             },
         }
     }

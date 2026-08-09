@@ -20,6 +20,7 @@ kagi assistant thread list
 kagi assistant thread get <THREAD_ID>
 kagi assistant thread delete <THREAD_ID>
 kagi assistant thread export <THREAD_ID> [--format markdown|json]
+kagi assistant models
 kagi assistant repl [OPTIONS]
 kagi assistant custom list
 kagi assistant custom get <ID_OR_NAME>
@@ -129,6 +130,8 @@ Use JSON mode when a script needs structured stream events:
 kagi assistant --stream --stream-output json "Write a 3-line release note"
 ```
 
+The final JSON event includes `message.usage` with prompt, completion, and total token counts plus `cost_usd` when Kagi supplies usage data.
+
 #### `--stream-output <MODE>`
 
 Select the streamed output mode. This option requires `--stream`.
@@ -224,6 +227,16 @@ Return the thread as structured JSON instead of markdown. This emits the same en
 
 ```bash
 kagi assistant thread export "$THREAD_ID" --format json
+```
+
+## Model Catalog
+
+### `kagi assistant models`
+
+List every base model available to the current account. This reads the account-level Assistant catalog and does not require a saved custom assistant.
+
+```bash
+kagi assistant models | jq -r '.models[].id'
 ```
 
 ## Custom Assistant Subcommands

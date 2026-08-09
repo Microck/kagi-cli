@@ -515,6 +515,12 @@ fn mock_current_assistant_prompt<'a>(
             "html_content": format!("<p>{final_markdown}</p>"),
             "conversation_title": "Current Assistant",
             "assistant_message_uuid": "assistant-current",
+            "usage": {
+                "input_tokens": 4314,
+                "output_tokens": 2,
+                "total_tokens": 4316,
+                "cost_usd": 0.006192
+            },
             "is_final": true
         })
     ));
@@ -2064,12 +2070,22 @@ fn assistant_thread_list_paginates_with_cursor_id() {
 #[test]
 fn assistant_models_prints_json_catalog() {
     let server = MockServer::start();
-    let _form = server.mock(|when, then| {
+    let _catalog = server.mock(|when, then| {
         when.method(GET)
-            .path("/settings/custom_assistant")
-            .header("cookie", "kagi_session=test-session");
+            .path("/api/init")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/json");
         then.status(200)
-            .body(assistant_form_html("profile-once", "Once"));
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "models": {
+                    "models": [
+                        { "id": "ki_quick", "display_name": "Quick" },
+                        { "id": "claude-5-opus-thinking", "display_name": "Claude Opus 5 (reasoning)" }
+                    ],
+                    "default": "ki_quick"
+                }
+            }));
     });
 
     let tempdir = TempDir::new().expect("tempdir");
@@ -2078,10 +2094,10 @@ fn assistant_models_prints_json_catalog() {
 
     assert_success(&output);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
-    assert_eq!(body["models"][0]["id"], "gpt-5-mini");
-    assert_eq!(body["models"][0]["label"], "GPT 5 Mini");
-    assert_eq!(body["models"][0]["selected"], true);
-    assert_eq!(body["models"][1]["id"], "claude-4-7-opus");
+    assert_eq!(body["models"][0]["id"], "ki_quick");
+    assert_eq!(body["models"][0]["label"], "Quick");
+    assert_eq!(body["models"][1]["id"], "claude-5-opus-thinking");
+    assert_eq!(body["default"], "ki_quick");
 }
 
 #[test]
@@ -2121,6 +2137,10 @@ fn assistant_stream_can_print_ndjson_updates() {
     assert_eq!(lines[0]["md_delta"], "Hel");
     assert_eq!(lines[1]["md_delta"], "lo");
     assert_eq!(lines[1]["message"]["state"], "done");
+    assert_eq!(lines[1]["message"]["usage"]["prompt_tokens"], 4314);
+    assert_eq!(lines[1]["message"]["usage"]["completion_tokens"], 2);
+    assert_eq!(lines[1]["message"]["usage"]["total_tokens"], 4316);
+    assert_eq!(lines[1]["message"]["usage"]["cost_usd"], 0.006192);
 }
 
 #[test]
@@ -2932,6 +2952,9 @@ fn mcp_assistant_thread_export_json_overrides_default_output() {
                             "content": "Hello back",
                             "html_content": "<p>Hello back</p>",
                             "created_at": "2026-03-16T06:20:07Z",
+                            "input_tokens": 4314,
+                            "output_tokens": 2,
+                            "cost_usd": 0.006192,
                             "references": []
                         }
                     ],
@@ -2973,6 +2996,10 @@ fn mcp_assistant_thread_export_json_overrides_default_output() {
     assert_eq!(body["thread"]["id"], "thread-1");
     assert_eq!(body["messages"][0]["prompt"], "Hello");
     assert_eq!(body["messages"][0]["markdown"], "Hello back");
+    assert_eq!(body["messages"][0]["usage"]["prompt_tokens"], 4314);
+    assert_eq!(body["messages"][0]["usage"]["completion_tokens"], 2);
+    assert_eq!(body["messages"][0]["usage"]["total_tokens"], 4316);
+    assert_eq!(body["messages"][0]["usage"]["cost_usd"], 0.006192);
 }
 
 #[test]
