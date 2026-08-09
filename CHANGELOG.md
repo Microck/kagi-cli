@@ -7,8 +7,11 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.16.1]
+
 ### Added
 
+- Install and run `kagi` through the repository's Nix flake, including NixOS and Home Manager integration.
 - `kagi assistant models` now lists every base model available to the account without requiring a saved custom assistant.
 
 ### Fixed
