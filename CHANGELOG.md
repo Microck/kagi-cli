@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-13
+
 ### Changed
 
 - Updated `kagi mcp` to MCP `2026-07-28`: requests use per-request metadata, `server/discover` replaces the legacy initialization handshake, list results expose cache hints, tool metadata includes behavior annotations, and JSON tool output is also available as `structuredContent`.
