@@ -5,7 +5,8 @@ description: "Run kagi-cli as a stdio Model Context Protocol server."
 
 # `kagi mcp`
 
-Run a stdio JSON-RPC server that exposes Kagi tools for agents.
+Run a stdio MCP server that exposes Kagi tools for agents. The server speaks
+MCP `2026-07-28`, the stateless protocol with per-request metadata.
 
 ## Synopsis
 
@@ -91,6 +92,37 @@ codex mcp add kagi-mcp -- "$(command -v kagi)" mcp
 
 Restart Codex after changing MCP entries so the tool list is rediscovered.
 
+The server does not use the legacy `initialize` handshake or protocol session.
+Every request, including `server/discover`, sends the protocol version, client
+identity, and client capabilities in `params._meta`. Clients can call
+`server/discover` first with a preferred version and retry with a supported
+version if the server returns an unsupported-version error:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "server/discover",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "my-agent",
+        "version": "1.0.0"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+```
+
+Discovery and tool-list responses include `resultType`, `ttlMs`, and
+`cacheScope` so clients can cache stable metadata. Tool calls return
+`structuredContent` when the selected output format is JSON. Kagi API and
+validation failures are returned as tool results with `isError: true`, which
+lets an agent inspect and correct the call. Unknown tools and malformed MCP
+requests remain JSON-RPC errors.
+
 To use a named profile from `./.kagi.toml`, put `--profile` after `mcp`:
 
 ```bash
@@ -119,9 +151,8 @@ Default read/query tools:
 - `kagi_quick` - Quick Answer with lens, cache, and output options.
 - `kagi_news`, `kagi_news_categories`, `kagi_news_chaos`, and `kagi_news_filter_presets` - public Kagi News feed and metadata.
 - `kagi_news_search` - subscriber News-tab search clusters.
-- `kagi_assistant`, `kagi_assistant_models`, `kagi_assistant_thread_list`, `kagi_assistant_thread_get`, and `kagi_assistant_thread_export` - Assistant prompt and thread reads.
+- `kagi_assistant_models`, `kagi_assistant_thread_list`, `kagi_assistant_thread_get`, and `kagi_assistant_thread_export` - Assistant model and thread reads.
 - `kagi_assistant_custom_list` and `kagi_assistant_custom_get` - read saved assistant definitions.
-- `kagi_ask_page` - page-focused Assistant question.
 - `kagi_translate` - Kagi Translate text mode.
 - `kagi_fastgpt` - FastGPT API answers.
 - `kagi_enrich_web` and `kagi_enrich_news` - enrichment indexes.
@@ -132,6 +163,7 @@ Default read/query tools:
 
 Tools exposed only with `--enable-mutating-tools`:
 
+- `kagi_assistant` and `kagi_ask_page` - prompt Assistant in a way that creates or extends conversations.
 - `kagi_assistant_thread_delete`
 - `kagi_assistant_custom_create`, `kagi_assistant_custom_update`, `kagi_assistant_custom_delete`
 - `kagi_lens_create`, `kagi_lens_update`, `kagi_lens_delete`, `kagi_lens_enable`, `kagi_lens_disable`
@@ -140,7 +172,9 @@ Tools exposed only with `--enable-mutating-tools`:
 - `kagi_site_pref_set`, `kagi_site_pref_remove`
 - `kagi_cli` - run any non-`mcp` `kagi` command by passing an `args` array and optional `stdin`. Use this for exact CLI parity when a workflow is not modeled as a structured MCP tool.
 
-The server reads one JSON-RPC request per stdin line and writes one JSON-RPC response per stdout line. This keeps the implementation dependency-light and easy to supervise from agent runners.
+The server reads one MCP request or notification per stdin line and writes one
+MCP response per stdout line. It keeps the implementation dependency-light and
+easy to supervise from agent runners.
 
 ## Authentication
 
