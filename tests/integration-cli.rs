@@ -2129,6 +2129,7 @@ fn assistant_custom_create_uses_current_assistant_api() {
             .body_includes("\"name\":\"Release Notes\"")
             .body_includes("\"llm_id\":\"gpt-5-4-nano\"")
             .body_includes("\"internet_access\":true")
+            .body_includes("\"personalizations\":true")
             .body_includes("\"lens_id\":\"2\"")
             .body_includes("\"instructions\":\"Focus on release diffs and migration notes.\"");
         then.status(200).json_body(custom_assistant_json(
@@ -2303,6 +2304,10 @@ fn assistant_resolves_name_to_profile_uuid() {
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["message"]["profile"]["id"], "profile-once");
     assert_eq!(body["message"]["profile"]["name"], "Once");
+    assert_eq!(
+        body["message"]["profile"]["edit_url"],
+        "/assistant/custom-assistants/profile-once"
+    );
 }
 
 #[test]
@@ -2421,7 +2426,8 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
         when.method(POST)
             .path("/api/assistants")
             .header("cookie", "kagi_session=test-session")
-            .body_includes("\"llm_id\":\"gpt-5-mini\"");
+            .body_includes("\"llm_id\":\"gpt-5-mini\"")
+            .body_includes("\"personalizations\":true");
         then.status(200)
             .json_body(custom_assistant_json("profile-once", "Once", "gpt-5-mini"));
     });

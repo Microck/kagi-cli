@@ -64,6 +64,7 @@ const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/conversations";
 const KAGI_ASSISTANT_INIT_PATH: &str = "/api/init";
 const KAGI_ASSISTANTS_PATH: &str = "/api/assistants";
+const KAGI_ASSISTANT_CUSTOM_EDITOR_PATH: &str = "/assistant/custom-assistants";
 const KAGI_SETTINGS_LENSES_PATH: &str = "/html/settings/lenses";
 const KAGI_SETTINGS_CREATE_LENS_PATH: &str = "/settings/create_lens";
 const KAGI_LENSES_CREATE_PATH: &str = "/lenses/create";
@@ -1106,7 +1107,7 @@ pub async fn execute_custom_assistant_create(
         selected_lens: trimmed_optional(request.selected_lens.as_deref())
             .unwrap_or_default()
             .to_string(),
-        personalizations: request.personalizations.unwrap_or(false),
+        personalizations: request.personalizations.unwrap_or(true),
         base_model,
         custom_instructions: request.custom_instructions.clone().unwrap_or_default(),
         delete_supported: true,
@@ -4968,7 +4969,7 @@ impl CurrentAssistantCustomAssistant {
             bang_trigger: self.bang_trigger.clone(),
             internet_access: self.internet_access,
             built_in: false,
-            edit_url: Some(format!("{KAGI_ASSISTANTS_PATH}/{}", self.uuid)),
+            edit_url: Some(format!("{KAGI_ASSISTANT_CUSTOM_EDITOR_PATH}/{}", self.uuid)),
         }
     }
 
