@@ -1,8 +1,8 @@
 //! HTML parsing for Kagi search result pages.
 //!
 //! Extracts structured [`SearchResult`] values from the HTML markup returned
-//! by Kagi's web search endpoint. Also parses assistant profiles, threads,
-//! custom bangs, and lens details from their respective HTML pages.
+//! by Kagi's web search endpoint. Also parses assistant threads, custom
+//! bangs, and lens details from their respective HTML pages.
 
 use std::collections::HashSet;
 
@@ -12,9 +12,8 @@ use crate::error::KagiError;
 #[cfg(test)]
 use crate::types::AssistantThreadSummary;
 use crate::types::{
-    AssistantProfileDetails, AssistantProfileSummary, CustomBangDetails, CustomBangSummary,
-    LensDetails, LensSummary, NewsSearchCluster, NewsSearchResult, RedirectRuleDetails,
-    RedirectRuleSummary, SearchResult,
+    CustomBangDetails, CustomBangSummary, LensDetails, LensSummary, NewsSearchCluster,
+    NewsSearchResult, RedirectRuleDetails, RedirectRuleSummary, SearchResult,
 };
 
 /// Parse Kagi search results from HTML.
@@ -261,129 +260,6 @@ pub fn parse_assistant_thread_list(html: &str) -> Result<Vec<AssistantThreadSumm
     }
 
     Ok(threads)
-}
-
-/// Parses a list of assistant profiles from the Kagi settings HTML.
-///
-/// # Arguments
-/// * `html` - The HTML content of the assistant profiles page.
-///
-/// # Returns
-/// A vector of `AssistantProfileSummary` entries.
-///
-/// # Errors
-/// Returns `KagiError::Parse` if expected elements or attributes are missing.
-pub fn parse_assistant_profile_list(html: &str) -> Result<Vec<AssistantProfileSummary>, KagiError> {
-    let document = Html::parse_document(html);
-    let item_selector = selector("#custom_mode_table #items_p .item")?;
-    let name_selector = selector(".item-name a")?;
-    let edit_selector = selector(".edit a")?;
-    let detail_block_selector = selector(".item-details > div")?;
-    let dd_selector = selector("dd")?;
-
-    let mut assistants = Vec::new();
-
-    for item in document.select(&item_selector) {
-        let id = item
-            .value()
-            .attr("id")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| KagiError::Parse("assistant item missing id".to_string()))?
-            .to_string();
-
-        let anchor = item
-            .select(&name_selector)
-            .next()
-            .ok_or_else(|| KagiError::Parse("assistant item missing name link".to_string()))?;
-        let name = anchor.text().collect::<String>().trim().to_string();
-        let href = anchor
-            .value()
-            .attr("href")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| KagiError::Parse("assistant item missing invoke link".to_string()))?;
-
-        let detail_blocks = item.select(&detail_block_selector).collect::<Vec<_>>();
-        let model = detail_blocks
-            .first()
-            .and_then(|block| block.select(&dd_selector).next())
-            .map(|node| node.text().collect::<String>().trim().to_string())
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| KagiError::Parse(format!("assistant '{name}' missing model")))?;
-        let bang_trigger = detail_blocks
-            .get(1)
-            .map(|block| block.text().collect::<String>().trim().to_string())
-            .filter(|value| !value.is_empty());
-        let internet_access = detail_blocks
-            .last()
-            .and_then(|block| block.select(&dd_selector).next())
-            .map(|node| node.text().collect::<String>())
-            .is_some_and(|value| parse_toggle_text(&value));
-        let edit_url = item
-            .select(&edit_selector)
-            .next()
-            .and_then(|node| node.value().attr("href"))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let invoke_profile = parse_query_value(href, "profile").unwrap_or_else(|| id.clone());
-
-        assistants.push(AssistantProfileSummary {
-            id,
-            name,
-            invoke_profile,
-            model,
-            bang_trigger,
-            internet_access,
-            built_in: edit_url.is_none(),
-            edit_url,
-        });
-    }
-
-    Ok(assistants)
-}
-
-/// Parses the assistant profile edit form from HTML to extract field values.
-///
-/// # Arguments
-/// * `html` - The HTML content of the assistant profile form.
-///
-/// # Returns
-/// An `AssistantProfileDetails` with all form field values.
-///
-/// # Errors
-/// Returns `KagiError::Parse` if required fields are missing from the form.
-pub fn parse_assistant_profile_form(html: &str) -> Result<AssistantProfileDetails, KagiError> {
-    let document = Html::parse_document(html);
-    let profile_id = extract_input_value(&document, "profile_id");
-    let name = extract_input_value(&document, "name")
-        .ok_or_else(|| KagiError::Parse("assistant form missing name".to_string()))?;
-    let bang_trigger =
-        extract_input_value(&document, "bang_trigger").filter(|value| !value.is_empty());
-    let selected_lens = extract_checked_radio_value(&document, "selected_lens")
-        .ok_or_else(|| KagiError::Parse("assistant form missing selected lens".to_string()))?;
-    let base_model = extract_checked_radio_value(&document, "base_model").unwrap_or_default();
-    let custom_instructions =
-        extract_textarea_value(&document, "custom_instructions").unwrap_or_default();
-    let delete_supported = document
-        .select(&selector(
-            r#"form[action="/settings/ast/profiles/delete"]"#,
-        )?)
-        .next()
-        .is_some();
-
-    Ok(AssistantProfileDetails {
-        profile_id,
-        name,
-        bang_trigger,
-        internet_access: extract_checkbox_checked(&document, "internet_access"),
-        selected_lens,
-        personalizations: extract_checkbox_checked(&document, "personalizations"),
-        base_model,
-        custom_instructions,
-        delete_supported,
-    })
 }
 
 /// Parses a list of Kagi lenses from the settings HTML.
@@ -704,14 +580,6 @@ fn extract_input_value(document: &Html, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn extract_textarea_value(document: &Html, name: &str) -> Option<String> {
-    let selector = selector(&format!(r#"textarea[name="{name}"]"#)).ok()?;
-    document
-        .select(&selector)
-        .next()
-        .map(|node| node.text().collect::<String>())
-}
-
 fn extract_checked_radio_value(document: &Html, name: &str) -> Option<String> {
     let selector = selector(&format!(r#"input[type="radio"][name="{name}"]"#)).ok()?;
     document.select(&selector).find_map(|node| {
@@ -775,9 +643,9 @@ fn parse_query_value(href: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_assistant_profile_form, parse_assistant_profile_list, parse_assistant_thread_list,
-        parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
-        parse_news_search_results, parse_redirect_form, parse_redirect_list, parse_search_results,
+        parse_assistant_thread_list, parse_custom_bang_form, parse_custom_bang_list,
+        parse_lens_form, parse_lens_list, parse_news_search_results, parse_redirect_form,
+        parse_redirect_list, parse_search_results,
     };
     use crate::error::KagiError;
 
@@ -876,107 +744,6 @@ mod tests {
 
         assert!(matches!(error, KagiError::Parse(_)));
         assert!(error.to_string().contains("missing data-code"));
-    }
-
-    #[test]
-    fn parses_assistant_profile_list_items() {
-        let html = r#"
-        <div id="custom_mode_table">
-          <ul id="items_p">
-            <li class="item" id="profile-1">
-              <div class="item-name">
-                <a href="/assistant?profile=code">Code</a>
-              </div>
-              <dl class="item-details">
-                <div><dt>Model:</dt><dd>Quick</dd></div>
-                <div></div>
-                <div><dt>Internet Access:</dt><dd>On</dd></div>
-              </dl>
-            </li>
-            <li class="item" id="profile-2">
-              <div class="item-name">
-                <a href="/assistant?profile=profile-2">Writer</a>
-              </div>
-              <dl class="item-details">
-                <div><dt>Model:</dt><dd>GPT 5 Mini</dd></div>
-                <div>!write</div>
-                <div><dt>Internet Access:</dt><dd>Off</dd></div>
-              </dl>
-              <div class="edit">
-                <a href="/settings/custom_assistant?id=profile-2">Edit</a>
-              </div>
-            </li>
-          </ul>
-        </div>
-        "#;
-
-        let assistants = parse_assistant_profile_list(html).expect("assistant list should parse");
-
-        assert_eq!(assistants.len(), 2);
-        assert_eq!(assistants[0].invoke_profile, "code");
-        assert!(assistants[0].built_in);
-        assert_eq!(assistants[1].bang_trigger.as_deref(), Some("!write"));
-        assert!(!assistants[1].internet_access);
-        assert_eq!(
-            assistants[1].edit_url.as_deref(),
-            Some("/settings/custom_assistant?id=profile-2")
-        );
-    }
-
-    #[test]
-    fn parses_assistant_profile_form_fields() {
-        let html = r#"
-        <form class="s-form" action="/settings/ast/profiles/update" method="POST">
-          <input type="hidden" name="profile_id" value="profile-2">
-          <input type="text" name="name" value="Writer">
-          <input type="text" name="bang_trigger" value="write">
-          <input type="checkbox" name="internet_access" checked value="on">
-          <input type="hidden" name="internet_access" value="false">
-          <input type="radio" name="selected_lens" value="0" class="hidden">
-          <input type="radio" name="selected_lens" value="15" checked class="hidden">
-          <input type="checkbox" name="personalizations" value="on">
-          <input type="hidden" name="personalizations" value="false">
-          <input type="radio" name="base_model" value="gpt-5-mini" checked class="hidden">
-          <textarea name="custom_instructions">Write clearly.</textarea>
-        </form>
-        <form action="/settings/ast/profiles/delete" method="POST"></form>
-        "#;
-
-        let details = parse_assistant_profile_form(html).expect("assistant form should parse");
-
-        assert_eq!(details.profile_id.as_deref(), Some("profile-2"));
-        assert_eq!(details.name, "Writer");
-        assert_eq!(details.bang_trigger.as_deref(), Some("write"));
-        assert!(details.internet_access);
-        assert_eq!(details.selected_lens, "15");
-        assert!(!details.personalizations);
-        assert_eq!(details.base_model, "gpt-5-mini");
-        assert_eq!(details.custom_instructions, "Write clearly.");
-        assert!(details.delete_supported);
-    }
-
-    #[test]
-    fn allows_custom_assistant_create_form_without_selected_model() {
-        let html = r#"
-        <form class="s-form" action="/settings/ast/profiles/update" method="POST">
-          <input type="hidden" name="profile_id" value="">
-          <input type="text" name="name" value="">
-          <input type="text" name="bang_trigger" value="">
-          <input type="checkbox" name="internet_access" checked value="on">
-          <input type="hidden" name="internet_access" value="false">
-          <input type="radio" name="selected_lens" value="0" checked class="hidden">
-          <input type="checkbox" name="personalizations" checked value="on">
-          <input type="hidden" name="personalizations" value="false">
-          <input type="radio" name="base_model" value="gpt-5-mini" class="hidden">
-          <textarea name="custom_instructions"></textarea>
-        </form>
-        "#;
-
-        let details = parse_assistant_profile_form(html).expect("create form should parse");
-
-        assert_eq!(details.base_model, "");
-        assert!(details.internet_access);
-        assert_eq!(details.selected_lens, "0");
     }
 
     #[test]

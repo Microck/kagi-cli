@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest::multipart;
-use reqwest::{Client, StatusCode, Url, header};
+use reqwest::{Client, Method, StatusCode, Url, header};
 use scraper::Html;
 #[cfg(test)]
 use scraper::Selector;
@@ -25,9 +25,8 @@ use crate::http::{self, map_transport_error};
 #[cfg(test)]
 use crate::parser::parse_assistant_thread_list;
 use crate::parser::{
-    parse_assistant_profile_form, parse_assistant_profile_list, parse_custom_bang_form,
-    parse_custom_bang_list, parse_lens_form, parse_lens_list, parse_redirect_form,
-    parse_redirect_list,
+    parse_custom_bang_form, parse_custom_bang_list, parse_lens_form, parse_lens_list,
+    parse_redirect_form, parse_redirect_list,
 };
 #[cfg(test)]
 use crate::types::ApiMeta;
@@ -64,10 +63,7 @@ const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
 const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/conversations";
 const KAGI_ASSISTANT_INIT_PATH: &str = "/api/init";
-const KAGI_SETTINGS_ASSISTANT_PATH: &str = "/html/settings/assistant";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH: &str = "/settings/custom_assistant";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH: &str = "/settings/ast/profiles/update";
-const KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_PATH: &str = "/settings/ast/profiles/delete";
+const KAGI_ASSISTANTS_PATH: &str = "/api/assistants";
 const KAGI_SETTINGS_LENSES_PATH: &str = "/html/settings/lenses";
 const KAGI_SETTINGS_CREATE_LENS_PATH: &str = "/settings/create_lens";
 const KAGI_LENSES_CREATE_PATH: &str = "/lenses/create";
@@ -1054,13 +1050,8 @@ pub async fn execute_assistant_thread_export(
 pub async fn execute_custom_assistant_list(
     token: &str,
 ) -> Result<Vec<AssistantProfileSummary>, KagiError> {
-    let html = fetch_authenticated_html(
-        &http::kagi_url(KAGI_SETTINGS_ASSISTANT_PATH),
-        token,
-        "Assistant settings page",
-    )
-    .await?;
-    parse_assistant_profile_list(&html)
+    let response = fetch_current_assistant_profiles(token, "Assistant profiles").await?;
+    Ok(response.assistant_summaries())
 }
 
 /// Gets the details of a specific custom assistant profile.
@@ -1078,21 +1069,8 @@ pub async fn execute_custom_assistant_get(
     target: &str,
     token: &str,
 ) -> Result<AssistantProfileDetails, KagiError> {
-    let assistants = execute_custom_assistant_list(token).await?;
-    let assistant = resolve_custom_assistant_ref(&assistants, target, true)?;
-    let edit_url = assistant.edit_url.clone().ok_or_else(|| {
-        KagiError::Config(format!(
-            "assistant '{}' does not expose an editable custom-assistant form",
-            assistant.name
-        ))
-    })?;
-    let html = fetch_authenticated_html(
-        &absolute_kagi_url(&edit_url),
-        token,
-        "custom assistant form",
-    )
-    .await?;
-    parse_assistant_profile_form(&html)
+    let response = fetch_current_assistant_profiles(token, "custom assistant get").await?;
+    Ok(current_custom_assistant_for_target(&response, target)?.details())
 }
 
 /// Creates a new custom assistant profile.
@@ -1110,46 +1088,39 @@ pub async fn execute_custom_assistant_create(
     request: &AssistantProfileCreateRequest,
     token: &str,
 ) -> Result<AssistantProfileDetails, KagiError> {
-    let mut details = parse_assistant_profile_form(
-        &fetch_authenticated_html(
-            &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_PATH),
-            token,
-            "new custom assistant form",
-        )
-        .await?,
-    )?;
-    details.name = normalize_named_target(&request.name, "assistant name")?;
-    if let Some(value) = trimmed_optional(request.bang_trigger.as_deref()) {
-        details.bang_trigger = Some(value.to_string());
-    }
-    if let Some(value) = request.internet_access {
-        details.internet_access = value;
-    }
-    if let Some(value) = trimmed_optional(request.selected_lens.as_deref()) {
-        details.selected_lens = value.to_string();
-    }
-    if let Some(value) = request.personalizations {
-        details.personalizations = value;
-    }
-    if let Some(value) = trimmed_optional(request.base_model.as_deref()) {
-        details.base_model = value.to_string();
-    }
-    if let Some(value) = request.custom_instructions.as_ref() {
-        details.custom_instructions = value.clone();
-    }
-
-    let (url, _) = post_authenticated_form(
-        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH),
-        &build_custom_assistant_form(&details),
+    let name = normalize_named_target(&request.name, "assistant name")?;
+    let base_model = match trimmed_optional(request.base_model.as_deref()) {
+        Some(value) => value.to_string(),
+        None => {
+            fetch_current_assistant_profiles(token, "Assistant initialization")
+                .await?
+                .models
+                .default
+        }
+    };
+    let details = AssistantProfileDetails {
+        profile_id: None,
+        name,
+        bang_trigger: trimmed_optional(request.bang_trigger.as_deref()).map(str::to_string),
+        internet_access: request.internet_access.unwrap_or(true),
+        selected_lens: trimmed_optional(request.selected_lens.as_deref())
+            .unwrap_or_default()
+            .to_string(),
+        personalizations: request.personalizations.unwrap_or(false),
+        base_model,
+        custom_instructions: request.custom_instructions.clone().unwrap_or_default(),
+        delete_supported: true,
+    };
+    let created = send_current_assistant_json::<CurrentAssistantCustomAssistant>(
+        Method::POST,
+        KAGI_ASSISTANTS_PATH,
+        &current_assistant_profile_payload(&details),
         token,
         "custom assistant create",
     )
     .await?;
-    let created_id = match url_query_value(&url, "id") {
-        Some(id) => id,
-        None => resolve_custom_assistant_id_by_name(&details.name, token).await?,
-    };
-    execute_custom_assistant_get(&created_id, token).await
+
+    Ok(created.details())
 }
 
 /// Updates an existing custom assistant profile.
@@ -1167,39 +1138,51 @@ pub async fn execute_custom_assistant_update(
     request: &AssistantProfileUpdateRequest,
     token: &str,
 ) -> Result<AssistantProfileDetails, KagiError> {
-    let assistants = execute_custom_assistant_list(token).await?;
-    let assistant = resolve_custom_assistant_ref(&assistants, &request.target, true)?;
-    let mut details = execute_custom_assistant_get(&assistant.id, token).await?;
-    if let Some(value) = request.name.as_deref() {
-        details.name = normalize_named_target(value, "assistant name")?;
-    }
-    if let Some(value) = request.bang_trigger.as_deref() {
-        details.bang_trigger = trimmed_optional(Some(value)).map(str::to_string);
-    }
-    if let Some(value) = request.internet_access {
-        details.internet_access = value;
-    }
-    if let Some(value) = trimmed_optional(request.selected_lens.as_deref()) {
-        details.selected_lens = value.to_string();
-    }
-    if let Some(value) = request.personalizations {
-        details.personalizations = value;
-    }
-    if let Some(value) = trimmed_optional(request.base_model.as_deref()) {
-        details.base_model = value.to_string();
-    }
-    if let Some(value) = request.custom_instructions.as_ref() {
-        details.custom_instructions = value.clone();
-    }
-
-    post_authenticated_form(
-        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_UPDATE_PATH),
-        &build_custom_assistant_form(&details),
+    let response = fetch_current_assistant_profiles(token, "custom assistant update").await?;
+    let assistant = current_custom_assistant_for_target(&response, &request.target)?;
+    let name = match request.name.as_deref() {
+        Some(value) => normalize_named_target(value, "assistant name")?,
+        None => assistant.name.clone(),
+    };
+    let bang_trigger = match request.bang_trigger.as_deref() {
+        Some(value) => trimmed_optional(Some(value)).map(str::to_string),
+        None => assistant.bang_trigger.clone(),
+    };
+    let selected_lens = match request.selected_lens.as_deref() {
+        Some(value) => trimmed_optional(Some(value)).map(str::to_string),
+        None => assistant.lens_id.clone(),
+    };
+    let custom_instructions = match request.custom_instructions.as_deref() {
+        Some("") => None,
+        Some(value) => Some(value.to_string()),
+        None => assistant.instructions.clone(),
+    };
+    let base_model = trimmed_optional(request.base_model.as_deref())
+        .map(str::to_string)
+        .unwrap_or_else(|| assistant.llm_id.clone());
+    let details = AssistantProfileDetails {
+        profile_id: Some(assistant.uuid.clone()),
+        name,
+        bang_trigger,
+        internet_access: request.internet_access.unwrap_or(assistant.internet_access),
+        selected_lens: selected_lens.unwrap_or_default(),
+        personalizations: request
+            .personalizations
+            .unwrap_or(assistant.personalizations),
+        base_model,
+        custom_instructions: custom_instructions.unwrap_or_default(),
+        delete_supported: true,
+    };
+    let updated = send_current_assistant_json::<CurrentAssistantCustomAssistant>(
+        Method::PATCH,
+        &format!("{KAGI_ASSISTANTS_PATH}/{}", assistant.uuid),
+        &current_assistant_profile_payload(&details),
         token,
         "custom assistant update",
     )
     .await?;
-    execute_custom_assistant_get(&assistant.id, token).await
+
+    Ok(updated.details())
 }
 
 /// Deletes a custom assistant profile.
@@ -1217,17 +1200,16 @@ pub async fn execute_custom_assistant_delete(
     target: &str,
     token: &str,
 ) -> Result<DeletedResourceResponse, KagiError> {
-    let assistants = execute_custom_assistant_list(token).await?;
-    let assistant = resolve_custom_assistant_ref(&assistants, target, true)?;
-    post_authenticated_form(
-        &http::kagi_url(KAGI_SETTINGS_CUSTOM_ASSISTANT_DELETE_PATH),
-        &[("profile_id".to_string(), assistant.id.clone())],
+    let response = fetch_current_assistant_profiles(token, "custom assistant delete").await?;
+    let assistant = current_custom_assistant_for_target(&response, target)?;
+    delete_current_assistant_resource(
+        &format!("{KAGI_ASSISTANTS_PATH}/{}", assistant.uuid),
         token,
         "custom assistant delete",
     )
     .await?;
     Ok(DeletedResourceResponse {
-        id: assistant.id.clone(),
+        id: assistant.uuid.clone(),
     })
 }
 
@@ -2938,42 +2920,6 @@ fn url_query_value(url: &Url, key: &str) -> Option<String> {
         .map(|(_, value)| value.into_owned())
 }
 
-fn build_custom_assistant_form(details: &AssistantProfileDetails) -> Vec<(String, String)> {
-    vec![
-        (
-            "profile_id".to_string(),
-            details.profile_id.clone().unwrap_or_default(),
-        ),
-        ("name".to_string(), details.name.clone()),
-        (
-            "bang_trigger".to_string(),
-            details.bang_trigger.clone().unwrap_or_default(),
-        ),
-        (
-            "internet_access".to_string(),
-            if details.internet_access {
-                "on".to_string()
-            } else {
-                "false".to_string()
-            },
-        ),
-        ("selected_lens".to_string(), details.selected_lens.clone()),
-        (
-            "personalizations".to_string(),
-            if details.personalizations {
-                "on".to_string()
-            } else {
-                "false".to_string()
-            },
-        ),
-        ("base_model".to_string(), details.base_model.clone()),
-        (
-            "custom_instructions".to_string(),
-            details.custom_instructions.clone(),
-        ),
-    ]
-}
-
 fn build_lens_form(details: &LensDetails) -> Vec<(String, String)> {
     let mut form = vec![
         ("name".to_string(), details.name.clone()),
@@ -3308,6 +3254,40 @@ fn resolve_custom_assistant_ref<'a>(
     Ok(assistant)
 }
 
+fn current_custom_assistant_for_target<'a>(
+    response: &'a CurrentAssistantInitResponse,
+    target: &str,
+) -> Result<&'a CurrentAssistantCustomAssistant, KagiError> {
+    let assistant_id = resolve_custom_assistant_ref(&response.assistant_summaries(), target, true)?
+        .id
+        .clone();
+    response
+        .custom_assistants
+        .iter()
+        .find(|assistant| assistant.uuid == assistant_id)
+        .ok_or_else(|| {
+            KagiError::Parse(format!(
+                "custom assistant '{}' was listed without a definition",
+                assistant_id
+            ))
+        })
+}
+
+fn current_assistant_profile_payload(details: &AssistantProfileDetails) -> Value {
+    let instructions =
+        (!details.custom_instructions.is_empty()).then_some(details.custom_instructions.as_str());
+    let selected_lens = trimmed_optional(Some(&details.selected_lens));
+    json!({
+        "name": details.name,
+        "llm_id": details.base_model,
+        "instructions": instructions,
+        "internet_access": details.internet_access,
+        "personalizations": details.personalizations,
+        "lens_id": selected_lens,
+        "bang_trigger": details.bang_trigger,
+    })
+}
+
 fn resolve_lens_ref<'a>(
     lenses: &'a [LensSummary],
     target: &str,
@@ -3431,11 +3411,6 @@ fn resolve_redirect_ref<'a>(
         .iter()
         .find(|redirect| redirect.id == target || redirect.rule == target)
         .ok_or_else(|| KagiError::Config(format!("no redirect matched '{target}'")))
-}
-
-async fn resolve_custom_assistant_id_by_name(name: &str, token: &str) -> Result<String, KagiError> {
-    let assistants = execute_custom_assistant_list(token).await?;
-    resolve_custom_assistant_ref(&assistants, name, true).map(|assistant| assistant.id.clone())
 }
 
 async fn resolve_lens_id_by_name(name: &str, token: &str) -> Result<String, KagiError> {
@@ -3593,6 +3568,37 @@ where
         .get(http::kagi_assistant_url(path))
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(map_transport_error)?;
+
+    read_current_assistant_json_response(response, surface).await
+}
+
+async fn fetch_current_assistant_profiles(
+    token: &str,
+    surface: &str,
+) -> Result<CurrentAssistantInitResponse, KagiError> {
+    fetch_current_assistant_json(KAGI_ASSISTANT_INIT_PATH, token, surface).await
+}
+
+async fn send_current_assistant_json<T>(
+    method: Method,
+    path: &str,
+    payload: &Value,
+    token: &str,
+    surface: &str,
+) -> Result<T, KagiError>
+where
+    T: DeserializeOwned,
+{
+    let client = build_client()?;
+    let response = client
+        .request(method, http::kagi_assistant_url(path))
+        .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "application/json")
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(payload)
         .send()
         .await
         .map_err(map_transport_error)?;
@@ -4855,12 +4861,33 @@ struct CurrentAssistantConversationInitResponse {
 #[derive(Debug, Deserialize)]
 struct CurrentAssistantInitResponse {
     models: CurrentAssistantModelCatalog,
+    #[serde(default)]
+    custom_assistants: Vec<CurrentAssistantCustomAssistant>,
+}
+
+impl CurrentAssistantInitResponse {
+    fn assistant_summaries(&self) -> Vec<AssistantProfileSummary> {
+        let mut assistants = self
+            .models
+            .assistants
+            .iter()
+            .map(|assistant| assistant.summary(&self.models))
+            .collect::<Vec<_>>();
+        assistants.extend(
+            self.custom_assistants
+                .iter()
+                .map(|assistant| assistant.summary(&self.models)),
+        );
+        assistants
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct CurrentAssistantModelCatalog {
     models: Vec<CurrentAssistantModel>,
     default: String,
+    #[serde(default)]
+    assistants: Vec<CurrentAssistantBuiltinAssistant>,
 }
 
 impl From<CurrentAssistantModelCatalog> for AssistantModelCatalog {
@@ -4884,6 +4911,89 @@ impl From<CurrentAssistantModel> for AssistantModelOption {
             id: model.id,
             label: model.display_name,
         }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantBuiltinAssistant {
+    id: String,
+    name: String,
+    #[serde(default)]
+    underlying_model: String,
+    internet_access: bool,
+}
+
+impl CurrentAssistantBuiltinAssistant {
+    fn summary(&self, models: &CurrentAssistantModelCatalog) -> AssistantProfileSummary {
+        let invoke_profile = self
+            .id
+            .strip_prefix("assistant:")
+            .unwrap_or(&self.id)
+            .to_string();
+        AssistantProfileSummary {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            invoke_profile,
+            model: models.model_label(&self.underlying_model),
+            bang_trigger: None,
+            internet_access: self.internet_access,
+            built_in: true,
+            edit_url: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantCustomAssistant {
+    uuid: String,
+    name: String,
+    #[serde(default)]
+    bang_trigger: Option<String>,
+    #[serde(default)]
+    instructions: Option<String>,
+    internet_access: bool,
+    personalizations: bool,
+    #[serde(default)]
+    lens_id: Option<String>,
+    llm_id: String,
+}
+
+impl CurrentAssistantCustomAssistant {
+    fn summary(&self, models: &CurrentAssistantModelCatalog) -> AssistantProfileSummary {
+        AssistantProfileSummary {
+            id: self.uuid.clone(),
+            name: self.name.clone(),
+            invoke_profile: self.uuid.clone(),
+            model: models.model_label(&self.llm_id),
+            bang_trigger: self.bang_trigger.clone(),
+            internet_access: self.internet_access,
+            built_in: false,
+            edit_url: Some(format!("{KAGI_ASSISTANTS_PATH}/{}", self.uuid)),
+        }
+    }
+
+    fn details(&self) -> AssistantProfileDetails {
+        AssistantProfileDetails {
+            profile_id: Some(self.uuid.clone()),
+            name: self.name.clone(),
+            bang_trigger: self.bang_trigger.clone(),
+            internet_access: self.internet_access,
+            selected_lens: self.lens_id.clone().unwrap_or_default(),
+            personalizations: self.personalizations,
+            base_model: self.llm_id.clone(),
+            custom_instructions: self.instructions.clone().unwrap_or_default(),
+            delete_supported: true,
+        }
+    }
+}
+
+impl CurrentAssistantModelCatalog {
+    fn model_label(&self, model_id: &str) -> String {
+        self.models
+            .iter()
+            .find(|model| model.id == model_id)
+            .map(|model| model.display_name.clone())
+            .unwrap_or_else(|| model_id.to_string())
     }
 }
 

@@ -5,7 +5,7 @@ use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use httpmock::Method::{GET, POST};
+use httpmock::Method::{DELETE, GET, PATCH, POST};
 use httpmock::MockServer;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -396,47 +396,36 @@ fn api_meta() -> Value {
     })
 }
 
-fn assistant_form_html(profile_id: &str, name: &str) -> String {
-    format!(
-        r#"
-        <form class="s-form" action="/settings/ast/profiles/update" method="POST">
-          <input type="hidden" name="profile_id" value="{profile_id}">
-          <input type="text" name="name" value="{name}">
-          <input type="text" name="bang_trigger" value="">
-          <input type="checkbox" name="internet_access" checked value="on">
-          <input type="hidden" name="internet_access" value="false">
-          <input type="radio" name="selected_lens" value="0" checked class="hidden">
-          <input type="checkbox" name="personalizations" checked value="on">
-          <input type="hidden" name="personalizations" value="false">
-          <input type="radio" name="base_model" value="gpt-5-mini" aria-label="GPT 5 Mini" checked class="hidden">
-          <input type="radio" name="base_model" value="claude-4-7-opus" aria-label="Claude Opus" class="hidden">
-          <textarea name="custom_instructions"></textarea>
-        </form>
-        <form action="/settings/ast/profiles/delete" method="POST"></form>
-        "#
-    )
+fn assistant_init_json(custom_assistants: Value) -> Value {
+    json!({
+        "models": {
+            "models": [{
+                "id": "gpt-5-mini",
+                "display_name": "GPT 5 Mini"
+            }],
+            "default": "gpt-5-mini",
+            "assistants": [{
+                "id": "assistant:code",
+                "name": "Code",
+                "underlying_model": "gpt-5-mini",
+                "internet_access": true
+            }]
+        },
+        "custom_assistants": custom_assistants
+    })
 }
 
-fn assistant_list_html() -> &'static str {
-    r#"
-    <div id="custom_mode_table">
-      <ul id="items_p">
-        <li class="item" id="profile-once">
-          <div class="item-name">
-            <a href="/assistant?profile=profile-once">Once</a>
-          </div>
-          <dl class="item-details">
-            <div><dt>Model:</dt><dd>GPT 5 Mini</dd></div>
-            <div></div>
-            <div><dt>Internet Access:</dt><dd>On</dd></div>
-          </dl>
-          <div class="edit">
-            <a href="/settings/custom_assistant?id=profile-once">Edit</a>
-          </div>
-        </li>
-      </ul>
-    </div>
-    "#
+fn custom_assistant_json(id: &str, name: &str, model: &str) -> Value {
+    json!({
+        "uuid": id,
+        "name": name,
+        "llm_id": model,
+        "instructions": "",
+        "internet_access": true,
+        "personalizations": false,
+        "lens_id": null,
+        "bang_trigger": null
+    })
 }
 
 fn mock_current_assistant_prompt<'a>(
@@ -2130,6 +2119,119 @@ fn assistant_models_prints_json_catalog() {
 }
 
 #[test]
+fn assistant_custom_create_uses_current_assistant_api() {
+    let server = MockServer::start();
+    let _create = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/assistants")
+            .header("cookie", "kagi_session=test-session")
+            .header("content-type", "application/json")
+            .body_includes("\"name\":\"Release Notes\"")
+            .body_includes("\"llm_id\":\"gpt-5-4-nano\"")
+            .body_includes("\"internet_access\":true")
+            .body_includes("\"lens_id\":\"2\"")
+            .body_includes("\"instructions\":\"Focus on release diffs and migration notes.\"");
+        then.status(200).json_body(custom_assistant_json(
+            "profile-release-notes",
+            "Release Notes",
+            "gpt-5-4-nano",
+        ));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "assistant",
+            "custom",
+            "create",
+            "Release Notes",
+            "--model",
+            "gpt-5-4-nano",
+            "--web-access",
+            "--lens",
+            "2",
+            "--instructions",
+            "Focus on release diffs and migration notes.",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["profile_id"], "profile-release-notes");
+    assert_eq!(body["name"], "Release Notes");
+    assert_eq!(body["base_model"], "gpt-5-4-nano");
+}
+
+#[test]
+fn assistant_custom_update_uses_current_assistant_api() {
+    let server = MockServer::start();
+    let _profiles = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/init")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200)
+            .json_body(assistant_init_json(json!([custom_assistant_json(
+                "profile-writer",
+                "Writer",
+                "gpt-5-mini"
+            )])));
+    });
+    let _update = server.mock(|when, then| {
+        when.method(PATCH)
+            .path("/api/assistants/profile-writer")
+            .header("cookie", "kagi_session=test-session")
+            .header("content-type", "application/json")
+            .body_includes("\"name\":\"Release Notes\"")
+            .body_includes("\"llm_id\":\"gpt-5-4-nano\"")
+            .body_includes("\"internet_access\":false")
+            .body_includes("\"lens_id\":\"2\"")
+            .body_includes("\"instructions\":\"Use migration notes.\"");
+        then.status(200).json_body(json!({
+            "uuid": "profile-writer",
+            "name": "Release Notes",
+            "llm_id": "gpt-5-4-nano",
+            "instructions": "Use migration notes.",
+            "internet_access": false,
+            "personalizations": false,
+            "lens_id": "2",
+            "bang_trigger": null
+        }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "assistant",
+            "custom",
+            "update",
+            "Writer",
+            "--name",
+            "Release Notes",
+            "--model",
+            "gpt-5-4-nano",
+            "--no-web-access",
+            "--lens",
+            "2",
+            "--instructions",
+            "Use migration notes.",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["profile_id"], "profile-writer");
+    assert_eq!(body["name"], "Release Notes");
+    assert_eq!(body["internet_access"], false);
+    assert_eq!(body["selected_lens"], "2");
+}
+
+#[test]
 fn assistant_stream_prints_text_deltas_by_default() {
     let server = MockServer::start();
     mock_current_assistant_prompt(&server, "Hello", Some("Hel"), "Hello", None);
@@ -2179,9 +2281,14 @@ fn assistant_resolves_name_to_profile_uuid() {
         mock_current_assistant_prompt(&server, "Hello", None, "Hello", Some("profile-once"));
     let _profiles = server.mock(|when, then| {
         when.method(GET)
-            .path("/html/settings/assistant")
+            .path("/api/init")
             .header("cookie", "kagi_session=test-session");
-        then.status(200).body(assistant_list_html());
+        then.status(200)
+            .json_body(assistant_init_json(json!([custom_assistant_json(
+                "profile-once",
+                "Once",
+                "gpt-5-mini"
+            )])));
     });
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
@@ -2310,41 +2417,30 @@ fn completion_install_detects_fish_and_writes_completion_file() {
 fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     let server = MockServer::start();
     mock_current_assistant_prompt(&server, "Hi", None, "ok", None);
-    let _new_form = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/custom_assistant")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .body(assistant_form_html("profile-once", "Once"));
-    });
     let _create = server.mock(|when, then| {
         when.method(POST)
-            .path("/settings/ast/profiles/update")
+            .path("/api/assistants")
             .header("cookie", "kagi_session=test-session")
-            .body_includes("base_model=gpt-5-mini");
-        then.status(303)
-            .header("location", "/settings/custom_assistant?id=profile-once");
+            .body_includes("\"llm_id\":\"gpt-5-mini\"");
+        then.status(200)
+            .json_body(custom_assistant_json("profile-once", "Once", "gpt-5-mini"));
     });
     let _list = server.mock(|when, then| {
         when.method(GET)
-            .path("/html/settings/assistant")
-            .header("cookie", "kagi_session=test-session");
-        then.status(200).body(assistant_list_html());
-    });
-    let _edit_form = server.mock(|when, then| {
-        when.method(GET)
-            .path("/settings/custom_assistant")
-            .query_param("id", "profile-once")
+            .path("/api/init")
             .header("cookie", "kagi_session=test-session");
         then.status(200)
-            .body(assistant_form_html("profile-once", "Once"));
+            .json_body(assistant_init_json(json!([custom_assistant_json(
+                "profile-once",
+                "Once",
+                "gpt-5-mini"
+            )])));
     });
     let _delete = server.mock(|when, then| {
-        when.method(POST)
-            .path("/settings/ast/profiles/delete")
-            .header("cookie", "kagi_session=test-session")
-            .body_includes("profile_id=profile-once");
-        then.status(200).body("");
+        when.method(DELETE)
+            .path("/api/assistants/profile-once")
+            .header("cookie", "kagi_session=test-session");
+        then.status(204);
     });
 
     let tempdir = TempDir::new().expect("tempdir");

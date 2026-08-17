@@ -2111,6 +2111,45 @@ mod tests {
     }
 
     #[test]
+    fn parses_assistant_custom_create_command() {
+        let cli = Cli::try_parse_from([
+            "kagi",
+            "assistant",
+            "custom",
+            "create",
+            "Release Notes",
+            "--model",
+            "gpt-5-4-nano",
+            "--web-access",
+            "--lens",
+            "2",
+            "--instructions",
+            "Focus on release diffs and migration notes.",
+        ])
+        .expect("assistant custom create should parse");
+
+        match cli.command.expect("command") {
+            Commands::Assistant(args) => match args.command.expect("subcommand") {
+                super::AssistantSubcommand::Custom(custom) => match custom.command {
+                    super::AssistantCustomSubcommand::Create(create) => {
+                        assert_eq!(create.name, "Release Notes");
+                        assert_eq!(create.model.as_deref(), Some("gpt-5-4-nano"));
+                        assert!(create.web_access);
+                        assert_eq!(create.lens.as_deref(), Some("2"));
+                        assert_eq!(
+                            create.instructions.as_deref(),
+                            Some("Focus on release diffs and migration notes.")
+                        );
+                    }
+                    other => panic!("unexpected assistant custom subcommand: {other:?}"),
+                },
+                other => panic!("unexpected assistant subcommand: {other:?}"),
+            },
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn parses_assistant_custom_update_command() {
         let cli = Cli::try_parse_from([
             "kagi",
