@@ -7,6 +7,8 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+## [0.17.1]
+
 ### Fixed
 
 - `kagi assistant custom` now uses Kagi's current Assistant API, so custom assistant creation no longer fails while parsing the removed settings form.
