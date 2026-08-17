@@ -2416,8 +2416,8 @@ fn completion_install_detects_fish_and_writes_completion_file() {
 #[test]
 fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     let server = MockServer::start();
-    mock_current_assistant_prompt(&server, "Hi", None, "ok", None);
-    let _create = server.mock(|when, then| {
+    let message = mock_current_assistant_prompt(&server, "Hi", None, "ok", Some("profile-once"));
+    let create = server.mock(|when, then| {
         when.method(POST)
             .path("/api/assistants")
             .header("cookie", "kagi_session=test-session")
@@ -2425,7 +2425,7 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
         then.status(200)
             .json_body(custom_assistant_json("profile-once", "Once", "gpt-5-mini"));
     });
-    let _list = server.mock(|when, then| {
+    let list = server.mock(|when, then| {
         when.method(GET)
             .path("/api/init")
             .header("cookie", "kagi_session=test-session");
@@ -2436,7 +2436,7 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
                 "gpt-5-mini"
             )])));
     });
-    let _delete = server.mock(|when, then| {
+    let delete = server.mock(|when, then| {
         when.method(DELETE)
             .path("/api/assistants/profile-once")
             .header("cookie", "kagi_session=test-session");
@@ -2454,6 +2454,10 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     assert_success(&output);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["message"]["markdown"], "ok");
+    create.assert_calls(1);
+    list.assert_calls(2);
+    message.assert_calls(1);
+    delete.assert_calls(1);
 }
 
 #[test]
