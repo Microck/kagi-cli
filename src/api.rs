@@ -2366,6 +2366,8 @@ fn looks_like_html_document(body: &str) -> bool {
 fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeResponse, KagiError> {
     let mut meta = SubscriberSummarizeMeta::default();
     let mut last_message: Option<SubscriberSummaryStreamMessage> = None;
+    let mut final_output: Option<String> = None;
+    let mut final_error: Option<String> = None;
 
     for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
         let Some((tag, payload)) = frame.split_once(':') else {
@@ -2392,17 +2394,54 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
                     })?;
                 last_message = Some(message);
             }
+            "final" => {
+                let message: SubscriberSummaryAssistantFrame = serde_json::from_str(payload)
+                    .map_err(|error| {
+                        KagiError::Parse(format!(
+                            "failed to parse subscriber summarizer final frame: {error}"
+                        ))
+                    })?;
+                if message.error {
+                    let detail = message.output_text.trim();
+                    final_error = Some(if detail.is_empty() {
+                        "Kagi subscriber summarizer returned an error state".to_string()
+                    } else {
+                        format!("Kagi subscriber summarizer failed: {detail}")
+                    });
+                } else if !message.output_text.trim().is_empty() {
+                    final_output = Some(message.output_text);
+                }
+            }
             _ => {
                 debug!(tag, "ignoring unknown subscriber summarizer stream frame");
             }
         }
     }
 
-    let message = last_message.ok_or_else(|| {
-        KagiError::Parse(
-            "subscriber summarizer response did not include a new_message.json frame".to_string(),
-        )
-    })?;
+    let Some(message) = last_message else {
+        if let Some(detail) = final_error {
+            return Err(KagiError::Network(detail));
+        }
+        let output = final_output.ok_or_else(|| {
+            KagiError::Parse(
+                "subscriber summarizer response did not include a final summary frame".to_string(),
+            )
+        })?;
+        return Ok(SubscriberSummarizeResponse {
+            meta,
+            data: SubscriberSummarization {
+                id: String::new(),
+                thread_id: String::new(),
+                created_at: String::new(),
+                state: "done".to_string(),
+                prompt: String::new(),
+                markdown: output.clone(),
+                output,
+                metadata_html: String::new(),
+                documents: Vec::new(),
+            },
+        });
+    };
 
     if message.state == "error" {
         let detail = if message.reply.trim().is_empty() {
@@ -4707,6 +4746,14 @@ struct SubscriberSummaryStreamMessage {
     documents: Vec<Value>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SubscriberSummaryAssistantFrame {
+    #[serde(default)]
+    error: bool,
+    #[serde(default)]
+    output_text: String,
+}
+
 #[cfg(test)]
 #[derive(Debug, Deserialize)]
 struct AssistantHello {
@@ -6044,6 +6091,17 @@ mod tests {
         assert_eq!(parsed.data.thread_id, "thread-1");
         assert_eq!(parsed.data.output, "summary output");
         assert_eq!(parsed.data.documents.len(), 1);
+    }
+
+    #[test]
+    fn parses_subscriber_summarize_final_stream() {
+        let raw = "update:{\"type\":\"update\",\"output_text\":\"\",\"output_data\":{\"status\":\"done\",\"title\":\"Example Domain\"},\"tokens\":0}\0\nfinal:{\"type\":\"final\",\"output_text\":\"summary output\",\"output_data\":null,\"tokens\":0,\"error\":false}\0\n";
+
+        let parsed = parse_subscriber_summarize_stream(raw).expect("stream parses");
+        assert_eq!(parsed.data.state, "done");
+        assert_eq!(parsed.data.output, "summary output");
+        assert_eq!(parsed.data.markdown, "summary output");
+        assert!(parsed.data.documents.is_empty());
     }
 
     #[test]
