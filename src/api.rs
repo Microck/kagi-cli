@@ -207,7 +207,6 @@ pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError
 ///
 /// # Arguments
 /// * `request` - The subscriber summarize request.
-/// * `list_id` - Optional thread or tag id used to continue listing.
 /// * `token` - The Kagi session token.
 ///
 /// # Returns
@@ -235,8 +234,8 @@ pub async fn execute_subscriber_summarize(
 
     let client = build_client()?;
     let response = client
-        .get(http::kagi_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
-        .query(&[
+        .post(http::kagi_assistant_api_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
+        .form(&[
             (field_name, source_value.as_str()),
             ("stream", "1"),
             ("target_language", target_language),
