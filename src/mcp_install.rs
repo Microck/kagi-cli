@@ -517,12 +517,16 @@ fn current_kagi_exe() -> Result<PathBuf, KagiError> {
 fn vscode_user_mcp_config_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        return home_dir()
-            .join("Library")
-            .join("Application Support")
-            .join("Code")
-            .join("User")
-            .join("mcp.json");
+        if let Some(config_home) = explicit_xdg_config_home() {
+            config_home.join("Code").join("User").join("mcp.json")
+        } else {
+            home_dir()
+                .join("Library")
+                .join("Application Support")
+                .join("Code")
+                .join("User")
+                .join("mcp.json")
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -548,11 +552,17 @@ fn path_string(path: &Path) -> String {
 fn claude_desktop_config_path() -> Result<PathBuf, KagiError> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(home_dir()
-            .join("Library")
-            .join("Application Support")
-            .join("Claude")
-            .join("claude_desktop_config.json"));
+        if let Some(config_home) = explicit_xdg_config_home() {
+            Ok(config_home
+                .join("Claude")
+                .join("claude_desktop_config.json"))
+        } else {
+            Ok(home_dir()
+                .join("Library")
+                .join("Application Support")
+                .join("Claude")
+                .join("claude_desktop_config.json"))
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -591,11 +601,12 @@ fn roo_code_config_candidates() -> Result<Vec<PathBuf>, KagiError> {
 
     #[cfg(target_os = "macos")]
     {
-        let root = home_dir().join("Library").join("Application Support");
-        return Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
+        let root = explicit_xdg_config_home()
+            .unwrap_or_else(|| home_dir().join("Library").join("Application Support"));
+        Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
             .iter()
             .map(|name| root.join(name).join(&relative))
-            .collect());
+            .collect())
     }
 
     #[cfg(target_os = "windows")]
@@ -679,6 +690,12 @@ fn xdg_config_home() -> PathBuf {
         .map(PathBuf::from)
         .filter(|value| !value.as_os_str().is_empty())
         .unwrap_or_else(|| home_dir().join(".config"))
+}
+
+fn explicit_xdg_config_home() -> Option<PathBuf> {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|value| !value.as_os_str().is_empty())
 }
 
 fn home_dir() -> PathBuf {
