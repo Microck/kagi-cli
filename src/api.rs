@@ -232,7 +232,7 @@ pub async fn execute_subscriber_summarize(
     let summary_length = normalize_subscriber_summary_length(request.length.as_deref())?;
     let target_language = request.target_language.as_deref().map_or("", str::trim);
 
-    let client = build_client()?;
+    let client = http::client_assistant_stream()?;
     let response = client
         .post(http::kagi_assistant_api_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
         .form(&[
@@ -263,7 +263,7 @@ pub async fn execute_subscriber_summarize(
                 ));
             }
 
-            parse_subscriber_summarize_stream(&body)
+            parse_subscriber_summarize_stream(&body, &[token])
         }
         status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
@@ -2363,7 +2363,10 @@ fn looks_like_html_document(body: &str) -> bool {
     body.contains("<!DOCTYPE html") || body.contains("<html")
 }
 
-fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeResponse, KagiError> {
+fn parse_subscriber_summarize_stream(
+    body: &str,
+    secrets: &[&str],
+) -> Result<SubscriberSummarizeResponse, KagiError> {
     let mut meta = SubscriberSummarizeMeta::default();
     let mut last_message: Option<SubscriberSummaryStreamMessage> = None;
     let mut final_output: Option<String> = None;
@@ -2402,7 +2405,7 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
                         ))
                     })?;
                 if message.error {
-                    let detail = message.output_text.trim();
+                    let detail = redact_secrets(message.output_text.trim(), secrets);
                     final_error = Some(if detail.is_empty() {
                         "Kagi subscriber summarizer returned an error state".to_string()
                     } else {
@@ -2445,16 +2448,17 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
     };
 
     if message.state == "error" {
-        let detail = if message.reply.trim().is_empty() {
+        let detail = redact_secrets(message.reply.trim(), secrets);
+        let detail = if detail.is_empty() {
             "Kagi subscriber summarizer returned an error state".to_string()
         } else {
-            format!(
-                "Kagi subscriber summarizer failed: {}",
-                message.reply.trim()
-            )
+            format!("Kagi subscriber summarizer failed: {detail}")
         };
         return Err(KagiError::Network(detail));
     }
+
+    let output = final_output.clone().unwrap_or(message.reply);
+    let markdown = final_output.unwrap_or(message.md);
 
     Ok(SubscriberSummarizeResponse {
         meta,
@@ -2464,8 +2468,8 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
             created_at: message.created_at,
             state: message.state,
             prompt: message.prompt,
-            output: message.reply,
-            markdown: message.md,
+            output,
+            markdown,
             metadata_html: message.metadata,
             documents: message.documents,
         },
@@ -4299,18 +4303,22 @@ fn parse_content_disposition_filename(header_value: &str) -> Option<String> {
     None
 }
 
-fn format_client_error_suffix(body: &str) -> String {
-    format_client_error_suffix_redacting(body, &[])
-}
-
-fn format_client_error_suffix_redacting(body: &str, secrets: &[&str]) -> String {
-    let sanitized = secrets.iter().fold(body.to_string(), |body, secret| {
+fn redact_secrets(body: &str, secrets: &[&str]) -> String {
+    secrets.iter().fold(body.to_string(), |body, secret| {
         if secret.is_empty() {
             body
         } else {
             body.replace(secret, "[REDACTED]")
         }
-    });
+    })
+}
+
+fn format_client_error_suffix(body: &str) -> String {
+    format_client_error_suffix_redacting(body, &[])
+}
+
+fn format_client_error_suffix_redacting(body: &str, secrets: &[&str]) -> String {
+    let sanitized = redact_secrets(body, secrets);
     let body = sanitized.as_str();
     let trimmed = body.trim();
     if trimmed.is_empty() {
@@ -6012,11 +6020,22 @@ mod tests {
 
     #[test]
     fn final_subscriber_error_wins_over_an_earlier_message_frame() {
-        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale output\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"request failed\",\"error\":true}\0\n";
+        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale output\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"request failed session-secret\",\"error\":true}\0\n";
 
-        let error = parse_subscriber_summarize_stream(raw)
+        let error = parse_subscriber_summarize_stream(raw, &["session-secret"])
             .expect_err("final error should not be hidden by an earlier message");
-        assert!(error.to_string().contains("request failed"));
+        let message = error.to_string();
+        assert!(message.contains("request failed"));
+        assert!(!message.contains("session-secret"));
+    }
+
+    #[test]
+    fn successful_final_output_replaces_stale_earlier_message() {
+        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale markdown\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"terminal output\",\"error\":false}\0\n";
+
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
+        assert_eq!(parsed.data.output, "terminal output");
+        assert_eq!(parsed.data.markdown, "terminal output");
     }
 
     #[test]
@@ -6115,7 +6134,7 @@ mod tests {
     fn parses_subscriber_summarize_stream() {
         let raw = "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"abc123\"}\0\nnew_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"summary output\",\"md\":\"summary output\",\"metadata\":\"<li>meta</li>\",\"documents\":[{\"url\":\"https://example.com\"}]}\0\n";
 
-        let parsed = parse_subscriber_summarize_stream(raw).expect("stream parses");
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
         assert_eq!(
             parsed.meta.version.as_deref(),
             Some("202603091651.stage.c128588")
@@ -6130,7 +6149,7 @@ mod tests {
     fn parses_subscriber_summarize_final_stream() {
         let raw = "update:{\"type\":\"update\",\"output_text\":\"\",\"output_data\":{\"status\":\"done\",\"title\":\"Example Domain\"},\"tokens\":0}\0\nfinal:{\"type\":\"final\",\"output_text\":\"summary output\",\"output_data\":null,\"tokens\":0,\"error\":false}\0\n";
 
-        let parsed = parse_subscriber_summarize_stream(raw).expect("stream parses");
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
         assert_eq!(parsed.data.state, "done");
         assert_eq!(parsed.data.output, "summary output");
         assert_eq!(parsed.data.markdown, "summary output");
@@ -6141,7 +6160,8 @@ mod tests {
     fn rejects_error_state_in_subscriber_summarize_stream() {
         let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"error\",\"prompt\":\"hello\",\"reply\":\"We are sorry, we are not able to extract the source.\",\"md\":\"\",\"metadata\":\"\",\"documents\":[]}\0\n";
 
-        let error = parse_subscriber_summarize_stream(raw).expect_err("error state should fail");
+        let error =
+            parse_subscriber_summarize_stream(raw, &[]).expect_err("error state should fail");
         assert!(
             error
                 .to_string()
