@@ -1642,6 +1642,45 @@ fn subscriber_summarize_posts_form_to_assistant_api() {
 }
 
 #[test]
+fn subscriber_summarize_redacts_session_token_from_error_output() {
+    let server = MockServer::start();
+    let summarize = server.mock(|when, then| {
+        when.method(POST).path("/mother/summary_labs");
+        then.status(500)
+            .header("content-type", "application/json")
+            .body(r#"{"error":"upstream echoed kagi_session=test-session"}"#);
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "summarize",
+            "--subscriber",
+            "--url",
+            "https://example.com/article",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "server error should fail the command"
+    );
+    summarize.assert_calls(1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTTP 500"),
+        "expected HTTP status in error: {stderr}"
+    );
+    assert!(
+        !stderr.contains("test-session"),
+        "session token must not appear in error output: {stderr}"
+    );
+}
+
+#[test]
 fn extract_command_prints_markdown_from_mock_api() {
     let server = MockServer::start();
     let _extract = server.mock(|when, then| {

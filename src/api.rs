@@ -269,21 +269,21 @@ pub async fn execute_subscriber_summarize(
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Auth(format!(
                 "invalid or expired Kagi session token for subscriber summarizer: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
         status if status.is_server_error() => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Network(format!(
                 "Kagi subscriber summarizer server error: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
         status => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Network(format!(
                 "unexpected Kagi subscriber summarizer response status: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
     }
@@ -2418,10 +2418,11 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
         }
     }
 
+    if let Some(detail) = final_error {
+        return Err(KagiError::Network(detail));
+    }
+
     let Some(message) = last_message else {
-        if let Some(detail) = final_error {
-            return Err(KagiError::Network(detail));
-        }
         let output = final_output.ok_or_else(|| {
             KagiError::Parse(
                 "subscriber summarizer response did not include a final summary frame".to_string(),
@@ -4299,6 +4300,18 @@ fn parse_content_disposition_filename(header_value: &str) -> Option<String> {
 }
 
 fn format_client_error_suffix(body: &str) -> String {
+    format_client_error_suffix_redacting(body, &[])
+}
+
+fn format_client_error_suffix_redacting(body: &str, secrets: &[&str]) -> String {
+    let sanitized = secrets.iter().fold(body.to_string(), |body, secret| {
+        if secret.is_empty() {
+            body
+        } else {
+            body.replace(secret, "[REDACTED]")
+        }
+    });
+    let body = sanitized.as_str();
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -5796,16 +5809,16 @@ mod tests {
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
         fake_header_map, finalize_translate_text_response, format_client_error_suffix,
-        normalize_ask_page_question, normalize_ask_page_url, normalize_assistant_query,
-        normalize_assistant_thread_id, normalize_assistant_thread_ref, normalize_aux_quality,
-        normalize_custom_bang_trigger, normalize_lens_name, normalize_redirect_rule,
-        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_thread_cursor,
-        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
-        parse_assistant_thread_open_stream, parse_content_disposition_filename,
-        parse_subscriber_summarize_stream, parse_translate_detect_value,
-        resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
-        resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
+        format_client_error_suffix_redacting, normalize_ask_page_question, normalize_ask_page_url,
+        normalize_assistant_query, normalize_assistant_thread_id, normalize_assistant_thread_ref,
+        normalize_aux_quality, normalize_custom_bang_trigger, normalize_lens_name,
+        normalize_redirect_rule, normalize_subscriber_summary_input,
+        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
+        parse_assistant_thread_cursor, parse_assistant_thread_delete_stream,
+        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
+        parse_content_disposition_filename, parse_subscriber_summarize_stream,
+        parse_translate_detect_value, resolve_custom_assistant_ref, resolve_custom_bang_ref,
+        resolve_lens_ref, resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
         should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
         take_next_assistant_sse_frame, text_contains_news_filter_keyword,
         translate_subscription_error_message, validate_translate_request,
@@ -5984,6 +5997,26 @@ mod tests {
 
         assert_eq!(suffix.len(), 505);
         assert!(suffix.ends_with("..."));
+    }
+
+    #[test]
+    fn redacts_session_tokens_from_error_body_suffixes() {
+        let suffix = format_client_error_suffix_redacting(
+            r#"{"error":"kagi_session=session-secret"}"#,
+            &["session-secret"],
+        );
+
+        assert_eq!(suffix, r#"; {"error":"kagi_session=[REDACTED]"}"#);
+        assert!(!suffix.contains("session-secret"));
+    }
+
+    #[test]
+    fn final_subscriber_error_wins_over_an_earlier_message_frame() {
+        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale output\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"request failed\",\"error\":true}\0\n";
+
+        let error = parse_subscriber_summarize_stream(raw)
+            .expect_err("final error should not be hidden by an earlier message");
+        assert!(error.to_string().contains("request failed"));
     }
 
     #[test]

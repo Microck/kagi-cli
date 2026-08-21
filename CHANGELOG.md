@@ -7,6 +7,11 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Fixed
+
+- Subscriber summarization now redacts session tokens from response-body error details and surfaces final stream errors even when an earlier message frame was received.
+- `kagi summarize --subscriber` now uses Kagi's current Assistant API endpoint and stream format.
+
 ## [0.17.1]
 
 ### Fixed
