@@ -11,6 +11,9 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ### Fixed
 
+- Subscriber summarization now redacts session tokens from response-body error details and surfaces final stream errors even when an earlier message frame was received.
+- `kagi summarize --subscriber` now uses Kagi's current Assistant API endpoint and stream format.
+
 - `kagi assistant custom` now uses Kagi's current Assistant API, so custom assistant creation no longer fails while parsing the removed settings form.
 
 ## [0.17.0]

@@ -517,12 +517,12 @@ fn current_kagi_exe() -> Result<PathBuf, KagiError> {
 fn vscode_user_mcp_config_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        return home_dir()
+        home_dir()
             .join("Library")
             .join("Application Support")
             .join("Code")
             .join("User")
-            .join("mcp.json");
+            .join("mcp.json")
     }
 
     #[cfg(target_os = "windows")]
@@ -548,11 +548,11 @@ fn path_string(path: &Path) -> String {
 fn claude_desktop_config_path() -> Result<PathBuf, KagiError> {
     #[cfg(target_os = "macos")]
     {
-        return Ok(home_dir()
+        Ok(home_dir()
             .join("Library")
             .join("Application Support")
             .join("Claude")
-            .join("claude_desktop_config.json"));
+            .join("claude_desktop_config.json"))
     }
 
     #[cfg(target_os = "windows")]
@@ -592,10 +592,10 @@ fn roo_code_config_candidates() -> Result<Vec<PathBuf>, KagiError> {
     #[cfg(target_os = "macos")]
     {
         let root = home_dir().join("Library").join("Application Support");
-        return Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
+        Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
             .iter()
             .map(|name| root.join(name).join(&relative))
-            .collect());
+            .collect())
     }
 
     #[cfg(target_os = "windows")]

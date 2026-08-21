@@ -13,11 +13,13 @@ const USER_AGENT: &str = concat!(
 );
 const DEFAULT_KAGI_BASE_URL: &str = "https://kagi.com";
 const DEFAULT_KAGI_ASSISTANT_BASE_URL: &str = "https://assistant.kagi.com";
+const DEFAULT_KAGI_ASSISTANT_API_BASE_URL: &str = "https://assistant-api.kagi.com";
 const DEFAULT_KAGI_NEWS_BASE_URL: &str = "https://news.kagi.com";
 const DEFAULT_KAGI_TRANSLATE_BASE_URL: &str = "https://translate.kagi.com";
 
 pub const KAGI_BASE_URL_ENV: &str = "KAGI_BASE_URL";
 pub const KAGI_ASSISTANT_BASE_URL_ENV: &str = "KAGI_ASSISTANT_BASE_URL";
+pub const KAGI_ASSISTANT_API_BASE_URL_ENV: &str = "KAGI_ASSISTANT_API_BASE_URL";
 pub const KAGI_NEWS_BASE_URL_ENV: &str = "KAGI_NEWS_BASE_URL";
 pub const KAGI_TRANSLATE_BASE_URL_ENV: &str = "KAGI_TRANSLATE_BASE_URL";
 
@@ -161,6 +163,24 @@ pub fn kagi_assistant_url(path: &str) -> String {
     )
 }
 
+/// Builds a full Kagi Assistant API URL from a path, using the `KAGI_ASSISTANT_API_BASE_URL`
+/// env override or the default current Assistant API origin.
+///
+/// # Arguments
+/// * `path` - Assistant API path (e.g. `"/mother/summary_labs"`). Absolute URLs are returned unchanged.
+///
+/// # Returns
+/// The complete URL string.
+pub fn kagi_assistant_api_url(path: &str) -> String {
+    build_url(
+        &base_url_from_env(
+            KAGI_ASSISTANT_API_BASE_URL_ENV,
+            DEFAULT_KAGI_ASSISTANT_API_BASE_URL,
+        ),
+        path,
+    )
+}
+
 /// Builds a full Kagi News API URL from a path, using the `KAGI_NEWS_BASE_URL` env override or the default.
 ///
 /// # Arguments
@@ -231,9 +251,9 @@ fn build_url(base: &str, path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        KAGI_ASSISTANT_BASE_URL_ENV, KAGI_BASE_URL_ENV, KAGI_NEWS_BASE_URL_ENV,
-        KAGI_TRANSLATE_BASE_URL_ENV, kagi_assistant_url, kagi_news_url, kagi_translate_url,
-        kagi_url,
+        KAGI_ASSISTANT_API_BASE_URL_ENV, KAGI_ASSISTANT_BASE_URL_ENV, KAGI_BASE_URL_ENV,
+        KAGI_NEWS_BASE_URL_ENV, KAGI_TRANSLATE_BASE_URL_ENV, kagi_assistant_api_url,
+        kagi_assistant_url, kagi_news_url, kagi_translate_url, kagi_url,
     };
     use crate::test_support::lock_env;
 
@@ -251,6 +271,7 @@ mod tests {
 
         remove_env_var(KAGI_BASE_URL_ENV);
         remove_env_var(KAGI_ASSISTANT_BASE_URL_ENV);
+        remove_env_var(KAGI_ASSISTANT_API_BASE_URL_ENV);
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
 
@@ -258,6 +279,10 @@ mod tests {
         assert_eq!(
             kagi_assistant_url("/api/conversations"),
             "https://assistant.kagi.com/api/conversations"
+        );
+        assert_eq!(
+            kagi_assistant_api_url("/mother/summary_labs"),
+            "https://assistant-api.kagi.com/mother/summary_labs"
         );
         assert_eq!(
             kagi_news_url("/api/batches/latest"),
@@ -275,6 +300,7 @@ mod tests {
 
         set_env_var(KAGI_BASE_URL_ENV, "http://127.0.0.1:9000/");
         set_env_var(KAGI_ASSISTANT_BASE_URL_ENV, "http://127.0.0.1:9001/");
+        set_env_var(KAGI_ASSISTANT_API_BASE_URL_ENV, "http://127.0.0.1:9002/");
         set_env_var(KAGI_NEWS_BASE_URL_ENV, "http://127.0.0.1:9002/");
         set_env_var(KAGI_TRANSLATE_BASE_URL_ENV, "http://127.0.0.1:9003/");
 
@@ -287,6 +313,10 @@ mod tests {
             "http://127.0.0.1:9001/api/conversations"
         );
         assert_eq!(
+            kagi_assistant_api_url("/mother/summary_labs"),
+            "http://127.0.0.1:9002/mother/summary_labs"
+        );
+        assert_eq!(
             kagi_news_url("/api/batches/latest"),
             "http://127.0.0.1:9002/api/batches/latest"
         );
@@ -297,6 +327,7 @@ mod tests {
 
         remove_env_var(KAGI_BASE_URL_ENV);
         remove_env_var(KAGI_ASSISTANT_BASE_URL_ENV);
+        remove_env_var(KAGI_ASSISTANT_API_BASE_URL_ENV);
         remove_env_var(KAGI_NEWS_BASE_URL_ENV);
         remove_env_var(KAGI_TRANSLATE_BASE_URL_ENV);
     }

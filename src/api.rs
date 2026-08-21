@@ -207,7 +207,6 @@ pub async fn execute_extract(url: &str, token: &str) -> Result<String, KagiError
 ///
 /// # Arguments
 /// * `request` - The subscriber summarize request.
-/// * `list_id` - Optional thread or tag id used to continue listing.
 /// * `token` - The Kagi session token.
 ///
 /// # Returns
@@ -233,10 +232,10 @@ pub async fn execute_subscriber_summarize(
     let summary_length = normalize_subscriber_summary_length(request.length.as_deref())?;
     let target_language = request.target_language.as_deref().map_or("", str::trim);
 
-    let client = build_client()?;
+    let client = http::client_assistant_stream()?;
     let response = client
-        .get(http::kagi_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
-        .query(&[
+        .post(http::kagi_assistant_api_url(KAGI_SUBSCRIBER_SUMMARIZE_PATH))
+        .form(&[
             (field_name, source_value.as_str()),
             ("stream", "1"),
             ("target_language", target_language),
@@ -264,27 +263,27 @@ pub async fn execute_subscriber_summarize(
                 ));
             }
 
-            parse_subscriber_summarize_stream(&body)
+            parse_subscriber_summarize_stream(&body, &[token])
         }
         status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Auth(format!(
                 "invalid or expired Kagi session token for subscriber summarizer: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
         status if status.is_server_error() => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Network(format!(
                 "Kagi subscriber summarizer server error: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
         status => {
             let body = http::read_error_body(response, "subscriber summarizer").await;
             Err(KagiError::Network(format!(
                 "unexpected Kagi subscriber summarizer response status: HTTP {status}{}",
-                format_client_error_suffix(&body)
+                format_client_error_suffix_redacting(&body, &[token])
             )))
         }
     }
@@ -2364,9 +2363,14 @@ fn looks_like_html_document(body: &str) -> bool {
     body.contains("<!DOCTYPE html") || body.contains("<html")
 }
 
-fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeResponse, KagiError> {
+fn parse_subscriber_summarize_stream(
+    body: &str,
+    secrets: &[&str],
+) -> Result<SubscriberSummarizeResponse, KagiError> {
     let mut meta = SubscriberSummarizeMeta::default();
     let mut last_message: Option<SubscriberSummaryStreamMessage> = None;
+    let mut final_output: Option<String> = None;
+    let mut final_error: Option<String> = None;
 
     for frame in body.split("\0\n").filter(|frame| !frame.trim().is_empty()) {
         let Some((tag, payload)) = frame.split_once(':') else {
@@ -2393,29 +2397,68 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
                     })?;
                 last_message = Some(message);
             }
+            "final" => {
+                let message: SubscriberSummaryAssistantFrame = serde_json::from_str(payload)
+                    .map_err(|error| {
+                        KagiError::Parse(format!(
+                            "failed to parse subscriber summarizer final frame: {error}"
+                        ))
+                    })?;
+                if message.error {
+                    let detail = redact_secrets(message.output_text.trim(), secrets);
+                    final_error = Some(if detail.is_empty() {
+                        "Kagi subscriber summarizer returned an error state".to_string()
+                    } else {
+                        format!("Kagi subscriber summarizer failed: {detail}")
+                    });
+                } else if !message.output_text.trim().is_empty() {
+                    final_output = Some(message.output_text);
+                }
+            }
             _ => {
                 debug!(tag, "ignoring unknown subscriber summarizer stream frame");
             }
         }
     }
 
-    let message = last_message.ok_or_else(|| {
-        KagiError::Parse(
-            "subscriber summarizer response did not include a new_message.json frame".to_string(),
-        )
-    })?;
+    if let Some(detail) = final_error {
+        return Err(KagiError::Network(detail));
+    }
+
+    let Some(message) = last_message else {
+        let output = final_output.ok_or_else(|| {
+            KagiError::Parse(
+                "subscriber summarizer response did not include a final summary frame".to_string(),
+            )
+        })?;
+        return Ok(SubscriberSummarizeResponse {
+            meta,
+            data: SubscriberSummarization {
+                id: String::new(),
+                thread_id: String::new(),
+                created_at: String::new(),
+                state: "done".to_string(),
+                prompt: String::new(),
+                markdown: output.clone(),
+                output,
+                metadata_html: String::new(),
+                documents: Vec::new(),
+            },
+        });
+    };
 
     if message.state == "error" {
-        let detail = if message.reply.trim().is_empty() {
+        let detail = redact_secrets(message.reply.trim(), secrets);
+        let detail = if detail.is_empty() {
             "Kagi subscriber summarizer returned an error state".to_string()
         } else {
-            format!(
-                "Kagi subscriber summarizer failed: {}",
-                message.reply.trim()
-            )
+            format!("Kagi subscriber summarizer failed: {detail}")
         };
         return Err(KagiError::Network(detail));
     }
+
+    let output = final_output.clone().unwrap_or(message.reply);
+    let markdown = final_output.unwrap_or(message.md);
 
     Ok(SubscriberSummarizeResponse {
         meta,
@@ -2425,8 +2468,8 @@ fn parse_subscriber_summarize_stream(body: &str) -> Result<SubscriberSummarizeRe
             created_at: message.created_at,
             state: message.state,
             prompt: message.prompt,
-            output: message.reply,
-            markdown: message.md,
+            output,
+            markdown,
             metadata_html: message.metadata,
             documents: message.documents,
         },
@@ -4260,7 +4303,23 @@ fn parse_content_disposition_filename(header_value: &str) -> Option<String> {
     None
 }
 
+fn redact_secrets(body: &str, secrets: &[&str]) -> String {
+    secrets.iter().fold(body.to_string(), |body, secret| {
+        if secret.is_empty() {
+            body
+        } else {
+            body.replace(secret, "[REDACTED]")
+        }
+    })
+}
+
 fn format_client_error_suffix(body: &str) -> String {
+    format_client_error_suffix_redacting(body, &[])
+}
+
+fn format_client_error_suffix_redacting(body: &str, secrets: &[&str]) -> String {
+    let sanitized = redact_secrets(body, secrets);
+    let body = sanitized.as_str();
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -4706,6 +4765,14 @@ struct SubscriberSummaryStreamMessage {
     metadata: String,
     #[serde(default)]
     documents: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SubscriberSummaryAssistantFrame {
+    #[serde(default)]
+    error: bool,
+    #[serde(default)]
+    output_text: String,
 }
 
 #[cfg(test)]
@@ -5750,16 +5817,16 @@ mod tests {
         build_translate_word_insights_payload, capture_optional_translate_section,
         effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
         fake_header_map, finalize_translate_text_response, format_client_error_suffix,
-        normalize_ask_page_question, normalize_ask_page_url, normalize_assistant_query,
-        normalize_assistant_thread_id, normalize_assistant_thread_ref, normalize_aux_quality,
-        normalize_custom_bang_trigger, normalize_lens_name, normalize_redirect_rule,
-        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
-        normalize_subscriber_summary_type, parse_assistant_thread_cursor,
-        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
-        parse_assistant_thread_open_stream, parse_content_disposition_filename,
-        parse_subscriber_summarize_stream, parse_translate_detect_value,
-        resolve_custom_assistant_ref, resolve_custom_bang_ref, resolve_lens_ref,
-        resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
+        format_client_error_suffix_redacting, normalize_ask_page_question, normalize_ask_page_url,
+        normalize_assistant_query, normalize_assistant_thread_id, normalize_assistant_thread_ref,
+        normalize_aux_quality, normalize_custom_bang_trigger, normalize_lens_name,
+        normalize_redirect_rule, normalize_subscriber_summary_input,
+        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
+        parse_assistant_thread_cursor, parse_assistant_thread_delete_stream,
+        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
+        parse_content_disposition_filename, parse_subscriber_summarize_stream,
+        parse_translate_detect_value, resolve_custom_assistant_ref, resolve_custom_bang_ref,
+        resolve_lens_ref, resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
         should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
         take_next_assistant_sse_frame, text_contains_news_filter_keyword,
         translate_subscription_error_message, validate_translate_request,
@@ -5941,6 +6008,37 @@ mod tests {
     }
 
     #[test]
+    fn redacts_session_tokens_from_error_body_suffixes() {
+        let suffix = format_client_error_suffix_redacting(
+            r#"{"error":"kagi_session=session-secret"}"#,
+            &["session-secret"],
+        );
+
+        assert_eq!(suffix, r#"; {"error":"kagi_session=[REDACTED]"}"#);
+        assert!(!suffix.contains("session-secret"));
+    }
+
+    #[test]
+    fn final_subscriber_error_wins_over_an_earlier_message_frame() {
+        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale output\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"request failed session-secret\",\"error\":true}\0\n";
+
+        let error = parse_subscriber_summarize_stream(raw, &["session-secret"])
+            .expect_err("final error should not be hidden by an earlier message");
+        let message = error.to_string();
+        assert!(message.contains("request failed"));
+        assert!(!message.contains("session-secret"));
+    }
+
+    #[test]
+    fn successful_final_output_replaces_stale_earlier_message() {
+        let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"stale output\",\"md\":\"stale markdown\",\"metadata\":\"\",\"documents\":[]}\0\nfinal:{\"type\":\"final\",\"output_text\":\"terminal output\",\"error\":false}\0\n";
+
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
+        assert_eq!(parsed.data.output, "terminal output");
+        assert_eq!(parsed.data.markdown, "terminal output");
+    }
+
+    #[test]
     fn normalizes_subscriber_summary_type_values() {
         assert_eq!(
             normalize_subscriber_summary_type(None).expect("default type"),
@@ -6036,7 +6134,7 @@ mod tests {
     fn parses_subscriber_summarize_stream() {
         let raw = "hi:{\"v\":\"202603091651.stage.c128588\",\"trace\":\"abc123\"}\0\nnew_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"summary output\",\"md\":\"summary output\",\"metadata\":\"<li>meta</li>\",\"documents\":[{\"url\":\"https://example.com\"}]}\0\n";
 
-        let parsed = parse_subscriber_summarize_stream(raw).expect("stream parses");
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
         assert_eq!(
             parsed.meta.version.as_deref(),
             Some("202603091651.stage.c128588")
@@ -6048,10 +6146,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_subscriber_summarize_final_stream() {
+        let raw = "update:{\"type\":\"update\",\"output_text\":\"\",\"output_data\":{\"status\":\"done\",\"title\":\"Example Domain\"},\"tokens\":0}\0\nfinal:{\"type\":\"final\",\"output_text\":\"summary output\",\"output_data\":null,\"tokens\":0,\"error\":false}\0\n";
+
+        let parsed = parse_subscriber_summarize_stream(raw, &[]).expect("stream parses");
+        assert_eq!(parsed.data.state, "done");
+        assert_eq!(parsed.data.output, "summary output");
+        assert_eq!(parsed.data.markdown, "summary output");
+        assert!(parsed.data.documents.is_empty());
+    }
+
+    #[test]
     fn rejects_error_state_in_subscriber_summarize_stream() {
         let raw = "new_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"error\",\"prompt\":\"hello\",\"reply\":\"We are sorry, we are not able to extract the source.\",\"md\":\"\",\"metadata\":\"\",\"documents\":[]}\0\n";
 
-        let error = parse_subscriber_summarize_stream(raw).expect_err("error state should fail");
+        let error =
+            parse_subscriber_summarize_stream(raw, &[]).expect_err("error state should fail");
         assert!(
             error
                 .to_string()

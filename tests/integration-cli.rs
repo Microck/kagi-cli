@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -23,6 +23,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
         "KAGI_ASSISTANT_BASE_URL",
+        "KAGI_ASSISTANT_API_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
@@ -58,6 +59,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_SESSION_TOKEN",
         "KAGI_BASE_URL",
         "KAGI_ASSISTANT_BASE_URL",
+        "KAGI_ASSISTANT_API_BASE_URL",
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
@@ -104,6 +106,21 @@ fn write_config(cwd: &Path, contents: &str) {
     fs::create_dir_all(path.parent().expect("config path has a parent"))
         .expect("config directory should create");
     fs::write(path, contents).expect("config should write");
+}
+
+fn vscode_user_dir(cwd: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        cwd.join("Library")
+            .join("Application Support")
+            .join("Code")
+            .join("User")
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        cwd.join(".config").join("Code").join("User")
+    }
 }
 
 fn assert_success(output: &Output) {
@@ -361,6 +378,7 @@ fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
         ("KAGI_SESSION_TOKEN", "test-session".to_string()),
         ("KAGI_BASE_URL", server.base_url()),
         ("KAGI_ASSISTANT_BASE_URL", server.base_url()),
+        ("KAGI_ASSISTANT_API_BASE_URL", server.base_url()),
     ]
 }
 
@@ -1403,15 +1421,8 @@ fn mcp_install_writes_vs_code_user_config_without_client_cli() {
     );
 
     assert_success(&output);
-    let raw = fs::read_to_string(
-        tempdir
-            .path()
-            .join(".config")
-            .join("Code")
-            .join("User")
-            .join("mcp.json"),
-    )
-    .expect("VS Code MCP config should be written");
+    let raw = fs::read_to_string(vscode_user_dir(tempdir.path()).join("mcp.json"))
+        .expect("VS Code MCP config should be written");
     let config: Value = serde_json::from_str(&raw).expect("VS Code MCP config should parse");
     assert_eq!(
         config["servers"]["kagi-mcp"],
@@ -1439,11 +1450,7 @@ fn mcp_install_writes_roo_code_extension_config() {
     );
 
     assert_success(&output);
-    let path = tempdir
-        .path()
-        .join(".config")
-        .join("Code")
-        .join("User")
+    let path = vscode_user_dir(tempdir.path())
         .join("globalStorage")
         .join("rooveterinaryinc.roo-cline")
         .join("settings")
@@ -1591,6 +1598,86 @@ fn summarize_url_command_prints_structured_json() {
     assert_success(&output);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["data"]["output"], "A concise summary.");
+}
+
+#[test]
+fn subscriber_summarize_posts_form_to_assistant_api() {
+    let server = MockServer::start();
+    let summarize = server.mock(|when, then| {
+        when.method(POST)
+            .path("/mother/summary_labs")
+            .header("cookie", "kagi_session=test-session")
+            .header("accept", "application/vnd.kagi.stream")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body_includes("url=https%3A%2F%2Fexample.com%2Farticle")
+            .body_includes("stream=1")
+            .body_includes("summary_type=keypoints")
+            .body_includes("summary_length=digest");
+        then.status(200)
+            .header("content-type", "application/vnd.kagi.stream")
+            .body("hi:{\"v\":\"test\",\"trace\":\"trace-1\"}\0\nnew_message.json:{\"id\":\"msg-1\",\"thread_id\":\"thread-1\",\"created_at\":\"2026-03-16T05:17:57Z\",\"state\":\"done\",\"prompt\":\"hello\",\"reply\":\"summary output\",\"md\":\"summary output\",\"metadata\":\"\",\"documents\":[{\"url\":\"https://example.com/article\"}]}\0\n");
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "summarize",
+            "--subscriber",
+            "--url",
+            "https://example.com/article",
+            "--summary-type",
+            "keypoints",
+            "--length",
+            "digest",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    summarize.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+    assert_eq!(body["data"]["output"], "summary output");
+}
+
+#[test]
+fn subscriber_summarize_redacts_session_token_from_error_output() {
+    let server = MockServer::start();
+    let summarize = server.mock(|when, then| {
+        when.method(POST).path("/mother/summary_labs");
+        then.status(500)
+            .header("content-type", "application/json")
+            .body(r#"{"error":"upstream echoed kagi_session=test-session"}"#);
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &[
+            "summarize",
+            "--subscriber",
+            "--url",
+            "https://example.com/article",
+        ],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "server error should fail the command"
+    );
+    summarize.assert_calls(1);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTTP 500"),
+        "expected HTTP status in error: {stderr}"
+    );
+    assert!(
+        !stderr.contains("test-session"),
+        "session token must not appear in error output: {stderr}"
+    );
 }
 
 #[test]
