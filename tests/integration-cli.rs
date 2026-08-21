@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -106,6 +106,21 @@ fn write_config(cwd: &Path, contents: &str) {
     fs::create_dir_all(path.parent().expect("config path has a parent"))
         .expect("config directory should create");
     fs::write(path, contents).expect("config should write");
+}
+
+fn vscode_user_dir(cwd: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        cwd.join("Library")
+            .join("Application Support")
+            .join("Code")
+            .join("User")
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        cwd.join(".config").join("Code").join("User")
+    }
 }
 
 fn assert_success(output: &Output) {
@@ -1406,15 +1421,8 @@ fn mcp_install_writes_vs_code_user_config_without_client_cli() {
     );
 
     assert_success(&output);
-    let raw = fs::read_to_string(
-        tempdir
-            .path()
-            .join(".config")
-            .join("Code")
-            .join("User")
-            .join("mcp.json"),
-    )
-    .expect("VS Code MCP config should be written");
+    let raw = fs::read_to_string(vscode_user_dir(tempdir.path()).join("mcp.json"))
+        .expect("VS Code MCP config should be written");
     let config: Value = serde_json::from_str(&raw).expect("VS Code MCP config should parse");
     assert_eq!(
         config["servers"]["kagi-mcp"],
@@ -1442,11 +1450,7 @@ fn mcp_install_writes_roo_code_extension_config() {
     );
 
     assert_success(&output);
-    let path = tempdir
-        .path()
-        .join(".config")
-        .join("Code")
-        .join("User")
+    let path = vscode_user_dir(tempdir.path())
         .join("globalStorage")
         .join("rooveterinaryinc.roo-cline")
         .join("settings")
