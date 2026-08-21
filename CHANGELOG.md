@@ -7,7 +7,7 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
-## [0.17.1]
+## [0.17.2] - 2026-08-21
 
 ### Fixed
 
