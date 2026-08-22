@@ -7,6 +7,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Added `kagi usage` (`kagi billing`) to report plan, AI cost used and limit, balance, renewal date, and daily calendar-month usage with session-token auth.
+
 ## [0.17.2]
 
 ### Fixed
