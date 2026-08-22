@@ -3123,7 +3123,6 @@ async fn run_assistant_repl(args: AssistantReplArgs, token: &str) -> Result<(), 
 struct McpServerConfig {
     default_output: Option<OutputFormat>,
     enable_mutating_tools: bool,
-    stable_spec: bool,
     tool_definitions: Vec<Value>,
 }
 
@@ -3133,7 +3132,8 @@ const MCP_CLIENT_INFO_META_KEY: &str = "io.modelcontextprotocol/clientInfo";
 const MCP_CLIENT_CAPABILITIES_META_KEY: &str = "io.modelcontextprotocol/clientCapabilities";
 const MCP_CACHE_TTL_MS: u64 = 3_600_000;
 
-/// Stable MCP protocol versions accepted by `--protocol stable`, newest first.
+/// Stable MCP protocol versions accepted by the `initialize` handshake, newest
+/// first.
 const MCP_STABLE_PROTOCOL_VERSIONS: [&str; 5] = [
     "2025-11-25",
     "2025-06-18",
@@ -3161,16 +3161,11 @@ impl McpProtocolError {
 }
 
 impl McpServerConfig {
-    fn new(
-        default_output: Option<OutputFormat>,
-        enable_mutating_tools: bool,
-        stable_spec: bool,
-    ) -> Self {
+    fn new(default_output: Option<OutputFormat>, enable_mutating_tools: bool) -> Self {
         let tool_definitions = build_mcp_tool_definitions(enable_mutating_tools);
         Self {
             default_output,
             enable_mutating_tools,
-            stable_spec,
             tool_definitions,
         }
     }
@@ -3182,8 +3177,7 @@ impl McpServerConfig {
 
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
-    let stable_spec = matches!(args.protocol, cli::McpProtocolSpec::Stable);
-    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools, stable_spec);
+    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools);
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =
@@ -3210,8 +3204,19 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
             continue;
         };
 
-        let response = if config.stable_spec {
-            match method {
+        // The server auto-negotiates per request: draft `2026-07-28` requests carry
+        // the draft protocol version in `params._meta`, while stable-spec requests
+        // (including `initialize`) do not. The stable spec also permits `_meta`
+        // (e.g. `progressToken`), so discriminate on the namespaced draft key.
+        let speaks_draft = request_speaks_draft(&request);
+        let draft_validation = if speaks_draft {
+            validate_mcp_request(&request)
+        } else {
+            Ok(())
+        };
+
+        let response = match draft_validation {
+            Ok(()) => match method {
                 "initialize" => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -3222,6 +3227,21 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                     "id": id,
                     "result": {},
                 }),
+                "server/discover" if speaks_draft => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": mcp_discover_result(),
+                }),
+                "tools/list" if speaks_draft => match mcp_tools_list_result(&request, &config) {
+                    Ok(result) => serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": result,
+                    }),
+                    Err(error) => {
+                        json_rpc_error_with_data(id, error.code, error.message, error.data)
+                    }
+                },
                 "tools/list" => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -3229,30 +3249,8 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                 }),
                 "tools/call" => mcp_tools_call_response(id, &request, profile, &config).await,
                 _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
-            }
-        } else {
-            match validate_mcp_request(&request) {
-                Ok(()) => match method {
-                    "server/discover" => serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": id,
-                        "result": mcp_discover_result(),
-                    }),
-                    "tools/list" => match mcp_tools_list_result(&request, &config) {
-                        Ok(result) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "result": result,
-                        }),
-                        Err(error) => {
-                            json_rpc_error_with_data(id, error.code, error.message, error.data)
-                        }
-                    },
-                    "tools/call" => mcp_tools_call_response(id, &request, profile, &config).await,
-                    _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
-                },
-                Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
-            }
+            },
+            Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
         };
         println!("{}", serde_json::to_string(&response)?);
     }
@@ -3326,6 +3324,14 @@ fn mcp_stable_tools_list_result(config: &McpServerConfig) -> Value {
     serde_json::json!({
         "tools": config.tool_definitions.clone()
     })
+}
+
+fn request_speaks_draft(request: &Value) -> bool {
+    request
+        .get("params")
+        .and_then(|params| params.get("_meta"))
+        .and_then(|meta| meta.get(MCP_PROTOCOL_VERSION_META_KEY))
+        .is_some()
 }
 
 fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
