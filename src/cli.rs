@@ -1392,6 +1392,15 @@ pub struct WatchArgs {
     pub format: OutputFormat,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// MCP wire protocol spoken by the `kagi mcp` server.
+pub enum McpProtocolSpec {
+    /// MCP 2026-07-28 draft: per-request `_meta` metadata and `server/discover`
+    Draft,
+    /// Stable MCP spec: classic initialize handshake for mainstream clients
+    Stable,
+}
+
 #[derive(Debug, Args)]
 /// Arguments for the `mcp` subcommand.
 pub struct McpArgs {
@@ -1409,6 +1418,10 @@ pub struct McpArgs {
     /// Expose MCP tools that mutate Kagi account or local CLI state
     #[arg(long)]
     pub enable_mutating_tools: bool,
+
+    /// MCP wire protocol version to serve
+    #[arg(long, value_name = "SPEC", value_enum, default_value_t = McpProtocolSpec::Draft)]
+    pub protocol: McpProtocolSpec,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -1440,6 +1453,10 @@ pub struct McpSetupArgs {
     /// Override the kagi executable path used by client launchers
     #[arg(long, value_name = "PATH")]
     pub kagi_path: Option<PathBuf>,
+
+    /// MCP wire protocol to write into client launcher arguments
+    #[arg(long, value_name = "SPEC", value_enum)]
+    pub protocol: Option<McpProtocolSpec>,
 
     /// Show the changes or commands without writing files or running client CLIs
     #[arg(long)]

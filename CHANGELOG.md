@@ -7,6 +7,11 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- `kagi mcp --protocol stable` serves the stable MCP specification (`initialize` handshake, `ping`, `tools/list`, `tools/call`) alongside the default draft `2026-07-28` protocol.
+- `kagi mcp install`, `setup`, and `auth` accept `--protocol draft|stable` and write the protocol flag into the client launcher arguments.
+
 ## [0.17.2]
 
 ### Fixed

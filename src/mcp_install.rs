@@ -1,4 +1,4 @@
-use crate::cli::{McpClient, McpSetupArgs};
+use crate::cli::{McpClient, McpProtocolSpec, McpSetupArgs};
 use crate::error::KagiError;
 use jsonc_parser::ParseOptions;
 use serde_json::{Map, Value, json};
@@ -26,7 +26,13 @@ pub fn run_mcp_setup(args: McpSetupArgs) -> Result<(), KagiError> {
 
     let mut results = Vec::new();
     for target in targets {
-        match install_target(target, &args.server_name, &kagi_path, args.dry_run) {
+        match install_target(
+            target,
+            &args.server_name,
+            &kagi_path,
+            args.protocol,
+            args.dry_run,
+        ) {
             Ok(detail) => results.push(SetupResult {
                 target,
                 success: true,
@@ -71,6 +77,7 @@ pub fn offer_mcp_setup_after_auth() -> Result<(), KagiError> {
         all: false,
         server_name: "kagi-mcp".to_string(),
         kagi_path: None,
+        protocol: None,
         dry_run: false,
     })
 }
@@ -166,17 +173,18 @@ fn install_target(
     target: McpClient,
     server_name: &str,
     kagi_path: &Path,
+    protocol: Option<McpProtocolSpec>,
     dry_run: bool,
 ) -> Result<String, KagiError> {
     match target {
-        McpClient::ClaudeCode => install_claude_code(server_name, kagi_path, dry_run),
-        McpClient::Codex => write_codex_config(server_name, kagi_path, dry_run),
+        McpClient::ClaudeCode => install_claude_code(server_name, kagi_path, protocol, dry_run),
+        McpClient::Codex => write_codex_config(server_name, kagi_path, protocol, dry_run),
         McpClient::VsCode => write_mcp_servers_config(
             vscode_user_mcp_config_path(),
             JsonFlavor::Json,
             "servers",
             server_name,
-            stdio_server_entry(kagi_path),
+            stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Cursor => write_mcp_servers_config(
@@ -184,7 +192,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            stdio_server_entry(kagi_path),
+            stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Windsurf => write_mcp_servers_config(
@@ -192,7 +200,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            stdio_server_entry(kagi_path),
+            stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Gemini => write_mcp_servers_config(
@@ -200,7 +208,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            stdio_server_entry(kagi_path),
+            stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Opencode => write_mcp_servers_config(
@@ -210,7 +218,7 @@ fn install_target(
             server_name,
             json!({
                 "type": "local",
-                "command": [path_string(kagi_path), "mcp"],
+                "command": mcp_command_array(kagi_path, protocol),
                 "enabled": true
             }),
             dry_run,
@@ -220,7 +228,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            cline_stdio_server_entry(kagi_path),
+            cline_stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::RooCode => write_mcp_servers_config(
@@ -228,7 +236,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            cline_stdio_server_entry(kagi_path),
+            cline_stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Droid => write_mcp_servers_config(
@@ -236,7 +244,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            droid_stdio_server_entry(kagi_path),
+            droid_stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::Antigravity => write_mcp_servers_config(
@@ -247,7 +255,7 @@ fn install_target(
             JsonFlavor::Json,
             "mcpServers",
             server_name,
-            stdio_server_entry(kagi_path),
+            stdio_server_entry(kagi_path, protocol),
             dry_run,
         ),
         McpClient::ClaudeDesktop => {
@@ -257,7 +265,7 @@ fn install_target(
                 JsonFlavor::Json,
                 "mcpServers",
                 server_name,
-                stdio_server_entry(kagi_path),
+                stdio_server_entry(kagi_path, protocol),
                 dry_run,
             )
         }
@@ -267,9 +275,10 @@ fn install_target(
 fn install_claude_code(
     server_name: &str,
     kagi_path: &Path,
+    protocol: Option<McpProtocolSpec>,
     dry_run: bool,
 ) -> Result<String, KagiError> {
-    let args = vec![
+    let mut args = vec![
         "mcp".to_string(),
         "add".to_string(),
         "--scope".to_string(),
@@ -279,6 +288,7 @@ fn install_claude_code(
         path_string(kagi_path),
         "mcp".to_string(),
     ];
+    args.extend(mcp_flag_args(protocol));
 
     if dry_run || find_on_path("claude").is_some() {
         return run_client_command("claude", args, dry_run);
@@ -289,7 +299,7 @@ fn install_claude_code(
         JsonFlavor::Json,
         "mcpServers",
         server_name,
-        stdio_server_entry(kagi_path),
+        stdio_server_entry(kagi_path, protocol),
         false,
     )
 }
@@ -409,27 +419,56 @@ fn object_entry<'a>(
     })
 }
 
-fn stdio_server_entry(kagi_path: &Path) -> Value {
+fn mcp_args(protocol: Option<McpProtocolSpec>) -> Vec<String> {
+    let mut args = vec!["mcp".to_string()];
+    args.extend(mcp_flag_args(protocol));
+    args
+}
+
+fn mcp_command_array(kagi_path: &Path, protocol: Option<McpProtocolSpec>) -> Vec<String> {
+    let mut command = vec![path_string(kagi_path)];
+    command.extend(mcp_args(protocol));
+    command
+}
+
+fn mcp_flag_args(protocol: Option<McpProtocolSpec>) -> Vec<String> {
+    match protocol {
+        Some(spec) => vec![
+            "--protocol".to_string(),
+            protocol_spec_name(spec).to_string(),
+        ],
+        None => Vec::new(),
+    }
+}
+
+fn protocol_spec_name(spec: McpProtocolSpec) -> &'static str {
+    match spec {
+        McpProtocolSpec::Draft => "draft",
+        McpProtocolSpec::Stable => "stable",
+    }
+}
+
+fn stdio_server_entry(kagi_path: &Path, protocol: Option<McpProtocolSpec>) -> Value {
     json!({
         "command": path_string(kagi_path),
-        "args": ["mcp"]
+        "args": mcp_args(protocol)
     })
 }
 
-fn cline_stdio_server_entry(kagi_path: &Path) -> Value {
+fn cline_stdio_server_entry(kagi_path: &Path, protocol: Option<McpProtocolSpec>) -> Value {
     json!({
         "command": path_string(kagi_path),
-        "args": ["mcp"],
+        "args": mcp_args(protocol),
         "disabled": false,
         "autoApprove": []
     })
 }
 
-fn droid_stdio_server_entry(kagi_path: &Path) -> Value {
+fn droid_stdio_server_entry(kagi_path: &Path, protocol: Option<McpProtocolSpec>) -> Value {
     json!({
         "type": "stdio",
         "command": path_string(kagi_path),
-        "args": ["mcp"],
+        "args": mcp_args(protocol),
         "disabled": false
     })
 }
@@ -437,6 +476,7 @@ fn droid_stdio_server_entry(kagi_path: &Path) -> Value {
 fn write_codex_config(
     server_name: &str,
     kagi_path: &Path,
+    protocol: Option<McpProtocolSpec>,
     dry_run: bool,
 ) -> Result<String, KagiError> {
     let path = home_dir().join(".codex").join("config.toml");
@@ -449,7 +489,12 @@ fn write_codex_config(
     );
     server.insert(
         "args".to_string(),
-        toml::Value::Array(vec![toml::Value::String("mcp".to_string())]),
+        toml::Value::Array(
+            mcp_args(protocol)
+                .into_iter()
+                .map(toml::Value::String)
+                .collect(),
+        ),
     );
 
     if dry_run {

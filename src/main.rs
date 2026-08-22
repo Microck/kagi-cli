@@ -3123,6 +3123,7 @@ async fn run_assistant_repl(args: AssistantReplArgs, token: &str) -> Result<(), 
 struct McpServerConfig {
     default_output: Option<OutputFormat>,
     enable_mutating_tools: bool,
+    stable_spec: bool,
     tool_definitions: Vec<Value>,
 }
 
@@ -3131,6 +3132,16 @@ const MCP_PROTOCOL_VERSION_META_KEY: &str = "io.modelcontextprotocol/protocolVer
 const MCP_CLIENT_INFO_META_KEY: &str = "io.modelcontextprotocol/clientInfo";
 const MCP_CLIENT_CAPABILITIES_META_KEY: &str = "io.modelcontextprotocol/clientCapabilities";
 const MCP_CACHE_TTL_MS: u64 = 3_600_000;
+
+/// Stable MCP protocol versions accepted by `--protocol stable`, newest first.
+const MCP_STABLE_PROTOCOL_VERSIONS: [&str; 5] = [
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
+    "2024-10-07",
+];
+const MCP_STABLE_LATEST_VERSION: &str = "2025-11-25";
 
 #[derive(Debug)]
 struct McpProtocolError {
@@ -3150,11 +3161,16 @@ impl McpProtocolError {
 }
 
 impl McpServerConfig {
-    fn new(default_output: Option<OutputFormat>, enable_mutating_tools: bool) -> Self {
+    fn new(
+        default_output: Option<OutputFormat>,
+        enable_mutating_tools: bool,
+        stable_spec: bool,
+    ) -> Self {
         let tool_definitions = build_mcp_tool_definitions(enable_mutating_tools);
         Self {
             default_output,
             enable_mutating_tools,
+            stable_spec,
             tool_definitions,
         }
     }
@@ -3166,7 +3182,8 @@ impl McpServerConfig {
 
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
-    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools);
+    let stable_spec = matches!(args.protocol, cli::McpProtocolSpec::Stable);
+    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools, stable_spec);
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =
@@ -3193,43 +3210,49 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
             continue;
         };
 
-        let response = match validate_mcp_request(&request) {
-            Ok(()) => match method {
-                "server/discover" => serde_json::json!({
+        let response = if config.stable_spec {
+            match method {
+                "initialize" => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
-                    "result": mcp_discover_result(),
+                    "result": mcp_stable_initialize_result(&request),
                 }),
-                "tools/list" => match mcp_tools_list_result(&request, &config) {
-                    Ok(result) => serde_json::json!({
+                "ping" => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {},
+                }),
+                "tools/list" => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": mcp_stable_tools_list_result(&config),
+                }),
+                "tools/call" => mcp_tools_call_response(id, &request, profile, &config).await,
+                _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
+            }
+        } else {
+            match validate_mcp_request(&request) {
+                Ok(()) => match method {
+                    "server/discover" => serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
-                        "result": result,
+                        "result": mcp_discover_result(),
                     }),
-                    Err(error) => {
-                        json_rpc_error_with_data(id, error.code, error.message, error.data)
-                    }
-                },
-                "tools/call" => match validate_mcp_tool_call(&request, &config) {
-                    Ok(()) => match run_mcp_tool_call(&request, profile, &config).await {
+                    "tools/list" => match mcp_tools_list_result(&request, &config) {
                         Ok(result) => serde_json::json!({
                             "jsonrpc": "2.0",
                             "id": id,
                             "result": result,
                         }),
-                        Err(error) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "result": mcp_tool_result(error.to_string(), true, false),
-                        }),
+                        Err(error) => {
+                            json_rpc_error_with_data(id, error.code, error.message, error.data)
+                        }
                     },
-                    Err(error) => {
-                        json_rpc_error_with_data(id, error.code, error.message, error.data)
-                    }
+                    "tools/call" => mcp_tools_call_response(id, &request, profile, &config).await,
+                    _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
                 },
-                _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
-            },
-            Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
+                Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
+            }
         };
         println!("{}", serde_json::to_string(&response)?);
     }
@@ -3253,6 +3276,55 @@ fn json_rpc_error_with_data(id: Value, code: i64, message: String, data: Option<
         "jsonrpc": "2.0",
         "id": id,
         "error": error,
+    })
+}
+
+async fn mcp_tools_call_response(
+    id: Value,
+    request: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Value {
+    match validate_mcp_tool_call(request, config) {
+        Ok(()) => match run_mcp_tool_call(request, profile, config).await {
+            Ok(result) => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result,
+            }),
+            Err(error) => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": mcp_tool_result(error.to_string(), true, false),
+            }),
+        },
+        Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
+    }
+}
+
+fn mcp_stable_initialize_result(request: &Value) -> Value {
+    let requested_version = request
+        .get("params")
+        .and_then(|params| params.get("protocolVersion"))
+        .and_then(Value::as_str);
+    let negotiated_version = requested_version
+        .filter(|version| MCP_STABLE_PROTOCOL_VERSIONS.contains(version))
+        .unwrap_or(MCP_STABLE_LATEST_VERSION);
+    serde_json::json!({
+        "protocolVersion": negotiated_version,
+        "serverInfo": {
+            "name": "kagi-cli",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "capabilities": {
+            "tools": {}
+        }
+    })
+}
+
+fn mcp_stable_tools_list_result(config: &McpServerConfig) -> Value {
+    serde_json::json!({
+        "tools": config.tool_definitions.clone()
     })
 }
 
@@ -3346,7 +3418,7 @@ fn mcp_tools_list_result(
     let params = request
         .get("params")
         .and_then(Value::as_object)
-        .expect("validated MCP request params should be an object");
+        .ok_or_else(|| McpProtocolError::invalid_params("MCP request params must be an object"))?;
     if params.get("cursor").is_some_and(|cursor| !cursor.is_null()) {
         return Err(McpProtocolError::invalid_params(
             "MCP tools/list does not issue pagination cursors because the complete tool catalog fits in one response",
@@ -3368,7 +3440,7 @@ fn validate_mcp_tool_call(
     let params = request
         .get("params")
         .and_then(Value::as_object)
-        .expect("validated MCP request params should be an object");
+        .ok_or_else(|| McpProtocolError::invalid_params("MCP request params must be an object"))?;
     let name = params
         .get("name")
         .and_then(Value::as_str)

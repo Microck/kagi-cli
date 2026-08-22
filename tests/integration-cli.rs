@@ -1348,6 +1348,81 @@ fn mcp_install_writes_opencode_config_without_removing_existing_settings() {
 }
 
 #[test]
+fn mcp_install_opencode_with_stable_protocol_flag() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir
+        .path()
+        .join(".config")
+        .join("opencode")
+        .join("opencode.json");
+
+    let output = run_kagi(
+        &[
+            "mcp",
+            "install",
+            "--target",
+            "opencode",
+            "--kagi-path",
+            "/opt/kagi/bin/kagi",
+            "--protocol",
+            "stable",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(path).expect("opencode config should be written");
+    let config: Value = serde_json::from_str(&raw).expect("opencode config should parse");
+    assert_eq!(
+        config["mcp"]["kagi-mcp"],
+        json!({
+            "type": "local",
+            "command": ["/opt/kagi/bin/kagi", "mcp", "--protocol", "stable"],
+            "enabled": true
+        })
+    );
+}
+
+#[test]
+fn mcp_setup_codex_with_stable_protocol_flag() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let path = tempdir.path().join(".codex").join("config.toml");
+
+    let output = run_kagi(
+        &[
+            "mcp",
+            "setup",
+            "--target",
+            "codex",
+            "--kagi-path",
+            "/tmp/kagi",
+            "--protocol",
+            "stable",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let raw = fs::read_to_string(path).expect("Codex config should be written");
+    let config: toml::Value = toml::from_str(&raw).expect("Codex config should parse");
+    assert_eq!(
+        config["mcp_servers"]["kagi-mcp"]["command"].as_str(),
+        Some("/tmp/kagi")
+    );
+    assert_eq!(
+        config["mcp_servers"]["kagi-mcp"]["args"]
+            .as_array()
+            .expect("args should be an array")
+            .iter()
+            .map(|value| value.as_str().expect("arg should be a string"))
+            .collect::<Vec<_>>(),
+        vec!["mcp", "--protocol", "stable"]
+    );
+}
+
+#[test]
 fn mcp_install_writes_codex_config_without_client_cli() {
     let tempdir = TempDir::new().expect("tempdir");
     let path = tempdir.path().join(".codex").join("config.toml");
@@ -2936,6 +3011,182 @@ fn mcp_rejects_unsupported_protocol_versions() {
     assert_eq!(
         response["error"]["data"]["supported"],
         json!(["2026-07-28"])
+    );
+}
+
+fn mcp_stable_request(id: Value, method: &str, params: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": params,
+    })
+}
+
+fn mcp_responses(stdout: &[u8]) -> Vec<Value> {
+    std::str::from_utf8(stdout)
+        .expect("mcp stdout is utf8")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("mcp json line parses"))
+        .collect()
+}
+
+#[test]
+fn mcp_stable_protocol_handles_initialize_ping_and_tools_list() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_stable_request(
+            json!(1),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "opencode", "version": "1.18.21" }
+            }),
+        ),
+        mcp_stable_request(json!(2), "tools/list", json!({})),
+        mcp_stable_request(json!(3), "ping", json!({})),
+        mcp_stable_request(json!(4), "server/discover", json!({})),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|request| serde_json::to_string(request).expect("request serializes"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = run_kagi_with_stdin(
+        &["mcp", "--protocol", "stable"],
+        &format!("{stdin}\n"),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    assert_eq!(
+        responses.len(),
+        4,
+        "one response per request: {responses:?}"
+    );
+
+    let initialize = responses
+        .iter()
+        .find(|response| response["id"] == 1)
+        .expect("initialize response");
+    assert_eq!(initialize["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(initialize["result"]["serverInfo"]["name"], "kagi-cli");
+    assert!(
+        initialize["result"]["capabilities"]["tools"].is_object(),
+        "initialize should advertise tools capability: {initialize:?}"
+    );
+
+    let tools_list = responses
+        .iter()
+        .find(|response| response["id"] == 2)
+        .expect("tools/list response");
+    let tools = tools_list["result"]["tools"]
+        .as_array()
+        .expect("tools array");
+    assert!(!tools.is_empty(), "stable tools list should not be empty");
+
+    let ping = responses
+        .iter()
+        .find(|response| response["id"] == 3)
+        .expect("ping response");
+    assert_eq!(ping["result"], json!({}));
+
+    let discover = responses
+        .iter()
+        .find(|response| response["id"] == 4)
+        .expect("server/discover response");
+    assert_eq!(
+        discover["error"]["code"], -32601,
+        "draft-only server/discover should be unknown in stable mode: {discover:?}"
+    );
+}
+
+#[test]
+fn mcp_stable_protocol_falls_back_to_latest_supported_version() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(
+        json!(1),
+        "initialize",
+        json!({
+            "protocolVersion": "1999-01-01",
+            "capabilities": {},
+            "clientInfo": { "name": "opencode", "version": "1.18.21" }
+        }),
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp", "--protocol", "stable"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
+}
+
+#[test]
+fn mcp_draft_default_rejects_initialize_without_draft_metadata() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",",
+            "\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},",
+            "\"clientInfo\":{\"name\":\"opencode\",\"version\":\"1.18.21\"}}}\n"
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["error"]["code"], -32602);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("error message")
+            .contains("_meta")
+    );
+}
+
+#[test]
+fn mcp_stable_protocol_unknown_tool_returns_json_rpc_error() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(
+        json!(1),
+        "tools/call",
+        json!({
+            "name": "kagi_nope",
+            "arguments": {}
+        }),
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp", "--protocol", "stable"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["id"], 1);
+    assert_eq!(response["error"]["code"], -32602);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("Unknown tool")
     );
 }
 
