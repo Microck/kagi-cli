@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: fix-pr-169
@@ -53,71 +54,8 @@ jobs:
             exit 1
           fi
 
-      - name: Decode and apply review fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/fix-pr-169.b64 <<'B64'
-            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
-            BzAINZd1Zwqbvf8HLLOjs5VCAAA=
-          B64
-          tr -d '\n ' < /tmp/fix-pr-169.b64 | base64 --decode | gzip --decompress > /tmp/fix_pr_169.py
-          python3 /tmp/fix_pr_169.py
+      - name: Apply review fixes
+        run: python3 .github/scripts/fix_pr_169.py
 
       - name: Verify merge resolution
         shell: bash
@@ -147,10 +85,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/fix-pr-169.yml
+          rm -f .github/scripts/fix_pr_169.py .github/workflows/fix-pr-169.yml
           git add -A
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix: address MCP protocol review feedback"
           git push origin HEAD:automation/pr-169-fix
+
+      - name: Report repair failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/issues/170/comments" \
+            -f body="PR 169 repair automation failed: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
