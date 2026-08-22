@@ -43,6 +43,17 @@ pub enum ErrorOutputFormat {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+/// Output format for account usage reports.
+pub enum UsageOutputFormat {
+    /// Pretty-printed JSON for scripts and inspection.
+    Json,
+    /// Minified JSON for compact automation output.
+    Compact,
+    /// Human-readable terminal summary.
+    Pretty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 /// AI agent or harness that can be configured to launch `kagi mcp`.
 pub enum McpClient {
     /// Claude Code CLI, configured through `claude mcp add`
@@ -309,6 +320,9 @@ pub enum Commands {
     Skills(SkillsCommand),
     /// Launch the auth setup wizard or use credential management subcommands
     Auth(AuthCommand),
+    /// Inspect account plan, AI allowance, renewal, and calendar-month usage
+    #[command(visible_alias = "billing")]
+    Usage(UsageArgs),
     /// Summarize a URL or text with Kagi's public API or subscriber web Summarizer
     Summarize(SummarizeArgs),
     /// Extract a page's full content as markdown through Kagi's Extract API
@@ -649,6 +663,14 @@ impl BatchSearchArgs {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Args)]
+/// Arguments for the `usage` subcommand.
+pub struct UsageArgs {
+    /// Output format
+    #[arg(long, value_name = "FORMAT", value_enum, default_value = "json")]
+    pub format: UsageOutputFormat,
 }
 
 #[derive(Debug, Args)]

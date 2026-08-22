@@ -1,0 +1,80 @@
+---
+title: "usage"
+description: "Inspect Kagi plan, AI cost allowance, balance, renewal date, and calendar-month usage."
+---
+
+# `kagi usage`
+
+`kagi usage` reads the authenticated Kagi billing page and returns the current
+account usage summary. `kagi billing` is a visible alias for the same command;
+both names return the same output schema.
+
+## Synopsis
+
+```bash
+kagi usage [--format json|compact|pretty]
+kagi billing [--format json|compact|pretty]
+kagi --profile work usage --format pretty
+```
+
+This command requires `KAGI_SESSION_TOKEN` or a session token stored with
+`kagi auth set --session-token`. The global `--profile` option selects a named
+account configuration before the billing request is sent.
+
+## Output
+
+The default JSON response contains:
+
+- `plan` when Kagi exposes the current plan name
+- `ai_cost.used_usd`
+- `ai_cost.limit_usd`
+- `account_balance_usd` when present
+- `next_renewal` when present
+- `usage_period` for the displayed calendar month
+- `daily_usage`, with date, search count, and AI cost for each available day
+
+```json
+{
+  "plan": "Ultimate",
+  "ai_cost": {
+    "used_usd": 0.0,
+    "limit_usd": 25.0
+  },
+  "account_balance_usd": 5.0,
+  "next_renewal": "2026-01-28",
+  "usage_period": "December 2025",
+  "daily_usage": [
+    {
+      "date": "2025-12-29",
+      "searches": 2,
+      "ai_cost_usd": 0.0
+    }
+  ]
+}
+```
+
+Use compact JSON for scripts that minimize output size:
+
+```bash
+kagi usage --format compact
+```
+
+Use terminal-oriented output for direct inspection:
+
+```bash
+kagi usage --format pretty
+```
+
+The billing allowance follows the account billing period. The daily table is
+the calendar-month view shown by Kagi and may not cover the same date range.
+The command reports both values without treating them as equivalent.
+
+## Authentication failures
+
+An expired session token normally redirects to Kagi sign-in. The command
+converts that response into an authentication error and never prints the token.
+
+```bash
+kagi auth status
+kagi auth check
+```
