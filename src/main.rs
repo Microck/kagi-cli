@@ -3145,6 +3145,17 @@ const MCP_CLIENT_INFO_META_KEY: &str = "io.modelcontextprotocol/clientInfo";
 const MCP_CLIENT_CAPABILITIES_META_KEY: &str = "io.modelcontextprotocol/clientCapabilities";
 const MCP_CACHE_TTL_MS: u64 = 3_600_000;
 
+/// Stable MCP protocol versions accepted by the `initialize` handshake, newest
+/// first.
+const MCP_STABLE_PROTOCOL_VERSIONS: [&str; 5] = [
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05",
+    "2024-10-07",
+];
+const MCP_STABLE_LATEST_VERSION: &str = "2025-11-25";
+
 #[derive(Debug)]
 struct McpProtocolError {
     code: i64,
@@ -3206,14 +3217,35 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
             continue;
         };
 
-        let response = match validate_mcp_request(&request) {
+        // The server auto-negotiates per request: draft `2026-07-28` requests carry
+        // the draft protocol version in `params._meta`, while stable-spec requests
+        // (including `initialize`) do not. The stable spec also permits `_meta`
+        // (e.g. `progressToken`), so discriminate on the namespaced draft key.
+        let speaks_draft = request_speaks_draft(&request);
+        let draft_validation = if speaks_draft {
+            validate_mcp_request(&request)
+        } else {
+            Ok(())
+        };
+
+        let response = match draft_validation {
             Ok(()) => match method {
-                "server/discover" => serde_json::json!({
+                "initialize" => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": mcp_stable_initialize_result(&request),
+                }),
+                "ping" => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {},
+                }),
+                "server/discover" if speaks_draft => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": mcp_discover_result(),
                 }),
-                "tools/list" => match mcp_tools_list_result(&request, &config) {
+                "tools/list" if speaks_draft => match mcp_tools_list_result(&request, &config) {
                     Ok(result) => serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -3223,23 +3255,12 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
                         json_rpc_error_with_data(id, error.code, error.message, error.data)
                     }
                 },
-                "tools/call" => match validate_mcp_tool_call(&request, &config) {
-                    Ok(()) => match run_mcp_tool_call(&request, profile, &config).await {
-                        Ok(result) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "result": result,
-                        }),
-                        Err(error) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "result": mcp_tool_result(error.to_string(), true, false),
-                        }),
-                    },
-                    Err(error) => {
-                        json_rpc_error_with_data(id, error.code, error.message, error.data)
-                    }
-                },
+                "tools/list" => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": mcp_stable_tools_list_result(&config),
+                }),
+                "tools/call" => mcp_tools_call_response(id, &request, profile, &config).await,
                 _ => json_rpc_error(id, -32601, format!("Method not found: {method}")),
             },
             Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
@@ -3267,6 +3288,63 @@ fn json_rpc_error_with_data(id: Value, code: i64, message: String, data: Option<
         "id": id,
         "error": error,
     })
+}
+
+async fn mcp_tools_call_response(
+    id: Value,
+    request: &Value,
+    profile: Option<&str>,
+    config: &McpServerConfig,
+) -> Value {
+    match validate_mcp_tool_call(request, config) {
+        Ok(()) => match run_mcp_tool_call(request, profile, config).await {
+            Ok(result) => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result,
+            }),
+            Err(error) => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": mcp_tool_result(error.to_string(), true, false),
+            }),
+        },
+        Err(error) => json_rpc_error_with_data(id, error.code, error.message, error.data),
+    }
+}
+
+fn mcp_stable_initialize_result(request: &Value) -> Value {
+    let requested_version = request
+        .get("params")
+        .and_then(|params| params.get("protocolVersion"))
+        .and_then(Value::as_str);
+    let negotiated_version = requested_version
+        .filter(|version| MCP_STABLE_PROTOCOL_VERSIONS.contains(version))
+        .unwrap_or(MCP_STABLE_LATEST_VERSION);
+    serde_json::json!({
+        "protocolVersion": negotiated_version,
+        "serverInfo": {
+            "name": "kagi-cli",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "capabilities": {
+            "tools": {}
+        }
+    })
+}
+
+fn mcp_stable_tools_list_result(config: &McpServerConfig) -> Value {
+    serde_json::json!({
+        "tools": config.tool_definitions.clone()
+    })
+}
+
+fn request_speaks_draft(request: &Value) -> bool {
+    request
+        .get("params")
+        .and_then(|params| params.get("_meta"))
+        .and_then(|meta| meta.get(MCP_PROTOCOL_VERSION_META_KEY))
+        .is_some()
 }
 
 fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
@@ -3359,7 +3437,7 @@ fn mcp_tools_list_result(
     let params = request
         .get("params")
         .and_then(Value::as_object)
-        .expect("validated MCP request params should be an object");
+        .ok_or_else(|| McpProtocolError::invalid_params("MCP request params must be an object"))?;
     if params.get("cursor").is_some_and(|cursor| !cursor.is_null()) {
         return Err(McpProtocolError::invalid_params(
             "MCP tools/list does not issue pagination cursors because the complete tool catalog fits in one response",
@@ -3381,7 +3459,7 @@ fn validate_mcp_tool_call(
     let params = request
         .get("params")
         .and_then(Value::as_object)
-        .expect("validated MCP request params should be an object");
+        .ok_or_else(|| McpProtocolError::invalid_params("MCP request params must be an object"))?;
     let name = params
         .get("name")
         .and_then(Value::as_str)

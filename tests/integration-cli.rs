@@ -2940,7 +2940,10 @@ fn mcp_requires_modern_request_metadata() {
     let tempdir = TempDir::new().expect("tempdir");
     let output = run_kagi_with_stdin(
         &["mcp"],
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}\n",
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"_meta\":",
+            "{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}\n"
+        ),
         &[],
         tempdir.path(),
     );
@@ -2978,6 +2981,237 @@ fn mcp_rejects_unsupported_protocol_versions() {
         response["error"]["data"]["supported"],
         json!(["2026-07-28"])
     );
+}
+
+fn mcp_stable_request(id: Value, method: &str, params: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": params,
+    })
+}
+
+fn mcp_responses(stdout: &[u8]) -> Vec<Value> {
+    std::str::from_utf8(stdout)
+        .expect("mcp stdout is utf8")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("mcp json line parses"))
+        .collect()
+}
+
+#[test]
+fn mcp_auto_answers_initialize_ping_and_tools_list() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_stable_request(
+            json!(1),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "opencode", "version": "1.18.21" }
+            }),
+        ),
+        mcp_stable_request(json!(2), "tools/list", json!({})),
+        mcp_stable_request(json!(3), "ping", json!({})),
+        mcp_stable_request(json!(4), "server/discover", json!({})),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|request| serde_json::to_string(request).expect("request serializes"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = run_kagi_with_stdin(&["mcp"], &format!("{stdin}\n"), &[], tempdir.path());
+
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    assert_eq!(
+        responses.len(),
+        4,
+        "one response per request: {responses:?}"
+    );
+
+    let initialize = responses
+        .iter()
+        .find(|response| response["id"] == 1)
+        .expect("initialize response");
+    assert_eq!(initialize["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(initialize["result"]["serverInfo"]["name"], "kagi-cli");
+    assert!(
+        initialize["result"]["capabilities"]["tools"].is_object(),
+        "initialize should advertise tools capability: {initialize:?}"
+    );
+
+    let tools_list = responses
+        .iter()
+        .find(|response| response["id"] == 2)
+        .expect("tools/list response");
+    let tools = tools_list["result"]["tools"]
+        .as_array()
+        .expect("tools array");
+    assert!(!tools.is_empty(), "stable tools list should not be empty");
+
+    let ping = responses
+        .iter()
+        .find(|response| response["id"] == 3)
+        .expect("ping response");
+    assert_eq!(ping["result"], json!({}));
+
+    let discover = responses
+        .iter()
+        .find(|response| response["id"] == 4)
+        .expect("server/discover response");
+    assert_eq!(
+        discover["error"]["code"], -32601,
+        "draft-only server/discover should be unknown without draft metadata: {discover:?}"
+    );
+}
+
+#[test]
+fn mcp_auto_falls_back_to_latest_supported_version() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(
+        json!(1),
+        "initialize",
+        json!({
+            "protocolVersion": "1999-01-01",
+            "capabilities": {},
+            "clientInfo": { "name": "opencode", "version": "1.18.21" }
+        }),
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
+}
+
+#[test]
+fn mcp_auto_answers_initialize_without_draft_metadata() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",",
+            "\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},",
+            "\"clientInfo\":{\"name\":\"opencode\",\"version\":\"1.18.21\"}}}\n"
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["id"], 1);
+    assert!(
+        response.get("error").is_none(),
+        "initialize without draft metadata should be answered, not rejected: {response:?}"
+    );
+    assert_eq!(response["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
+}
+
+#[test]
+fn mcp_auto_unknown_tool_without_draft_metadata_returns_json_rpc_error() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(
+        json!(1),
+        "tools/call",
+        json!({
+            "name": "kagi_nope",
+            "arguments": {}
+        }),
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["id"], 1);
+    assert_eq!(response["error"]["code"], -32602);
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("Unknown tool")
+    );
+}
+
+#[test]
+fn mcp_auto_negotiates_per_request_in_one_session() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_request(json!(1), "server/discover", json!({})),
+        mcp_stable_request(
+            json!(2),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": { "name": "opencode", "version": "1.18.21" }
+            }),
+        ),
+        mcp_request(json!(3), "tools/list", json!({})),
+        mcp_stable_request(json!(4), "tools/list", json!({})),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|request| serde_json::to_string(request).expect("request serializes"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = run_kagi_with_stdin(&["mcp"], &format!("{stdin}\n"), &[], tempdir.path());
+
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    assert_eq!(
+        responses.len(),
+        4,
+        "one response per request: {responses:?}"
+    );
+
+    let discover = responses
+        .iter()
+        .find(|response| response["id"] == 1)
+        .expect("draft server/discover response");
+    assert_eq!(
+        discover["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+        "kagi-cli"
+    );
+
+    let initialize = responses
+        .iter()
+        .find(|response| response["id"] == 2)
+        .expect("stable initialize response");
+    assert_eq!(initialize["result"]["protocolVersion"], "2025-06-18");
+
+    let draft_tools_list = responses
+        .iter()
+        .find(|response| response["id"] == 3)
+        .expect("draft tools/list response");
+    assert_eq!(draft_tools_list["result"]["resultType"], "complete");
+
+    let stable_tools_list = responses
+        .iter()
+        .find(|response| response["id"] == 4)
+        .expect("stable tools/list response");
+    assert!(stable_tools_list["result"]["tools"].is_array());
 }
 
 #[test]
