@@ -1,0 +1,14 @@
+{
+  "title": "Guides",
+  "defaultOpen": true,
+  "pages": [
+    "---Getting Started",
+    "installation",
+    "quickstart",
+    "authentication",
+    "---Usage",
+    "workflows",
+    "advanced-usage",
+    "troubleshooting"
+  ]
+}

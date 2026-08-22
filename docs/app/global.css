@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'remark-github-blockquote-alert/alert.css';
+
+/*
+ * Kagi brand theme (ported from Mintlify docs.json "maple" theme):
+ * primary #ffb319, light #ffc85a, dark #18181a
+ */
+:root {
+  --color-fd-primary: #ffb319;
+}
+
+.dark {
+  --color-fd-primary: #ffc85a;
+  --color-fd-background: #18181a;
+}

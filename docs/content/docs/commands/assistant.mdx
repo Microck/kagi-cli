@@ -1,0 +1,440 @@
+---
+title: "assistant"
+description: "Complete reference for *kagi* assistant command - prompt Kagi Assistant, use saved assistants, and manage Assistant threads and custom assistants."
+---
+
+# `kagi assistant`
+
+Prompt Kagi Assistant, continue an existing thread, use a saved assistant profile, and manage both Assistant threads and custom assistants from the terminal.
+
+![Assistant demo](/images/demos/assistant.gif)
+
+## Synopsis
+
+```bash
+kagi assistant [OPTIONS] <QUERY>
+kagi assistant --stream [--stream-output text|json] <QUERY>
+kagi assistant --contract decision <QUERY>
+kagi assistant --contract-file ./contract.json <QUERY>
+kagi assistant thread list
+kagi assistant thread get <THREAD_ID>
+kagi assistant thread delete <THREAD_ID>
+kagi assistant thread export <THREAD_ID> [--format markdown|json]
+kagi assistant models
+kagi assistant repl [OPTIONS]
+kagi assistant custom list
+kagi assistant custom get <ID_OR_NAME>
+kagi assistant custom create <NAME> [OPTIONS]
+kagi assistant custom update <ID_OR_NAME> [OPTIONS]
+kagi assistant custom delete <ID_OR_NAME>
+```
+
+## Authentication
+
+**Required:** `KAGI_SESSION_TOKEN`
+
+The Assistant feature uses Kagi's authenticated web-product flow, not the paid public API token path.
+
+## Prompt Mode
+
+Use prompt mode to start a new thread or continue an existing one:
+
+```bash
+kagi assistant "plan a focused research session in the terminal"
+kagi assistant --thread-id <THREAD_ID> "turn that into a 3-item checklist"
+```
+
+### Prompt Arguments
+
+#### `<QUERY>`
+
+The prompt to send to Kagi Assistant.
+
+#### `--thread-id <THREAD_ID>`
+
+Continue an existing Assistant thread.
+
+#### `--assistant <ASSISTANT>`
+
+Use a saved assistant by exact name, profile id, or invoke-profile slug.
+
+```bash
+kagi assistant --assistant research "summarize the latest rust release"
+```
+
+#### `--format <FORMAT>`
+
+Output format for prompt mode.
+
+Possible values:
+
+- `json` - pretty JSON
+- `toon` - token-efficient structured output for LLM context
+- `pretty` - terminal-friendly thread id, message id, and reply content
+- `compact` - minified JSON
+- `markdown` - only the assistant reply content
+
+```bash
+kagi assistant --format pretty "What changed in Rust 1.86?"
+kagi assistant --format markdown "Write a release summary"
+```
+
+#### `--contract <NAME>`
+
+Ask Assistant to return only JSON that satisfies a built-in contract, then validate the final reply before printing it. Contract mode supports `--format json` and `--format compact`.
+
+Supported built-ins:
+
+- `decision` - requires `decision`, `rationale`, and `next_actions`
+- `checklist` - requires `items`
+- `plan` - requires `steps`
+
+```bash
+kagi assistant --contract decision "Should we ship this release?"
+```
+
+If the first reply is invalid, the CLI sends one repair prompt in the same thread. If the repaired reply still fails validation, the command exits with a contract error.
+
+#### `--contract-file <PATH>`
+
+Load a small JSON contract file. The supported subset is a top-level object with `required` and optional `properties.<key>.type` fields:
+
+```json
+{
+  "type": "object",
+  "required": ["summary", "verdict"],
+  "properties": {
+    "summary": { "type": "string" },
+    "verdict": { "type": "string" }
+  }
+}
+```
+
+Required entries default to `string` when `properties` does not specify a type. Supported types are `string`, `number`, `integer`, `boolean`, `object`, and `array`.
+
+#### `--no-color`
+
+Disable ANSI colors in `--format pretty`.
+
+#### `--stream`
+
+Stream Assistant output as it arrives instead of waiting for the final response. By default this writes incremental markdown deltas to stdout and flushes after each update:
+
+```bash
+kagi assistant --stream "Write a 3-line release note"
+```
+
+Use JSON mode when a script needs structured stream events:
+
+```bash
+kagi assistant --stream --stream-output json "Write a 3-line release note"
+```
+
+The final JSON event includes `message.usage` with prompt, completion, and total token counts plus `cost_usd` when Kagi supplies usage data.
+
+#### `--stream-output <MODE>`
+
+Select the streamed output mode. This option requires `--stream`.
+
+Possible values:
+
+- `text` - default, prints only incremental markdown deltas
+- `json` - newline-delimited compact JSON events with `md_delta`, `thread`, `message`, and `meta`
+
+#### `--model <MODEL>`
+
+Override the model slug for a single prompt.
+
+```bash
+kagi assistant --model gpt-5-4-nano "reply with only the model name"
+```
+
+#### `--lens <LENS_ID>`
+
+Override the Assistant lens id for a single prompt.
+
+This is the Assistant profile `lens_id`, not the search-command lens index used by `kagi search --lens`.
+
+#### `--web-access`
+#### `--no-web-access`
+
+Force internet access on or off for a single prompt.
+
+#### `--personalized`
+#### `--no-personalized`
+
+Force Kagi personalizations on or off for a single prompt.
+
+## REPL Mode
+
+`kagi assistant repl` starts a terminal chat loop that keeps the latest Assistant thread id and sends each prompt back into the same conversation.
+
+```bash
+kagi assistant repl --model gpt-5-4-nano --export ./assistant-transcript.json
+```
+
+REPL commands:
+
+- `/thread` - print the active thread id
+- `/exit` or `/quit` - close the REPL
+
+Useful options:
+
+- `--thread-id <THREAD_ID>` - continue an existing thread
+- `--assistant <ASSISTANT>` - use a saved assistant
+- `--model <MODEL>` - set the model for prompts in the session
+- `--format <FORMAT>` - `markdown`, `pretty`, `json`, or `compact`
+- `--export <PATH>` - write a JSON transcript on exit
+
+## Thread Subcommands
+
+### `kagi assistant thread list`
+
+List Assistant threads for the current account.
+
+```bash
+kagi assistant thread list | jq -r '.threads[].id'
+```
+
+### `kagi assistant thread get <THREAD_ID_OR_CHAT_URL>`
+
+Fetch one thread with its messages. This accepts either the thread ID or a Kagi Assistant chat URL.
+
+```bash
+kagi assistant thread get "$THREAD_ID"
+kagi assistant thread get "https://assistant.kagi.com/chat/$THREAD_ID"
+```
+
+### `kagi assistant thread delete <THREAD_ID_OR_CHAT_URL>`
+
+Delete one thread.
+
+```bash
+kagi assistant thread delete "$THREAD_ID"
+```
+
+### `kagi assistant thread export <THREAD_ID_OR_CHAT_URL>`
+
+Export one thread as markdown to stdout.
+
+```bash
+kagi assistant thread export "$THREAD_ID"
+```
+
+### `kagi assistant thread export <THREAD_ID_OR_CHAT_URL> --format json`
+
+Return the thread as structured JSON instead of markdown. This emits the same envelope shape as `thread get`.
+
+```bash
+kagi assistant thread export "$THREAD_ID" --format json
+```
+
+## Model Catalog
+
+### `kagi assistant models`
+
+List every base model available to the current account. This reads the account-level Assistant catalog and does not require a saved custom assistant.
+
+```bash
+kagi assistant models | jq -r '.models[].id'
+```
+
+## Custom Assistant Subcommands
+
+### `kagi assistant custom list`
+
+List built-in and custom assistants visible to the current account.
+
+```bash
+kagi assistant custom list | jq -r '.[] | "\(.name) \(.invoke_profile)"'
+```
+
+### `kagi assistant custom get <ID_OR_NAME>`
+
+Fetch one custom assistant definition by id or exact name.
+
+```bash
+kagi assistant custom get "Release Notes"
+```
+
+### `kagi assistant custom create <NAME>`
+
+Create a custom assistant.
+
+Supported options:
+
+- `--bang-trigger <TRIGGER>` - optional trigger without the leading `!`
+- `--web-access` / `--no-web-access`
+- `--lens <LENS_ID>`
+- `--personalized` / `--no-personalized`
+- `--model <MODEL>`
+- `--instructions <TEXT>`
+
+```bash
+kagi assistant custom create "Release Notes" \
+  --bang-trigger release \
+  --model gpt-5-4-nano \
+  --web-access \
+  --instructions "Summarize release posts with a changelog-first bias."
+```
+
+### `kagi assistant custom update <ID_OR_NAME>`
+
+Update a custom assistant by id or exact name.
+
+```bash
+kagi assistant custom update "Release Notes" \
+  --no-web-access \
+  --instructions "Stay strictly within the supplied text."
+```
+
+### `kagi assistant custom delete <ID_OR_NAME>`
+
+Delete a custom assistant by id or exact name.
+
+```bash
+kagi assistant custom delete "Release Notes"
+```
+
+## Output Contract
+
+Prompt mode returns:
+
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "thread": {
+    "id": "thread-1",
+    "title": "Greeting",
+    "ack": "2026-03-16T06:19:07Z",
+    "created_at": "2026-03-16T06:19:07Z",
+    "expires_at": "2026-03-16T07:19:07Z",
+    "saved": false,
+    "shared": false,
+    "branch_id": "00000000-0000-4000-0000-000000000000",
+    "folder_ids": []
+  },
+  "message": {
+    "id": "msg-1",
+    "thread_id": "thread-1",
+    "created_at": "2026-03-16T06:19:07Z",
+    "branch_list": [],
+    "state": "done",
+    "prompt": "Hello",
+    "reply_html": "<p>Hi</p>",
+    "markdown": "Hi",
+    "references_markdown": null,
+    "metadata_html": "<li>meta</li>",
+    "documents": [],
+    "profile": {
+      "model": "ki_quick",
+      "model_name": "Quick"
+    },
+    "trace_id": "trace-message-1"
+  }
+}
+```
+
+Contract mode returns only the validated contract JSON, not the normal Assistant envelope:
+
+```json
+{
+  "decision": "ship",
+  "rationale": "tests pass",
+  "next_actions": ["open PR"]
+}
+```
+
+`thread list` returns:
+
+```json
+{
+  "meta": {
+    "version": "202603171911.stage.707e740",
+    "trace": "trace-123"
+  },
+  "folders": [],
+  "threads": [
+    {
+      "id": "thread-1",
+      "title": "Greeting",
+      "url": "/assistant/thread-1",
+      "snippet": "Hello",
+      "saved": false,
+      "shared": false,
+      "folder_ids": []
+    }
+  ],
+  "pagination": {
+    "next_cursor": null,
+    "has_more": false,
+    "count": 1,
+    "total_counts": {
+      "all": 1
+    }
+  }
+}
+```
+
+`custom list` returns an array of assistant summaries:
+
+```json
+[
+  {
+    "id": "assistant-1",
+    "name": "Research",
+    "invoke_profile": "research",
+    "model": "gpt-5-4-nano",
+    "bang_trigger": "research",
+    "internet_access": true,
+    "built_in": false,
+    "edit_url": "/assistant/custom-assistants/assistant-1"
+  }
+]
+```
+
+## Examples
+
+Start a thread, capture the id, continue it, then export it:
+
+```bash
+RESPONSE=$(kagi assistant --model gpt-5-4-nano "plan a calm terminal research session in 3 bullets")
+THREAD_ID=$(printf '%s' "$RESPONSE" | jq -r '.thread.id')
+
+printf '%s\n' "$RESPONSE" | jq -r '.message.markdown'
+kagi assistant --thread-id "$THREAD_ID" "turn that into a 3-item checklist" | jq -r '.message.markdown'
+kagi assistant thread export "$THREAD_ID"
+```
+
+Use a saved assistant profile with terminal-readable output:
+
+```bash
+kagi assistant \
+  --assistant research \
+  --format pretty \
+  --no-personalized \
+  "What changed in Rust 1.86?"
+```
+
+List custom assistants and inspect one:
+
+```bash
+kagi assistant custom list | jq -r '.[] | "\(.name) \(.model)"'
+kagi assistant custom get "Research"
+```
+
+## Notes
+- Prompt mode now supports `json`, `toon`, `pretty`, `compact`, and `markdown`.
+- `thread export` defaults to markdown because that is the natural terminal transcript format.
+- `assistant custom list` includes built-in assistants as well as user-created ones.
+- File-upload Assistant flows are intentionally out of scope in this CLI today.
+
+## See Also
+
+- [search](/commands/search) - search and snap-prefixed discovery
+- [lens](/commands/lens) - manage reusable search scopes
+- [auth-matrix](/reference/auth-matrix) - which commands require which token
+- [output-contract](/reference/output-contract) - JSON shapes and jq examples

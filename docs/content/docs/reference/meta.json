@@ -1,0 +1,12 @@
+{
+  "title": "Reference",
+  "defaultOpen": true,
+  "pages": [
+    "---Authentication & Security",
+    "auth-matrix",
+    "---Technical Reference",
+    "output-contract",
+    "error-reference",
+    "coverage"
+  ]
+}
