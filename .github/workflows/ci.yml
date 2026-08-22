@@ -42,6 +42,27 @@ jobs:
           set -euo pipefail
           git remote add upstream https://github.com/Microck/kagi-cli.git 2>/dev/null || true
           git fetch upstream main
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path("docs/commands/mcp.mdx")
+          text = path.read_text()
+          normalized = (
+              "Requests without the draft `_meta` key — including `initialize` — speak the\n"
+              "stable MCP specification."
+          )
+          text, count = re.subn(
+              r"Requests without the draft `_meta` key.*?stable MCP specification\.",
+              normalized,
+              text,
+              count=1,
+              flags=re.DOTALL,
+          )
+          if count != 1:
+              raise RuntimeError(f"expected one stable-protocol paragraph, found {count}")
+          path.write_text(text)
+          PY
           python3 .github/scripts/fix_pr_169.py
 
       - name: Format
