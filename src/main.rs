@@ -14,6 +14,7 @@ mod search;
 #[path = "test-support.rs"]
 mod test_support;
 mod types;
+mod usage;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, shells};
@@ -46,7 +47,7 @@ use crate::cli::{
     ErrorOutputFormat, ExtractOutputFormat, HistorySubcommand, McpArgs, NewsFilterMode,
     NewsFilterScope, NotifyArgs, OutputFormat, QuickOutputFormat, SearchArgs, SearchOrder,
     SearchTime, SitePrefMode, SitePrefSubcommand, SkillsCommand, SkillsSubcommand, TranslateArgs,
-    WatchArgs,
+    UsageOutputFormat, WatchArgs,
 };
 use crate::error::KagiError;
 use crate::quick::{execute_quick, format_quick_markdown, format_quick_pretty};
@@ -351,6 +352,18 @@ async fn run() -> Result<(), KagiError> {
             AuthSubcommand::Check => run_auth_check(profile.as_deref()).await,
             AuthSubcommand::Set(args) => run_auth_set(args, profile.as_deref()),
         },
+        Commands::Usage(args) => {
+            let token = resolve_session_token(profile.as_deref())?;
+            let report = usage::execute_usage(&token).await?;
+            match args.format {
+                UsageOutputFormat::Json => print_json(&report),
+                UsageOutputFormat::Compact => print_compact_json(&report),
+                UsageOutputFormat::Pretty => {
+                    println!("{}", usage::format_pretty(&report));
+                    Ok(())
+                }
+            }
+        }
         Commands::Agent => {
             let content = agent::skill_content(agent::KAGI_SKILL).ok_or_else(|| {
                 KagiError::Config("embedded kagi skill is unavailable".to_string())

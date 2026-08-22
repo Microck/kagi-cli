@@ -17,6 +17,7 @@
 - [search](https://kagi.micr.dev/commands/search): Complete reference for *kagi* search command - syntax, flags, authentication, output formats, and real-world examples.
 - [batch](https://kagi.micr.dev/commands/batch): Run multiple Kagi searches in parallel, including stdin-fed query batches.
 - [auth](https://kagi.micr.dev/commands/auth): Complete reference for *kagi* auth command - credential management, validation, and configuration.
+- [usage](https://kagi.micr.dev/commands/usage): Inspect the current plan, AI cost allowance, account balance, renewal date, and calendar-month usage.
 - [summarize](https://kagi.micr.dev/commands/summarize): Complete reference for *kagi* summarize command - summarize URLs and text using subscriber or public API modes.
 - [extract](https://kagi.micr.dev/commands/extract): Fetch a page's full content as markdown using Kagi's Extract API.
 - [watch](https://kagi.micr.dev/commands/watch): Monitor a Kagi search query and emit result diffs.

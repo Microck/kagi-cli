@@ -26,6 +26,7 @@ available, unless `preferred_auth = "api"` is configured.
 ```bash
 kagi auth status
 kagi auth check
+kagi usage --format pretty
 ```
 
 Use `status` to see credential presence and source. Use `check` when a
