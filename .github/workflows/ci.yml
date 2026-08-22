@@ -37,7 +37,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Apply readable review fixes
-        run: python3 .github/scripts/fix_pr_169.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/Microck/kagi-cli.git 2>/dev/null || true
+          git fetch upstream main
+          python3 .github/scripts/fix_pr_169.py
 
       - name: Format
         run: cargo fmt --all
