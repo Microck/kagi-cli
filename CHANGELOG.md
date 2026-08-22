@@ -28,12 +28,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ### Changed
 
-- Updated `kagi mcp` to MCP `2026-07-28`: requests use per-request metadata, `server/discover` replaces the legacy initialization handshake, list results expose cache hints, tool metadata includes behavior annotations, and JSON tool output is also available as `structuredContent`.
+- Updated `kagi mcp` to support draft MCP `2026-07-28` behavior per request: the namespaced `protocolVersion` selector enables `server/discover`, cache hints, behavior annotations, and `structuredContent`, while requests without that selector continue to use stable MCP lifecycle methods.
 - MCP tool execution failures now use `isError: true` tool results so agents can inspect and correct failed calls. Unknown tools and malformed protocol requests remain JSON-RPC errors.
 
-### Breaking
-
-- `kagi mcp` no longer accepts the legacy initialization handshake. MCP clients must send `params._meta.io.modelcontextprotocol/protocolVersion` and `params._meta.io.modelcontextprotocol/clientCapabilities` on every request.
+- Stable MCP lifecycle requests remain supported. Only `params._meta.io.modelcontextprotocol/protocolVersion` selects draft behavior; unrelated `_meta` fields do not.
 
 ## [0.16.1]
 
