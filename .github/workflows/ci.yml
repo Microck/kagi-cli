@@ -1,32 +1,26 @@
-name: Apply PR 169 review fixes
+name: CI
 
 on:
   push:
     branches:
-      - automation/pr-169-fix
+      - "**"
   pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pr-169-repair
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  repair:
-    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'automation/pr-169-fix'
+  rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repair branch
+      - name: Checkout
         uses: actions/checkout@v7.0.0
-        with:
-          ref: automation/pr-169-fix
-          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -36,56 +30,14 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Apply readable review fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git remote add upstream https://github.com/Microck/kagi-cli.git 2>/dev/null || true
-          git fetch upstream main
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
+      - name: Check formatting
+        run: cargo fmt --check
 
-          path = Path("docs/commands/mcp.mdx")
-          text = path.read_text()
-          normalized = (
-              "Requests without the draft `_meta` key — including `initialize` — speak the\n"
-              "stable MCP specification.\n"
-          )
-          text, count = re.subn(
-              r"Requests without the draft `_meta` key.*?stable MCP specification\.",
-              normalized,
-              text,
-              count=1,
-              flags=re.DOTALL,
-          )
-          if count != 1:
-              raise RuntimeError(f"expected one stable-protocol paragraph, found {count}")
-          path.write_text(text)
-          PY
-          python3 .github/scripts/fix_pr_169.py
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Format
-        run: cargo fmt --all
-
-      - name: Lint
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Check
+      - name: Run cargo check
         run: cargo check --workspace --all-targets --locked
 
-      - name: Test
+      - name: Run tests
         run: cargo test --workspace --all-targets --locked
-
-      - name: Commit validated fixes and restore CI
-        shell: bash
-        run: |
-          set -euo pipefail
-          git checkout origin/main -- .github/workflows/ci.yml
-          rm -f .github/workflows/fix-pr-169.yml .github/scripts/fix_pr_169.py
-          git add -A
-          git diff --cached --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "fix: address MCP protocol review feedback"
-          git push origin HEAD:automation/pr-169-fix

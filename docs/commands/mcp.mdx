@@ -6,10 +6,10 @@ description: "Run kagi-cli as a stdio Model Context Protocol server."
 # `kagi mcp`
 
 Run a stdio MCP server that exposes Kagi tools for agents. The server
-auto-negotiates the wire protocol per request: it speaks the stateless draft
-`2026-07-28` protocol with per-request metadata, and also answers the stable
-MCP specification's `initialize` handshake, `ping`, `tools/list`, and
-`tools/call` for clients that do not support the draft.
+selects the wire protocol independently for every request. A request carrying
+`params._meta["io.modelcontextprotocol/protocolVersion"]` uses the stateless
+draft `2026-07-28` protocol; every other request uses the stable MCP protocol,
+even when `_meta` contains unrelated fields such as `progressToken`.
 
 ## Synopsis
 
@@ -47,7 +47,7 @@ Supported targets:
 | `droid` | Writes `~/.factory/mcp.json` under `mcpServers` |
 | `antigravity` | Writes `~/.gemini/antigravity-cli/mcp_config.json` under `mcpServers` |
 
-Use `--server-name <NAME>` to choose a different MCP server key, or `--kagi-path <PATH>` if the client needs a specific executable path. By default, setup uses the currently running `kagi` executable. The installed entry runs plain `kagi mcp`, which auto-negotiates the protocol with each client.
+Use `--server-name <NAME>` to choose a different MCP server key, or `--kagi-path <PATH>` if the client needs a specific executable path. By default, setup uses the currently running `kagi` executable. The installed entry runs plain `kagi mcp`, which auto-negotiates the protocol for every request.
 
 Setup merges into existing config and preserves other MCP servers. It updates only the selected server key, which defaults to `kagi-mcp`.
 
@@ -121,8 +121,10 @@ with a supported version if the server returns an unsupported-version error:
 }
 ```
 
-Requests without the draft `_meta` key — including `initialize` — speak the
-stable MCP specification. The server answers `initialize` by echoing the
+Requests without the namespaced draft protocol-version selector — including
+`initialize` and requests with only `_meta.progressToken` — speak the stable MCP
+specification.
+ The server answers `initialize` by echoing the
 requested version when it is one of `2025-11-25`, `2025-06-18`,
 `2025-03-26`, `2024-11-05`, or `2024-10-07`, and otherwise falls back to
 `2025-11-25`. It also serves `ping`, `tools/list`, and `tools/call`. The

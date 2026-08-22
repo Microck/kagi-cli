@@ -13,6 +13,10 @@ Before `1.0.0`, breaking changes may still ship in minor releases.
 
 ## [0.17.2]
 
+### Added
+
+- `kagi mcp` now auto-negotiates the wire protocol per request: only `params._meta["io.modelcontextprotocol/protocolVersion"]` selects the draft `2026-07-28` protocol with `server/discover` and cache hints; requests without that namespaced selector remain on the stable MCP specification, including requests whose `_meta` contains unrelated fields such as `progressToken`.
+
 ### Fixed
 
 - Subscriber summarization now redacts session tokens from response-body error details and surfaces final stream errors even when an earlier message frame was received.

@@ -3154,6 +3154,7 @@ const MCP_STABLE_PROTOCOL_VERSIONS: [&str; 5] = [
     "2024-11-05",
     "2024-10-07",
 ];
+/// Latest stable MCP version used when a requested version is unsupported.
 const MCP_STABLE_LATEST_VERSION: &str = "2025-11-25";
 
 #[derive(Debug)]
@@ -3188,6 +3189,7 @@ impl McpServerConfig {
     }
 }
 
+/// Runs the stdio MCP server and negotiates the protocol independently per request.
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
     let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools);
@@ -3222,20 +3224,20 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
         // (including `initialize`) do not. The stable spec also permits `_meta`
         // (e.g. `progressToken`), so discriminate on the namespaced draft key.
         let speaks_draft = request_speaks_draft(&request);
-        let draft_validation = if speaks_draft {
+        let request_validation = if speaks_draft {
             validate_mcp_request(&request)
         } else {
-            Ok(())
+            validate_mcp_stable_request(&request, method, &config)
         };
 
-        let response = match draft_validation {
+        let response = match request_validation {
             Ok(()) => match method {
-                "initialize" => serde_json::json!({
+                "initialize" if !speaks_draft => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": mcp_stable_initialize_result(&request),
                 }),
-                "ping" => serde_json::json!({
+                "ping" if !speaks_draft => serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {},
@@ -3290,6 +3292,7 @@ fn json_rpc_error_with_data(id: Value, code: i64, message: String, data: Option<
     })
 }
 
+/// Validates and executes one MCP tool call, returning a JSON-RPC response.
 async fn mcp_tools_call_response(
     id: Value,
     request: &Value,
@@ -3313,6 +3316,7 @@ async fn mcp_tools_call_response(
     }
 }
 
+/// Builds a stable MCP initialize result using the negotiated protocol version.
 fn mcp_stable_initialize_result(request: &Value) -> Value {
     let requested_version = request
         .get("params")
@@ -3333,12 +3337,14 @@ fn mcp_stable_initialize_result(request: &Value) -> Value {
     })
 }
 
+/// Builds the stable MCP tools/list result without draft cache metadata.
 fn mcp_stable_tools_list_result(config: &McpServerConfig) -> Value {
     serde_json::json!({
         "tools": config.tool_definitions.clone()
     })
 }
 
+/// Returns true only when the namespaced draft protocol selector is present.
 fn request_speaks_draft(request: &Value) -> bool {
     request
         .get("params")
@@ -3347,7 +3353,8 @@ fn request_speaks_draft(request: &Value) -> bool {
         .is_some()
 }
 
-fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
+/// Validates the common JSON-RPC envelope shared by both MCP protocol eras.
+fn validate_mcp_json_rpc_request(request: &Value) -> Result<(), McpProtocolError> {
     if request.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Err(McpProtocolError {
             code: -32600,
@@ -3355,6 +3362,102 @@ fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
             data: None,
         });
     }
+
+    Ok(())
+}
+
+/// Validates a stable MCP request before method dispatch.
+fn validate_mcp_stable_request(
+    request: &Value,
+    method: &str,
+    config: &McpServerConfig,
+) -> Result<(), McpProtocolError> {
+    validate_mcp_json_rpc_request(request)?;
+
+    match method {
+        "initialize" => validate_mcp_stable_initialize(request),
+        "ping" => validate_mcp_optional_params_object(request),
+        "tools/list" => {
+            validate_mcp_optional_params_object(request)?;
+            if request
+                .get("params")
+                .and_then(Value::as_object)
+                .and_then(|params| params.get("cursor"))
+                .is_some_and(|cursor| !cursor.is_null())
+            {
+                return Err(McpProtocolError::invalid_params(
+                    "MCP tools/list does not issue pagination cursors because the complete tool catalog fits in one response",
+                ));
+            }
+            Ok(())
+        }
+        "tools/call" => validate_mcp_tool_call(request, config),
+        _ => Ok(()),
+    }
+}
+
+/// Validates the required parameters of a stable MCP initialize request.
+fn validate_mcp_stable_initialize(request: &Value) -> Result<(), McpProtocolError> {
+    let params = request
+        .get("params")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            McpProtocolError::invalid_params("MCP initialize params must be an object")
+        })?;
+
+    if !params
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .is_some_and(|version| !version.trim().is_empty())
+    {
+        return Err(McpProtocolError::invalid_params(
+            "MCP initialize requires a non-empty protocolVersion",
+        ));
+    }
+
+    if !params.get("capabilities").is_some_and(Value::is_object) {
+        return Err(McpProtocolError::invalid_params(
+            "MCP initialize requires capabilities to be an object",
+        ));
+    }
+
+    let client_info = params
+        .get("clientInfo")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            McpProtocolError::invalid_params("MCP initialize requires clientInfo to be an object")
+        })?;
+    for field in ["name", "version"] {
+        if !client_info
+            .get(field)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(McpProtocolError::invalid_params(format!(
+                "MCP initialize clientInfo.{field} is required and must be non-empty"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Ensures optional stable MCP params are objects when supplied.
+fn validate_mcp_optional_params_object(request: &Value) -> Result<(), McpProtocolError> {
+    if request
+        .get("params")
+        .is_some_and(|params| !params.is_object())
+    {
+        return Err(McpProtocolError::invalid_params(
+            "MCP request params must be an object",
+        ));
+    }
+    Ok(())
+}
+
+/// Validates the stateless draft MCP envelope and its namespaced metadata.
+fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
+    validate_mcp_json_rpc_request(request)?;
 
     let params = request
         .get("params")
@@ -3411,6 +3514,7 @@ fn validate_mcp_request(request: &Value) -> Result<(), McpProtocolError> {
     Ok(())
 }
 
+/// Builds the draft server/discover response with cache metadata.
 fn mcp_discover_result() -> Value {
     serde_json::json!({
         "resultType": "complete",
@@ -3430,6 +3534,7 @@ fn mcp_discover_result() -> Value {
     })
 }
 
+/// Validates and builds a draft tools/list response with cache metadata.
 fn mcp_tools_list_result(
     request: &Value,
     config: &McpServerConfig,
@@ -3452,6 +3557,7 @@ fn mcp_tools_list_result(
     }))
 }
 
+/// Validates tool name and arguments for an MCP tools/call request.
 fn validate_mcp_tool_call(
     request: &Value,
     config: &McpServerConfig,

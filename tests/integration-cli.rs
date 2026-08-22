@@ -2935,6 +2935,7 @@ fn mcp_malformed_json_returns_parse_error_and_keeps_server_alive() {
     );
 }
 
+/// Confirms draft requests require client capabilities metadata.
 #[test]
 fn mcp_requires_modern_request_metadata() {
     let tempdir = TempDir::new().expect("tempdir");
@@ -2983,6 +2984,7 @@ fn mcp_rejects_unsupported_protocol_versions() {
     );
 }
 
+/// Builds a stable MCP JSON-RPC request without the draft selector.
 fn mcp_stable_request(id: Value, method: &str, params: Value) -> Value {
     json!({
         "jsonrpc": "2.0",
@@ -2992,6 +2994,7 @@ fn mcp_stable_request(id: Value, method: &str, params: Value) -> Value {
     })
 }
 
+/// Parses newline-delimited MCP JSON-RPC responses.
 fn mcp_responses(stdout: &[u8]) -> Vec<Value> {
     std::str::from_utf8(stdout)
         .expect("mcp stdout is utf8")
@@ -3001,6 +3004,7 @@ fn mcp_responses(stdout: &[u8]) -> Vec<Value> {
         .collect()
 }
 
+/// Exercises the stable lifecycle and tool-list surface.
 #[test]
 fn mcp_auto_answers_initialize_ping_and_tools_list() {
     let tempdir = TempDir::new().expect("tempdir");
@@ -3069,6 +3073,7 @@ fn mcp_auto_answers_initialize_ping_and_tools_list() {
     );
 }
 
+/// Confirms unsupported stable versions negotiate to the latest supported version.
 #[test]
 fn mcp_auto_falls_back_to_latest_supported_version() {
     let tempdir = TempDir::new().expect("tempdir");
@@ -3096,6 +3101,7 @@ fn mcp_auto_falls_back_to_latest_supported_version() {
     assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
 }
 
+/// Guards the stable initialize compatibility regression.
 #[test]
 fn mcp_auto_answers_initialize_without_draft_metadata() {
     let tempdir = TempDir::new().expect("tempdir");
@@ -3121,6 +3127,150 @@ fn mcp_auto_answers_initialize_without_draft_metadata() {
     assert_eq!(response["result"]["serverInfo"]["name"], "kagi-cli");
 }
 
+/// Rejects malformed JSON-RPC envelopes on the stable path.
+#[test]
+fn mcp_stable_rejects_non_2_0_json_rpc() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = json!({
+        "jsonrpc": "1.0",
+        "id": 1,
+        "method": "ping",
+        "params": {}
+    });
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["error"]["code"], -32600);
+}
+
+/// Rejects stable initialize calls that omit required MCP fields.
+#[test]
+fn mcp_stable_initialize_requires_protocol_capabilities_and_client_info() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_stable_request(json!(1), "initialize", json!({})),
+        mcp_stable_request(
+            json!(2),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-11-25",
+                "clientInfo": { "name": "test", "version": "1.0" }
+            }),
+        ),
+        mcp_stable_request(
+            json!(3),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-11-25",
+                "capabilities": {}
+            }),
+        ),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|request| serde_json::to_string(request).expect("request serializes"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = run_kagi_with_stdin(&["mcp"], &format!("{stdin}\n"), &[], tempdir.path());
+
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 3);
+    for response in responses {
+        assert_eq!(response["error"]["code"], -32602, "{response:?}");
+    }
+}
+
+/// Keeps unrelated stable metadata from selecting the draft protocol.
+#[test]
+fn mcp_progress_token_metadata_remains_stable() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(
+        json!(1),
+        "initialize",
+        json!({
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": { "name": "test", "version": "1.0" },
+            "_meta": { "progressToken": "progress-1" }
+        }),
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["result"]["protocolVersion"], "2025-11-25");
+}
+
+/// Prevents draft-tagged lifecycle methods from using stable handlers.
+#[test]
+fn mcp_draft_requests_reject_stable_lifecycle_methods() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_request(
+            json!(1),
+            "initialize",
+            json!({
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": { "name": "test", "version": "1.0" }
+            }),
+        ),
+        mcp_request(json!(2), "ping", json!({})),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|request| serde_json::to_string(request).expect("request serializes"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = run_kagi_with_stdin(&["mcp"], &format!("{stdin}\n"), &[], tempdir.path());
+
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 2);
+    for response in responses {
+        assert_eq!(response["error"]["code"], -32601, "{response:?}");
+    }
+}
+
+/// Applies tools/list cursor validation to stable requests too.
+#[test]
+fn mcp_stable_tools_list_rejects_non_null_cursor() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let request = mcp_stable_request(json!(1), "tools/list", json!({ "cursor": "next" }));
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &format!(
+            "{}\n",
+            serde_json::to_string(&request).expect("request serializes")
+        ),
+        &[],
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    let response: Value = serde_json::from_slice(&output.stdout).expect("mcp json parses");
+    assert_eq!(response["error"]["code"], -32602);
+}
+
+/// Confirms stable unknown tools remain JSON-RPC invalid-parameter errors.
 #[test]
 fn mcp_auto_unknown_tool_without_draft_metadata_returns_json_rpc_error() {
     let tempdir = TempDir::new().expect("tempdir");
@@ -3154,6 +3304,7 @@ fn mcp_auto_unknown_tool_without_draft_metadata_returns_json_rpc_error() {
     );
 }
 
+/// Confirms draft and stable requests can be interleaved in one process.
 #[test]
 fn mcp_auto_negotiates_per_request_in_one_session() {
     let tempdir = TempDir::new().expect("tempdir");
