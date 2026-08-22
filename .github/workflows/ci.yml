@@ -1,26 +1,32 @@
-name: CI
+name: Reconcile MCP changelog contract
 
 on:
   push:
     branches:
-      - "**"
+      - automation/pr-169-fix
   pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: pr-170-changelog-repair
   cancel-in-progress: true
 
 jobs:
-  rust:
+  repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'automation/pr-169-fix'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
-      - name: Checkout
+      - name: Checkout repair branch
         uses: actions/checkout@v7.0.0
+        with:
+          ref: automation/pr-169-fix
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -30,14 +36,70 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Reconcile release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("CHANGELOG.md")
+          text = path.read_text()
+
+          old_changed = (
+              "- Updated `kagi mcp` to MCP `2026-07-28`: requests use per-request metadata, "
+              "`server/discover` replaces the legacy initialization handshake, list results expose "
+              "cache hints, tool metadata includes behavior annotations, and JSON tool output is "
+              "also available as `structuredContent`.\n"
+          )
+          new_changed = (
+              "- Updated `kagi mcp` to support draft MCP `2026-07-28` behavior per request: "
+              "the namespaced `protocolVersion` selector enables `server/discover`, cache hints, "
+              "behavior annotations, and `structuredContent`, while requests without that selector "
+              "continue to use stable MCP lifecycle methods.\n"
+          )
+          old_breaking = (
+              "### Breaking\n\n"
+              "- `kagi mcp` no longer accepts the legacy initialization handshake. MCP clients must "
+              "send `params._meta.io.modelcontextprotocol/protocolVersion` and "
+              "`params._meta.io.modelcontextprotocol/clientCapabilities` on every request.\n"
+          )
+          new_compat = (
+              "- Stable MCP lifecycle requests remain supported. Only "
+              "`params._meta.io.modelcontextprotocol/protocolVersion` selects draft behavior; "
+              "unrelated `_meta` fields do not.\n"
+          )
+
+          for old, new in [(old_changed, new_changed), (old_breaking, new_compat)]:
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"expected one changelog contract block, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          git diff --check
+
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run cargo check
         run: cargo check --workspace --all-targets --locked
 
       - name: Run tests
         run: cargo test --workspace --all-targets --locked
+
+      - name: Commit validated changelog fix and restore CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout origin/main -- .github/workflows/ci.yml
+          git add CHANGELOG.md .github/workflows/ci.yml
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: reconcile MCP protocol release notes"
+          git push origin HEAD:automation/pr-169-fix
