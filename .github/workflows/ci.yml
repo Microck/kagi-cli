@@ -50,7 +50,7 @@ jobs:
           text = path.read_text()
           normalized = (
               "Requests without the draft `_meta` key — including `initialize` — speak the\n"
-              "stable MCP specification."
+              "stable MCP specification.\n"
           )
           text, count = re.subn(
               r"Requests without the draft `_meta` key.*?stable MCP specification\.",
