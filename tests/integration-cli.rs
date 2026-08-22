@@ -383,6 +383,47 @@ fn session_env(server: &MockServer) -> Vec<(&'static str, String)> {
 }
 
 #[test]
+fn usage_command_returns_billing_report() {
+    let server = MockServer::start();
+    let billing = server.mock(|when, then| {
+        when.method(GET)
+            .path("/settings/billing")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).header("content-type", "text/html").body(
+            r#"
+                <html><body>
+                  <div>Ultimate $25 (+tax) per month</div>
+                  <div>Total AI cost this period (USD) $2,50 / $25,00</div>
+                  <div>Account balance $5.00</div>
+                  <p>Next renewal is 2026-01-28</p>
+                  <div>August 2026</div>
+                  <table>
+                    <tr><th>Date (UTC)</th><th>Searches</th><th>AI Cost (USD)</th></tr>
+                    <tr><td>2026-08-21</td><td>7</td><td>0.125</td></tr>
+                  </table>
+                </body></html>
+                "#,
+        );
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &["usage", "--format", "json"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_success(&output);
+    billing.assert_calls(1);
+    let body: Value = serde_json::from_slice(&output.stdout).expect("usage JSON should parse");
+    assert_eq!(body["plan"], "Ultimate");
+    assert_eq!(body["ai_cost"]["used_usd"], 2.5);
+    assert_eq!(body["ai_cost"]["limit_usd"], 25.0);
+    assert_eq!(body["daily_usage"][0]["searches"], 7);
+}
+
+#[test]
 fn assistant_prompt_stream_reads_query_from_stdin() {
     let server = MockServer::start();
     let current_prompt = mock_current_assistant_prompt(

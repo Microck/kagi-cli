@@ -88,6 +88,7 @@
               "commands/search",
               "commands/batch",
               "commands/auth",
+              "commands/usage",
               "commands/summarize",
               "commands/extract",
               "commands/watch",
