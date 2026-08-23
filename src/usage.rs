@@ -14,6 +14,7 @@ use crate::http;
 const KAGI_BILLING_PATH: &str = "/settings/billing";
 const TEXT_CANDIDATE_LIMIT: usize = 512;
 const AI_COST_LABEL: &str = "total ai cost this period";
+const AI_USAGE_LABEL: &str = "ai usage (usd)";
 const ACCOUNT_BALANCE_LABEL: &str = "account balance";
 const NEXT_RENEWAL_LABEL: &str = "next renewal is";
 
@@ -102,7 +103,10 @@ pub async fn execute_usage(session_token: &str) -> Result<UsageReport, KagiError
         ))
     })?;
 
-    if looks_like_logged_out_page(&body) {
+    // Reuse the shared AND-based detector: the real billing page contains
+    // "Welcome to Kagi" in its footer, so an OR over markers would reject
+    // every successful authenticated response.
+    if crate::api::looks_like_logged_out_page(&body) {
         return Err(KagiError::Auth(
             "invalid or expired Kagi session token for billing usage".to_string(),
         ));
@@ -196,9 +200,15 @@ fn text_candidates(document: &Html) -> Vec<String> {
 }
 
 /// Extracts the current AI cost and included limit from text candidates.
+///
+/// Handles both known page layouts: the legacy
+/// `Total AI cost this period (USD) $X / $Y` text and the newer
+/// `AI usage (USD)` box whose `$X` and `/Y` render in separate elements but
+/// aggregate into one ancestor candidate.
 fn extract_ai_cost(candidates: &[String]) -> Option<AiCostUsage> {
     candidates.iter().find_map(|candidate| {
-        let tail = slice_after_label(candidate, AI_COST_LABEL)?;
+        let tail = slice_after_label(candidate, AI_COST_LABEL)
+            .or_else(|| slice_after_label(candidate, AI_USAGE_LABEL))?;
         let values = decimal_values(tail);
         if values.len() < 2 {
             return None;
@@ -473,14 +483,6 @@ fn normalize_space(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Detects common logged-out page markers returned after an auth redirect.
-fn looks_like_logged_out_page(body: &str) -> bool {
-    let lower = body.to_ascii_lowercase();
-    lower.contains("<title>kagi search - a premium search engine</title>")
-        || lower.contains("welcome to kagi")
-        || (lower.contains("sign in") && lower.contains("create an account"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{AiCostUsage, DailyUsage, format_pretty, parse_decimal_token, parse_usage_html};
@@ -597,6 +599,51 @@ mod tests {
                 .to_string()
                 .contains("did not contain the current AI cost and limit")
         );
+    }
+
+    /// Regression: the live billing page renders the newer `AI usage (USD)`
+    /// box whose `$used` and `/limit` live in separate child elements, and its
+    /// footer legitimately contains "Welcome to Kagi". Both must parse as a
+    /// successful authenticated response instead of a logged-out rejection.
+    #[test]
+    fn parses_current_ai_usage_box_without_logged_out_false_positive() {
+        // Mirrors the live page structure observed 2026-08-22.
+        let html = r#"
+        <html><body>
+          <div class="billing_box">
+            <div class="billing_box_body">
+              <div class="billing_box_count_box">
+                <div class="billing_box_count_title">AI usage (USD)</div>
+                <div class="billing_box_count_num"><span>$12.76</span>/20.00</div>
+              </div>
+            </div>
+          </div>
+          <footer>Welcome to Kagi</footer>
+        </body></html>
+        "#;
+
+        let report = parse_usage_html(html).expect("current layout should parse");
+        assert_eq!(report.ai_cost.used_usd, 12.76);
+        assert_eq!(report.ai_cost.limit_usd, 20.0);
+        assert_eq!(report.plan, None);
+        assert_eq!(report.account_balance_usd, None);
+        assert_eq!(report.next_renewal, None);
+        assert_eq!(report.usage_period, None);
+        assert!(report.daily_usage.is_empty());
+    }
+
+    /// Guards the shared AND-based logged-out detector: pages carrying any
+    /// single marker (e.g. footer text) must not be treated as logged out.
+    #[test]
+    fn logged_out_detection_requires_all_markers() {
+        use crate::api::looks_like_logged_out_page;
+
+        let partial = "<html><body>Welcome to Kagi</body></html>";
+        assert!(!looks_like_logged_out_page(partial));
+
+        let logged_out = "<html><head><title>Kagi Search - A Premium Search Engine</title></head>\
+             <body>Welcome to Kagi, the paid search engine that gives power back to the user</body></html>";
+        assert!(looks_like_logged_out_page(logged_out));
     }
 
     /// Verifies terminal output includes the key summary and usage fields.
