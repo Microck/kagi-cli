@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.18.1]
+
+### Fixed
+
+- `kagi usage` no longer rejects valid sessions with an authentication error and parses Kagi's current billing page layout, including the new "AI usage (USD)" cost box (#173).
+
 ## [0.18.0]
 
 ### Added
