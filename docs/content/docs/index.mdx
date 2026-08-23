@@ -31,7 +31,7 @@ If you live in the terminal, *kagi* brings Kagi's exceptional search quality dir
 
 - **JSON-Native**: Every command returns structured data that you can programmatically process, transform, and store.
 
-- **Version Control Friendly**: Configuration lives in a simple TOML file. Keep credentials out of it: commit a redacted template and supply tokens via `kagi auth` or environment variables.
+- **Version Control Friendly**: Configuration lives in a simple TOML file. `kagi auth` writes credentials to `~/.config/kagi-cli/config.toml`, so keep that file private: commit only a redacted template and supply tokens via the wizard or environment variables.
 
 ### For Automation and Tooling
 
@@ -112,6 +112,7 @@ flowchart TB
         api2["fastgpt"]
         api3["enrich"]
         api4["search (API)"]
+        api5["extract"]
     end
 
     subgraph SubscriberWeb["Subscriber Web Product"]
@@ -130,6 +131,7 @@ flowchart TB
     end
 
     KAGI_API_KEY --> api4
+    KAGI_API_KEY --> api5
     KAGI_API_TOKEN --> api1
     KAGI_API_TOKEN --> api2
     KAGI_API_TOKEN --> api3

@@ -70,7 +70,7 @@ The current demo commands are:
 ```bash
 chmod +x scripts/demo-search.sh scripts/demo-quick.sh scripts/demo-summarize.sh scripts/demo-news.sh scripts/demo-ask-page.sh scripts/demo-assistant.sh scripts/demo-translate.sh
 
-mkdir -p docs/demo-assets /tmp/kagi-demos
+mkdir -p docs/public/images/demos /tmp/kagi-demos
 
 agg --version
 KAGI_SESSION_TOKEN='...' asciinema rec -c ./scripts/demo-search.sh -q -i 0.2 --cols 92 --rows 22 /tmp/kagi-demos/search.cast

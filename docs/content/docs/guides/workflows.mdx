@@ -742,9 +742,9 @@ Adapt based on available tokens:
 ```bash
 #!/bin/bash
 
-# Check auth and adapt behavior
-if [ -n "$KAGI_SESSION_TOKEN" ] && kagi auth check 2>/dev/null; then
-  # Full features available
+# Check auth and adapt behavior; lens search needs a session token
+if [ -n "$KAGI_SESSION_TOKEN" ] && kagi auth check 2>/dev/null && kagi auth status 2>/dev/null | grep -q 'selected: session-token'; then
+  # Session features available
   kagi search --lens 2 "$QUERY"
 else
   # Fallback to public commands
