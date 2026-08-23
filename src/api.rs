@@ -3553,7 +3553,9 @@ async fn read_authenticated_html_response(
     }
 }
 
-fn looks_like_logged_out_page(body: &str) -> bool {
+// Shared with other session-token surfaces so logged-out detection cannot
+// drift between copies (an OR-based copy once rejected valid billing pages).
+pub(crate) fn looks_like_logged_out_page(body: &str) -> bool {
     KAGI_LOGGED_OUT_MARKERS
         .iter()
         .all(|marker| body.contains(marker))
