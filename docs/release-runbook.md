@@ -4,7 +4,7 @@ Use this when cutting a new `kagi` release.
 
 ## Goal
 
-Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebrew tap, Scoop bucket, the `kagi-cli` AUR package, and Mintlify public docs.
+Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebrew tap, Scoop bucket, the `kagi-cli` AUR package, and the public docs site.
 
 ## Preflight
 
@@ -16,7 +16,6 @@ Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebr
    - `NPM_PUBLISH_ENABLED=true` repository variable
    - `REPO_SYNC_TOKEN` GitHub Actions secret for `Microck/homebrew-kagi` and `Microck/scoop-kagi`
    - `AUR_SSH_PRIVATE_KEY` GitHub Actions secret for `ssh://aur@aur.archlinux.org/kagi-cli.git`
-   - `MINTLIFY_DEPLOY_COOKIE` GitHub Actions secret for the private Mintlify deployment trigger
    Missing or stale optional sync credentials do not block GitHub release asset publication, but the release workflow emits explicit warnings and the affected channel must be recovered manually.
 5. Confirm `CHANGELOG.md` has a complete user-facing entry ready to publish. The release workflow extracts notes from the `## [X.Y.Z]` section, so the heading must exist before the tag is pushed.
 
@@ -27,8 +26,8 @@ Ship one version across the Rust CLI, GitHub release assets, npm wrapper, Homebr
    - `Cargo.lock`
    - `npm/package.json`
 2. Move the release notes from `## [Unreleased]` into a new `## [X.Y.Z]` section in `CHANGELOG.md`.
-3. Update Mintlify docs under `docs/` for any user-facing CLI changes in the release.
-4. Update `docs/index.mdx` if the landing-page footer still shows the old version.
+3. Update the docs app under `docs/content/docs` for any user-facing CLI changes in the release.
+4. Update `docs/content/docs/index.mdx` if the landing-page footer still shows the old version.
 5. Check for any other hardcoded version references that still need the new release number.
 6. Commit the release metadata update on `main`.
 
@@ -69,11 +68,10 @@ git push origin vX.Y.Z
 - uploads archives plus raw binaries
 - generates `kagi-vX.Y.Z-checksums.txt`
 - extracts release notes from `CHANGELOG.md`
-- creates or refreshes the GitHub release
-- calls Mintlify's private deployment update endpoint when `MINTLIFY_DEPLOY_COOKIE` is configured
+- builds the Fumadocs docs app under `docs/` as a deployment artifact check (no automatic hosting is wired up yet)
 - syncs `Microck/homebrew-kagi` and `Microck/scoop-kagi`
 - syncs the `kagi-cli` AUR package when `AUR_SSH_PRIVATE_KEY` is configured
-- warns when optional package-index, AUR, or Mintlify sync work is skipped or fails after GitHub release publication
+- warns when optional docs build, package-index, or AUR sync work is skipped or fails after GitHub release publication
 
 `.github/workflows/npm-publish.yml` runs after a successful `Release` workflow and publishes `npm/package.json` to npm when `NPM_PUBLISH_ENABLED=true`.
 
@@ -102,11 +100,10 @@ Verify all public release surfaces after the workflows finish:
    - confirm `PKGBUILD` and `.SRCINFO` use the release commit as a `git+https` source
    - if the sync step was skipped or failed, update that repo manually and push `PKGBUILD` and `.SRCINFO`
    - verify a fresh `makepkg -Csf --noconfirm` or AUR helper build succeeds on Arch
-7. Mintlify docs
-   - confirm `https://kagi.micr.dev` reflects the committed docs changes from `docs/`
-   - if the site still shows old content, inspect the `Trigger Mintlify docs deployment` release step
-   - if Mintlify rejected the private deployment trigger or the release emitted a Mintlify warning, rotate `MINTLIFY_DEPLOY_COOKIE` or trigger the deployment from the Mintlify dashboard
-   - verify the changed command, guide, or reference pages render correctly
+7. Docs site
+   - confirm the `Build Fumadocs docs site` step in the `Release` run succeeded
+   - if it failed, reproduce locally with `pnpm --dir docs install --frozen-lockfile && pnpm --dir docs build` and fix the build
+   - deploy the fresh `docs/.next` output to the docs host and verify the changed command, guide, or reference pages render correctly
 8. Installers and scripts
    - `scripts/install.sh` and `scripts/install.ps1` resolve the latest GitHub release dynamically, so they need no per-release version bump
    - the npm wrapper downloads assets using `npm/package.json` version, so npm must stay in lockstep with the GitHub tag
@@ -170,16 +167,20 @@ curl -s 'https://aur.archlinux.org/rpc/?v=5&type=info&arg[]=kagi-cli'
 
 If `makepkg` is unavailable on the current machine, do the `.SRCINFO` regeneration from an Arch environment before pushing.
 
-### Mintlify
+### Docs site
 
-Mintlify docs are source-controlled under `docs/`. Automatic GitHub App deployments are not reliable for this project, so the release workflow calls Mintlify's private deployment update endpoint after the GitHub release is published.
+The public docs site is a Fumadocs (Next.js) app source-controlled under `docs/`. Page content lives in `docs/content/docs`, static assets in `docs/public`.
 
-Configure `MINTLIFY_DEPLOY_COOKIE` as a GitHub Actions secret containing the complete `Cookie` header value from an authenticated Mintlify dashboard session that can deploy `kagi-cli`. Do not commit this value, paste it into logs, or store it in repo files.
+Build it locally with:
 
-This uses a private dashboard endpoint, not a stable public API. If the cookie expires, Mintlify changes the endpoint, or Cloudflare rejects the request, the release workflow emits a warning and continues. Rotate the secret or trigger the deployment from the Mintlify dashboard.
+```bash
+pnpm --dir docs install --frozen-lockfile
+pnpm --dir docs build
+```
 
-The public docs site can still return HTTP 200 while serving an old deployment. Compare visible docs content or response metadata such as `last-modified` against the release changes before treating Mintlify as complete.
+The release workflow runs the same build as a non-blocking artifact check and emits a warning when it fails.
 
+Hosting is not wired into the release workflow yet. After a release, deploy the fresh `docs/.next` output to the docs host manually and confirm the changed pages render at `https://kagi.micr.dev`. The site can still return HTTP 200 while serving an old deployment, so compare visible content against the release changes before treating docs as complete.
 ### Cargo
 
 There is no crates.io publish step. `cargo install` currently pulls from GitHub, so no separate registry release is required.

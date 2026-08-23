@@ -1,0 +1,5 @@
+{
+  "title": "kagi CLI",
+  "root": true,
+  "pages": ["index", "guides", "commands", "reference", "project"]
+}

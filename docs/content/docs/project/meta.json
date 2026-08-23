@@ -1,0 +1,12 @@
+{
+  "title": "Project",
+  "defaultOpen": true,
+  "pages": [
+    "---Development",
+    "development",
+    "demos",
+    "---Community",
+    "support",
+    "contributing"
+  ]
+}
