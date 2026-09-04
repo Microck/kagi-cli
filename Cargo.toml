@@ -23,20 +23,20 @@ exclude = [
 ]
 
 [dependencies]
-clap = { version = "4.6.1", features = ["derive"] }
-clap_complete = "4.6.5"
-cliclack = "0.5.4"
+clap = { version = "4.6.6", features = ["derive"] }
+clap_complete = "4.6.9"
+cliclack = "0.5.6"
 console = "0.16.3"
 ctrlc = "3.5.2"
 reqwest = { version = "0.12.15", default-features = false, features = ["brotli", "deflate", "gzip", "json", "multipart", "rustls-tls", "stream"] }
-futures-util = "0.3.31"
-jsonc-parser = { version = "0.33.0", features = ["serde"] }
+futures-util = "0.3.34"
+jsonc-parser = { version = "0.33.1", features = ["serde"] }
 scraper = "0.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-thiserror = "2.0.18"
+serde_json = "1.0.151"
+thiserror = "2.0.20"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
-toml = "1.1.2"
+toml = "1.1.4"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 mime_guess = "2.0.5"
