@@ -281,9 +281,12 @@ async fn run() -> Result<(), KagiError> {
     let cli = Cli::parse();
 
     if cli.generate_completion.is_some() && cli.command.is_some() {
-        return Err(KagiError::Config(
-            "completion was not generated because --generate-completion cannot be used with a command. Run `kagi --generate-completion <shell>` by itself".to_string(),
-        ));
+        Cli::command()
+            .error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "completion was not generated because --generate-completion cannot be used with a command. Run `kagi --generate-completion <shell>` by itself",
+            )
+            .exit();
     }
 
     if let Some(shell) = cli.generate_completion {
@@ -724,6 +727,7 @@ async fn run() -> Result<(), KagiError> {
             print_json(&response)
         }
         Commands::Fastgpt(args) => {
+            args.validate().map_err(KagiError::Config)?;
             let request = FastGptRequest {
                 query: args.query,
                 cache: args.cache,
@@ -2890,24 +2894,60 @@ async fn run_summarize_filter(
         ));
     }
 
-    let mut results = Vec::new();
+    let mut failure_count = 0usize;
     if args.subscriber {
         let token = resolve_session_token(profile)?;
         for item in lines {
             let request = summarize_item_request_subscriber(&item, &args);
-            let response = execute_subscriber_summarize(&request, &token).await?;
-            results.push(serde_json::json!({ "input": item, "response": response }));
+            match execute_subscriber_summarize(&request, &token).await {
+                Ok(response) => print_summarize_filter_item(&item, true, response)?,
+                Err(error) => {
+                    failure_count += 1;
+                    print_summarize_filter_item(&item, false, error_envelope(&error))?;
+                }
+            }
         }
     } else {
         let token = resolve_api_token(profile)?;
         for item in lines {
             let request = summarize_item_request_public(&item, &args);
-            let response = execute_summarize(&request, &token).await?;
-            results.push(serde_json::json!({ "input": item, "response": response }));
+            match execute_summarize(&request, &token).await {
+                Ok(response) => print_summarize_filter_item(&item, true, response)?,
+                Err(error) => {
+                    failure_count += 1;
+                    print_summarize_filter_item(&item, false, error_envelope(&error))?;
+                }
+            }
         }
     }
 
-    print_json(&serde_json::json!({ "results": results }))
+    if failure_count > 0 {
+        return Err(KagiError::Batch(format!(
+            "summarize --filter completed with {failure_count} failed item(s)"
+        )));
+    }
+
+    Ok(())
+}
+
+fn print_summarize_filter_item(
+    item: &str,
+    ok: bool,
+    payload: impl serde::Serialize,
+) -> Result<(), KagiError> {
+    if ok {
+        print_compact_json(&serde_json::json!({
+            "input": item,
+            "ok": true,
+            "response": payload,
+        }))
+    } else {
+        print_compact_json(&serde_json::json!({
+            "input": item,
+            "ok": false,
+            "error": payload,
+        }))
+    }
 }
 
 fn summarize_item_request_subscriber(
@@ -3045,21 +3085,20 @@ fn run_site_pref(command: SitePrefSubcommand) -> Result<(), KagiError> {
     match command {
         SitePrefSubcommand::List => print_json(&local::load_site_preferences()?),
         SitePrefSubcommand::Set(args) => {
-            let mut preferences = local::load_site_preferences()?;
             let domain = local::normalize_domain(&args.domain)?;
-            preferences
-                .domains
-                .insert(domain.clone(), site_pref_mode(args.mode));
-            local::save_site_preferences(&preferences)?;
-            print_json(
-                &serde_json::json!({ "domain": domain, "mode": site_pref_mode(args.mode).as_str() }),
-            )
+            let mode = site_pref_mode(args.mode);
+            local::update_site_preferences(|preferences| {
+                preferences.domains.insert(domain.clone(), mode);
+                Ok::<(), KagiError>(())
+            })?;
+            print_json(&serde_json::json!({ "domain": domain, "mode": mode.as_str() }))
         }
         SitePrefSubcommand::Remove(args) => {
-            let mut preferences = local::load_site_preferences()?;
             let domain = local::normalize_domain(&args.domain)?;
-            preferences.domains.remove(&domain);
-            local::save_site_preferences(&preferences)?;
+            local::update_site_preferences(|preferences| {
+                preferences.domains.remove(&domain);
+                Ok::<(), KagiError>(())
+            })?;
             print_json(&serde_json::json!({ "domain": domain, "removed": true }))
         }
     }
@@ -4685,21 +4724,23 @@ async fn mcp_mutating_tool_call(
             config.default_output_or(OutputFormat::Json),
         ),
         "kagi_site_pref_set" => {
-            let mut preferences = local::load_site_preferences()?;
             let domain = local::normalize_domain(&mcp_required_string(arguments, "domain")?)?;
             let mode = mcp_site_pref_mode(arguments)?;
-            preferences.domains.insert(domain.clone(), mode);
-            local::save_site_preferences(&preferences)?;
+            local::update_site_preferences(|preferences| {
+                preferences.domains.insert(domain.clone(), mode);
+                Ok::<(), KagiError>(())
+            })?;
             mcp_output(
                 &serde_json::json!({"domain": domain, "mode": mode.as_str()}),
                 config.default_output_or(OutputFormat::Json),
             )
         }
         "kagi_site_pref_remove" => {
-            let mut preferences = local::load_site_preferences()?;
             let domain = local::normalize_domain(&mcp_required_string(arguments, "domain")?)?;
-            preferences.domains.remove(&domain);
-            local::save_site_preferences(&preferences)?;
+            local::update_site_preferences(|preferences| {
+                preferences.domains.remove(&domain);
+                Ok::<(), KagiError>(())
+            })?;
             mcp_output(
                 &serde_json::json!({"domain": domain, "removed": true}),
                 config.default_output_or(OutputFormat::Json),
