@@ -870,6 +870,20 @@ pub struct FastGptArgs {
     #[arg(long, value_name = "SECONDS")]
     pub cache_ttl: Option<u64>,
 }
+impl FastGptArgs {
+    /// Validates fastgpt arguments.
+    ///
+    /// # Errors
+    /// Returns an error when web search is explicitly disabled, which the
+    /// upstream FastGPT API does not support.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.web_search == Some(false) {
+            return Err("fastgpt --web-search false is not supported by the upstream FastGPT API, which requires web search grounding. Omit --web-search or pass --web-search true".to_string());
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Args)]
 /// Arguments for the `news` subcommand.
@@ -1920,8 +1934,8 @@ pub struct RedirectUpdateArgs {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Commands, NewsArgs, NewsFilterMode, NewsFilterScope, OutputFormat, SearchArgs,
-        SearchOrder, SearchTime, SummarizeArgs,
+        Cli, Commands, FastGptArgs, NewsArgs, NewsFilterMode, NewsFilterScope, OutputFormat,
+        SearchArgs, SearchOrder, SearchTime, SummarizeArgs,
     };
     use clap::Parser;
 
@@ -2073,6 +2087,31 @@ mod tests {
             .validate()
             .expect_err("summarize should require url or text input");
         assert!(error.contains("exactly one of --url or --text"));
+    }
+    #[test]
+    fn rejects_fastgpt_disabled_web_search() {
+        let args = FastGptArgs {
+            query: "What is the capital of Australia?".to_string(),
+            cache: None,
+            web_search: Some(false),
+            local_cache: false,
+            cache_ttl: None,
+        };
+        let error = args
+            .validate()
+            .expect_err("web_search false should be rejected");
+        assert!(error.contains("not supported"));
+
+        for web_search in [None, Some(true)] {
+            let args = FastGptArgs {
+                query: "What is the capital of Australia?".to_string(),
+                cache: None,
+                web_search,
+                local_cache: false,
+                cache_ttl: None,
+            };
+            assert!(args.validate().is_ok());
+        }
     }
 
     #[test]

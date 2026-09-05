@@ -3931,3 +3931,159 @@ fn mcp_tool_call_error_returns_json_rpc_error_and_keeps_server_alive() {
         "expected successful result for second tool call, got: {success_resp}"
     );
 }
+#[test]
+fn generate_completion_with_subcommand_exits_usage_error() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &["--generate-completion", "bash", "auth", "status"],
+        &[],
+        tempdir.path(),
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "usage conflict should exit 2, got {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot be used with a command"),
+        "expected conflict explanation on stderr, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn fastgpt_rejects_disabled_web_search_before_network() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let output = run_kagi(
+        &[
+            "fastgpt",
+            "--web-search",
+            "false",
+            "What is the capital of Australia?",
+        ],
+        &[],
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "web_search false should fail, got {:?}",
+        output.status.code()
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not supported"),
+        "expected upstream support explanation on stderr, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn summarize_filter_streams_per_item_envelopes() {
+    let server = MockServer::start();
+    let _good = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v0/summarize")
+            .header("authorization", "Bot test-api-token")
+            .body_includes("good.example");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": api_meta(),
+                "data": {
+                    "output": "A concise summary.",
+                    "tokens": 42
+                }
+            }));
+    });
+    let _bad = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/v0/summarize")
+            .header("authorization", "Bot test-api-token")
+            .body_includes("bad.example");
+        then.status(500)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "meta": api_meta(),
+                "error": { "code": "internal_error", "msg": "boom" }
+            }));
+    });
+
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = test_env(&server);
+    let output = run_kagi_with_stdin(
+        &["summarize", "--filter"],
+        "https://good.example/article\nhttps://bad.example/article\n",
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit 1 when one filter item fails, got {:?}",
+        output.status.code()
+    );
+    let records = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("JSONL record should parse"))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 2, "both items must be processed");
+    assert_eq!(records[0]["input"], "https://good.example/article");
+    assert_eq!(records[0]["ok"], true);
+    assert_eq!(
+        records[0]["response"]["data"]["output"],
+        "A concise summary."
+    );
+    assert_eq!(records[1]["input"], "https://bad.example/article");
+    assert_eq!(records[1]["ok"], false);
+    assert!(
+        records[1]["error"].is_object(),
+        "failed item must carry an error envelope, got: {}",
+        records[1]
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("summarize --filter completed with 1 failed item"),
+        "expected aggregate failure on stderr, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn concurrent_site_pref_sets_preserve_all_domains() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let dir = tempdir.path().to_path_buf();
+    let mut handles = Vec::new();
+    for index in 0..8 {
+        let dir = dir.clone();
+        handles.push(std::thread::spawn(move || {
+            let domain = format!("domain-{index}.example");
+            run_kagi(&["site-pref", "set", &domain, "--mode", "pin"], &[], &dir)
+        }));
+    }
+    for handle in handles {
+        let output = handle.join().expect("worker thread");
+        assert!(
+            output.status.success(),
+            "concurrent site-pref set should succeed, got {:?}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let list = run_kagi(&["site-pref", "list"], &[], &dir);
+    assert_success(&list);
+    let prefs: Value = serde_json::from_slice(&list.stdout).expect("prefs json parses");
+    for index in 0..8 {
+        let domain = format!("domain-{index}.example");
+        assert_eq!(
+            prefs["domains"][domain.as_str()],
+            "pin",
+            "concurrent update for {domain} must survive"
+        );
+    }
+}
