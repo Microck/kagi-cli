@@ -80,7 +80,7 @@ kagi summarize --text "Long text content to summarize..."
 
 #### `--filter`
 
-Read URLs or text items from stdin, one item per line, and summarize each item. Lines starting with `http://` or `https://` are sent as URLs; all other lines are sent as text.
+Read URLs or text items from stdin, one item per line, and summarize each item. Lines starting with `http://` or `https://` are sent as URLs; all other lines are sent as text. Prints one compact JSON record per input line in the same order: successful records carry the summary under `response`, failed records carry an `error` envelope with `"ok": false`. Every input is processed even when some fail; the command exits nonzero with an aggregate failure count after all inputs are processed.
 
 ```bash
 cat urls.txt | kagi summarize --filter --subscriber --length digest

@@ -1,3 +1,16 @@
+## [0.19.0]
+
+### Added
+
+- `summarize --filter` now streams one compact JSON record per input line (`{"input", "ok", ...}`) and reports an aggregate failure count instead of stopping at the first error, matching `extract --filter` (#178).
+- Local history, site preferences, and response cache files are now protected by advisory file locks, and site preference updates run read-modify-write under one exclusive lock, so concurrent CLI processes can no longer interleave writes or lose updates (#176, #177).
+
+### Fixed
+
+- `fastgpt --web-search false` is now rejected client-side with an explanatory error because the upstream FastGPT API only supports web search grounding (#179).
+- `--generate-completion <SHELL>` combined with a subcommand now exits with standard clap usage error code `2` instead of `1` (#180).
+- Updated dependencies: clap 4.6.6, clap_complete 4.6.9, cliclack 0.5.6, futures-util 0.3.34, jsonc-parser 0.33.1, serde_json 1.0.151, thiserror 2.0.20, toml 1.1.5, actions/checkout 7.0.1.
+
 ## [Unreleased]
 
 ## [0.18.1]

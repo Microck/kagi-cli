@@ -66,4 +66,4 @@ kagi completion generate fish > ~/.config/fish/completions/kagi.fish
 kagi completion generate powershell >> $PROFILE
 ```
 
-`kagi --generate-completion <SHELL>` is still available as a shortcut for script generation.
+`kagi --generate-completion <SHELL>` is still available as a shortcut for script generation. It cannot be combined with a subcommand; doing so exits with standard usage error code `2`.
