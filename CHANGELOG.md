@@ -13,6 +13,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `kagi mail` lists mailboxes, searches exact text or meaning, and reads messages or threads through the mail MCP. Separate OAuth device login, automatic token refresh, profiles, and JSON/compact/TOON/pretty output follow the existing CLI conventions.
+
 ## [0.18.1]
 
 ### Fixed

@@ -135,6 +135,26 @@ how to get it:
 export KAGI_API_KEY='...'
 ```
 
+### mail
+
+Configure your mail MCP endpoint and OAuth client ID in a private `[mail]`
+section, then sign in once:
+
+```bash
+kagi mail login
+kagi mail boxes
+kagi mail search --mailbox Inbox --unread --limit 10
+kagi mail search "contract renewal" --semantic
+kagi mail read MESSAGE_ID --format pretty
+kagi mail read --thread THREAD_ID --new-text-only
+```
+
+Mail uses its own OAuth credentials. It supports `--profile`, JSON by default,
+and `--format compact|toon|pretty`. The MCP exposes read operations only;
+messages are not added to the local history or response cache.
+See the [mail command reference](docs/content/docs/commands/mail.mdx) for setup,
+filters, and token handling.
+
 ## auth model
 
 | credential | what it unlocks |
@@ -142,7 +162,8 @@ export KAGI_API_KEY='...'
 | `KAGI_SESSION_TOKEN` | base search fallback, session-only search options, `quick`, `ask-page`, `assistant`, `translate`, and `summarize --subscriber` |
 | `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
 | `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
-| none | `news`, `smallweb`, `auth status`, `--help` |
+| saved mail OAuth tokens or `KAGI_MAIL_ACCESS_TOKEN` | `mail boxes`, `mail search`, and `mail read` |
+| none | `news`, `smallweb`, `auth status`, `mail status`, `--help` |
 
 example config:
 
@@ -190,6 +211,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi skills` | list and load embedded, version-matched agent skills with `skills get kagi-usage` as the agent starting point |
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
+| `kagi mail` | list mailboxes, search mail, and read messages or threads with separate OAuth login |
 | `kagi completion` | generate or install shell completions for bash, zsh, fish, or PowerShell |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly |

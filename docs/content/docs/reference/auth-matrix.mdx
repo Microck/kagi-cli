@@ -18,6 +18,8 @@ This reference provides a complete mapping of which commands require which authe
 | `auth status` | None | None | Reads config only |
 | `auth check` | Primary credential | None | Tests selected token |
 | `auth set` | None | None | Saves credentials |
+| `mail boxes/search/read` | Mail OAuth token | None | `kagi mail login` or `KAGI_MAIL_ACCESS_TOKEN`; separate from Search auth |
+| `mail login/status/logout` | Private mail configuration | None | Device login, local status, and local token removal |
 | `usage` / `billing` | `KAGI_SESSION_TOKEN` | None | Reads account billing and calendar-month usage |
 | `summarize` | `KAGI_API_TOKEN` | None | Legacy `/api/v0` public API |
 | `summarize --subscriber` | `KAGI_SESSION_TOKEN` | None | Subscriber web product |
@@ -345,7 +347,7 @@ kagi auth
 # then Legacy API Token; each paste is saved immediately
 ```
 
-**All commands work:**
+**All search, AI, and feed commands work. Mail requires separate OAuth login:**
 - ✅ Everything listed above
 
 **Smart behavior:**

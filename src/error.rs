@@ -21,6 +21,10 @@ pub enum KagiError {
     #[error("authentication error: {0}")]
     Auth(String),
 
+    /// Mail authorization requires separate OAuth credentials and recovery commands.
+    #[error("authentication error: {0}")]
+    MailAuth(String),
+
     /// A data parsing or deserialization failure.
     #[error("parse error: {0}")]
     Parse(String),

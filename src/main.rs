@@ -6,6 +6,9 @@ mod cli;
 mod error;
 mod http;
 mod local;
+mod mail;
+#[path = "mail-auth.rs"]
+mod mail_auth;
 mod mcp_install;
 mod parser;
 mod quick;
@@ -168,7 +171,9 @@ struct ErrorEnvelope {
 fn error_envelope(error: &KagiError) -> ErrorEnvelope {
     let (code, category, retryable, detail) = match error {
         KagiError::Network(message) => ("network_error", "network", true, message.as_str()),
-        KagiError::Auth(message) => ("authentication_error", "auth", false, message.as_str()),
+        KagiError::Auth(message) | KagiError::MailAuth(message) => {
+            ("authentication_error", "auth", false, message.as_str())
+        }
         KagiError::Parse(message) => ("parse_error", "parse", false, message.as_str()),
         KagiError::Config(message) if message.starts_with("assistant contract") => {
             ("contract_error", "contract", false, message.as_str())
@@ -187,7 +192,10 @@ fn error_envelope(error: &KagiError) -> ErrorEnvelope {
         ),
         KagiError::Batch(message) => ("batch_error", "batch", false, message.as_str()),
     };
-    let required_auth = required_auth_for_message(detail);
+    let required_auth = match error {
+        KagiError::MailAuth(_) => Some("KAGI_MAIL_ACCESS_TOKEN"),
+        _ => required_auth_for_message(detail),
+    };
 
     ErrorEnvelope {
         code,
@@ -202,7 +210,9 @@ fn error_envelope(error: &KagiError) -> ErrorEnvelope {
 }
 
 fn required_auth_for_message(message: &str) -> Option<&'static str> {
-    if message.contains("missing credentials") {
+    if message.contains("KAGI_MAIL_ACCESS_TOKEN") {
+        Some("KAGI_MAIL_ACCESS_TOKEN")
+    } else if message.contains("missing credentials") {
         Some("KAGI_API_KEY or KAGI_SESSION_TOKEN")
     } else if message.contains("KAGI_API_KEY") {
         Some("KAGI_API_KEY")
@@ -220,6 +230,7 @@ fn suggested_commands_for_error(
     required_auth: Option<&'static str>,
 ) -> Vec<&'static str> {
     match required_auth {
+        Some("KAGI_MAIL_ACCESS_TOKEN") => vec!["kagi mail status", "kagi mail login"],
         Some("KAGI_API_KEY") => vec![
             "kagi auth status",
             "kagi auth set --api-key <key>",
@@ -367,6 +378,7 @@ async fn run() -> Result<(), KagiError> {
                 }
             }
         }
+        Commands::Mail(args) => mail::run(args, profile.as_deref()).await,
         Commands::Agent => {
             let content = agent::skill_content(agent::KAGI_SKILL).ok_or_else(|| {
                 KagiError::Config("embedded kagi skill is unavailable".to_string())
