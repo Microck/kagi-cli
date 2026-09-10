@@ -27,7 +27,7 @@ export default async function Page(props: {
     >
       <DocsPage toc={page.data.toc}>
         <DocsBody>
-          <MDX />
+          <MDX components={getMDXComponents()} />
         </DocsBody>
       </DocsPage>
     </DocsLayout>
