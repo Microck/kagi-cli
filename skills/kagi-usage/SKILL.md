@@ -19,6 +19,7 @@ skill named below.
 | Continue a conversation or manage Assistant state | `kagi-assistant` |
 | Run searches in bulk or monitor changes over time | `kagi-monitoring` |
 | Configure credentials or account search behavior | `kagi-account-config` |
+| Search or read mail | `kagi mail` (below) |
 
 Load the skill when it appears in the available skills listing. Otherwise run
 `kagi skills get <name>` for the same guidance.
@@ -203,3 +204,22 @@ Page work is complete when:
 - quotes remain distinguishable from summaries;
 - the output keeps the requested language and format; and
 - you report a source-access failure instead of guessing past it.
+
+## Mail
+
+Mail uses separate OAuth credentials and private connection settings. Run
+`kagi mail login` after configuring `[mail].endpoint` and `[mail].client_id`.
+Search API keys and session tokens do not grant mail access.
+
+```bash
+kagi mail boxes
+kagi mail search --mailbox Inbox --unread --limit 10
+kagi mail search "contract renewal" --semantic --format toon
+kagi mail read MESSAGE_ID --format pretty
+kagi mail read --thread THREAD_ID --new-text-only
+```
+
+Use exact search for known words, senders, subjects, or dates. Add `--semantic`
+for a topic described in natural language. Use returned IDs to read messages.
+The MCP exposes no send, delete, mark-read, or attachment-download operation.
+Mail content stays out of the CLI's local history and response cache.

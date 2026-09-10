@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use reqwest::Url;
@@ -241,6 +242,8 @@ impl CredentialInventory {
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
 struct ConfigFile {
     auth: Option<AuthConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mail: Option<crate::mail_auth::MailConfig>,
     profiles: Option<BTreeMap<String, ProfileConfig>>,
 }
 
@@ -255,6 +258,52 @@ struct AuthConfig {
 #[derive(Debug, Default, Deserialize, serde::Serialize)]
 struct ProfileConfig {
     auth: Option<AuthConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mail: Option<crate::mail_auth::MailConfig>,
+}
+
+/// Mail has its own OAuth credentials, isolated from search auth and other profiles.
+pub fn load_mail_config(profile: Option<&str>) -> Result<crate::mail_auth::MailConfig, KagiError> {
+    // TOML parser diagnostics can quote the source line, which may contain a token.
+    let config = read_config_file(&default_config_path()).map_err(|_| {
+        KagiError::Config("could not read mail configuration; check KAGI_CONFIG and the config file's TOML syntax".into())
+    })?;
+    let profile = normalize_profile_name(profile)?;
+    let mail = match profile.as_deref() {
+        None => config.mail,
+        Some(name) => config
+            .profiles
+            .and_then(|mut profiles| profiles.remove(name))
+            .and_then(|profile| profile.mail),
+    };
+    Ok(mail.unwrap_or_default())
+}
+
+/// Preserve search auth and every other profile when saving mail settings or tokens.
+pub fn save_mail_config(
+    profile: Option<&str>,
+    mail: crate::mail_auth::MailConfig,
+) -> Result<(), KagiError> {
+    let path = default_config_path();
+    let mut config = read_config_file(&path).map_err(|_| {
+        KagiError::Config(
+            "could not read mail configuration; check the config file's TOML syntax".into(),
+        )
+    })?;
+    match normalize_profile_name(profile)? {
+        None => config.mail = Some(mail),
+        Some(name) => {
+            config
+                .profiles
+                .get_or_insert_with(BTreeMap::new)
+                .entry(name)
+                .or_default()
+                .mail = Some(mail)
+        }
+    }
+    let raw = toml::to_string(&config)
+        .map_err(|_| KagiError::Config("could not serialize mail configuration".into()))?;
+    write_config_file_atomically(&path, &raw)
 }
 
 #[derive(Debug, Clone)]
@@ -791,13 +840,27 @@ fn write_config_file_atomically(path: &Path, raw: &str) -> Result<(), KagiError>
         .unwrap_or_default();
     let temp_path = parent.join(format!(".{file_name}.tmp-{}-{nonce}", std::process::id()));
 
-    fs::write(&temp_path, raw).map_err(|error| {
-        KagiError::Config(format!(
-            "failed to write temporary config file {}: {error}",
-            temp_path.display()
-        ))
+    // Create the file privately before writing OAuth or search credentials.
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temp_path).map_err(|error| {
+        KagiError::Config(format!("failed to create temporary config file: {error}"))
     })?;
-    secure_config_permissions(&temp_path)?;
+    if let Err(error) = file
+        .write_all(raw.as_bytes())
+        .and_then(|()| file.sync_all())
+    {
+        let _ = fs::remove_file(&temp_path);
+        return Err(KagiError::Config(format!(
+            "failed to write temporary config file: {error}"
+        )));
+    }
+    drop(file);
 
     if let Err(error) = fs::rename(&temp_path, path) {
         let _ = fs::remove_file(&temp_path);

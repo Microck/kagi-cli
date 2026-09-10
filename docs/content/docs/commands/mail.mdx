@@ -1,0 +1,88 @@
+---
+title: mail
+description: Search and read Kagi Mail from the terminal.
+---
+
+`kagi mail` lists mailboxes, searches messages, and reads messages or threads
+through the mail MCP. These operations do not send, delete, move, or mark mail
+as read. Responses are not stored in local history or the response cache.
+
+## Setup
+
+Add the MCP endpoint and OAuth client ID supplied by your mail service to your
+private `~/.config/kagi-cli/config.toml`:
+
+```toml
+[mail]
+endpoint = "https://mail.example.com/mcp"
+client_id = "your-oauth-client-id"
+```
+
+```bash
+kagi mail login
+kagi mail status
+```
+
+Login prints a verification URL and code to stderr. Open the URL in a browser
+and approve access. The command waits up to the provider's expiry, capped at
+10 minutes, then saves OAuth tokens in the same private config file. It refreshes
+expired tokens automatically and binds refresh credentials to their OAuth issuer.
+If the provider omits expiry, a saved refresh token renews access before use.
+Ctrl-C cancels login.
+
+`KAGI_MAIL_ENDPOINT` and `KAGI_MAIL_CLIENT_ID` override config. For automation,
+`KAGI_MAIL_ACCESS_TOKEN` supplies an existing OAuth bearer token; this override
+is never saved or refreshed. Search API keys and session tokens do not grant
+mail access. Never put credentials on the command line.
+
+`--profile work` selects `[profiles.work.mail]`, without inheriting another
+profile's mailbox or tokens. `KAGI_CONFIG` and XDG config paths work as usual.
+`kagi mail logout` removes saved mail tokens only; it does not revoke access or
+clear environment variables. Status reports configuration and expiry without
+printing private settings or making network requests.
+
+## Commands
+
+```bash
+kagi mail boxes
+kagi mail search --mailbox Inbox --unread --limit 10
+kagi mail search "invoice" --from billing@example.com
+kagi mail search "the contract renewal" --semantic
+kagi mail search --after 2026-01-01 --before 2026-02-01 --has-attachment
+kagi mail read MESSAGE_ID --format pretty
+kagi mail read --thread THREAD_ID --new-text-only
+kagi mail search "invoice" --format compact | jq '.emails[]?.id'
+```
+
+`boxes` returns mailbox paths and total/unread counts. Pass the full returned
+path to `--mailbox`.
+
+`search [QUERY]` matches literal text by default. Omit QUERY to list recent mail
+or filter by `--from`, `--to`, `--cc`, `--subject`, `--mailbox`, `--after`,
+`--before`, `--unread`, `--has-attachment`, and `--min-size`. Dates accept
+YYYY-MM-DD or RFC 3339. `--after` is inclusive and `--before` is exclusive.
+`--limit` defaults to 20 and accepts 1 through 50. The MCP has no pagination.
+`--semantic` requires QUERY and searches by meaning with the same filters.
+
+`read` takes exactly one message ID or `--thread THREAD_ID`. Threads arrive
+oldest first. `--new-text-only` drops quoted reply history. Attachment metadata
+is included when available; attachment download is not exposed by the MCP.
+
+## Output and errors
+
+All commands default to `--format json`. Use `compact` for minified JSON,
+`toon` for agent context, or `pretty` for plain terminal text. The format flag
+works before or after the mail subcommand. JSON/TOON retain the server's tool
+result, including IDs, URLs, notes, and truncation flags, without the MCP wrapper.
+Empty `emails` or `mailboxes` arrays may be `null`, as returned by the service.
+Pretty output shows message IDs and thread IDs for the next command.
+
+Success exits 0, argument parsing errors exit 2, and runtime failures exit 1. Runtime
+errors go to stderr and support the global `--error-format json`. Authentication
+failures suggest `kagi mail status` and `kagi mail login`. Temporary token-service
+failures during login or refresh, including HTTP 429 and server errors, remain
+retryable and leave saved tokens intact. Error diagnostics do not echo remote
+response bodies, credentials, or private endpoints. Login removes control
+characters from the displayed code.
+Rejected OAuth clients report a configuration error identifying the client ID setting.
+An invalid grant requires another `kagi mail login`.
