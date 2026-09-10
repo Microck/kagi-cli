@@ -102,7 +102,7 @@ Verify all public release surfaces after the workflows finish:
    - verify a fresh `makepkg -Csf --noconfirm` or AUR helper build succeeds on Arch
 7. Docs site
    - confirm the `Build Fumadocs docs site` step in the `Release` run succeeded
-   - if it failed, reproduce locally with `pnpm --dir docs install --frozen-lockfile && pnpm --dir docs build` and fix the build
+   - if it failed, reproduce from the `docs/` directory with `pnpm install --frozen-lockfile && pnpm build` and fix the build
    - deploy the fresh `docs/.next` output to the docs host and verify the changed command, guide, or reference pages render correctly
 8. Installers and scripts
    - `scripts/install.sh` and `scripts/install.ps1` resolve the latest GitHub release dynamically, so they need no per-release version bump
@@ -174,11 +174,13 @@ The public docs site is a Fumadocs (Next.js) app source-controlled under `docs/`
 Build it locally with:
 
 ```bash
-pnpm --dir docs install --frozen-lockfile
-pnpm --dir docs build
+cd docs
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
-The release workflow runs the same build as a non-blocking artifact check and emits a warning when it fails.
+Run Corepack and pnpm from `docs/` so Corepack selects the version pinned in `docs/package.json`. The release workflow uses that directory for the same non-blocking build check and emits a warning when it fails.
 
 Hosting is not wired into the release workflow yet. After a release, deploy the fresh `docs/.next` output to the docs host manually and confirm the changed pages render at `https://kagi.micr.dev`. The site can still return HTTP 200 while serving an old deployment, so compare visible content against the release changes before treating docs as complete.
 ### Cargo

@@ -210,11 +210,12 @@ jobs:
       - name: Build Fumadocs docs site
         id: build_docs_site
         continue-on-error: true
+        working-directory: docs
         run: |
           set -euo pipefail
           corepack enable
-          pnpm --dir docs install --frozen-lockfile
-          pnpm --dir docs build
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Sync Homebrew tap and Scoop bucket
         id: sync_package_indexes
