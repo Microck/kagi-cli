@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.20.1]
+
 ### Fixed
 
 - `kagi lens list` and related lens commands now parse the current edit links in every account language (#185).
