@@ -13,17 +13,16 @@ use crate::http;
 
 const KAGI_BILLING_PATH: &str = "/settings/billing";
 const TEXT_CANDIDATE_LIMIT: usize = 512;
-const AI_COST_LABEL: &str = "total ai cost this period";
-const AI_USAGE_LABEL: &str = "ai usage (usd)";
-const ACCOUNT_BALANCE_LABEL: &str = "account balance";
-const NEXT_RENEWAL_LABEL: &str = "next renewal is";
+const AI_COST_LABELS: [&str; 2] = ["total ai cost this period", "ai usage (usd)"];
+const ACCOUNT_BALANCE_LABELS: [&str; 2] = ["account balance", "saldo"];
+const NEXT_RENEWAL_LABELS: [&str; 2] = ["next renewal is", "neste fornyelse er"];
 
 /// Account billing and calendar-month usage reported by Kagi.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UsageReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
-    pub ai_cost: AiCostUsage,
+    pub ai_cost: Option<AiCostUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_balance_usd: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,8 +52,7 @@ pub struct DailyUsage {
 /// # Errors
 ///
 /// Returns authentication errors for a missing or expired session token,
-/// network errors for failed HTTP requests, and parse errors when Kagi's page
-/// no longer exposes the required AI cost values.
+/// and network errors for failed HTTP requests.
 pub async fn execute_usage(session_token: &str) -> Result<UsageReport, KagiError> {
     let session_token = session_token.trim();
     if session_token.is_empty() {
@@ -122,10 +120,12 @@ pub fn format_pretty(report: &UsageReport) -> String {
     if let Some(plan) = report.plan.as_deref() {
         lines.push(format!("Plan: {plan}"));
     }
-    lines.push(format!(
-        "AI cost: ${:.2} / ${:.2}",
-        report.ai_cost.used_usd, report.ai_cost.limit_usd
-    ));
+    if let Some(ai_cost) = &report.ai_cost {
+        lines.push(format!(
+            "AI cost: ${:.2} / ${:.2}",
+            ai_cost.used_usd, ai_cost.limit_usd
+        ));
+    }
     if let Some(balance) = report.account_balance_usd {
         lines.push(format!("Account balance: ${balance:.2}"));
     }
@@ -157,22 +157,32 @@ pub fn format_pretty(report: &UsageReport) -> String {
 fn parse_usage_html(html: &str) -> Result<UsageReport, KagiError> {
     let document = Html::parse_document(html);
     let candidates = text_candidates(&document);
-    let ai_cost = extract_ai_cost(&candidates).ok_or_else(|| {
-        KagiError::Parse(
-            "Kagi billing page did not contain the current AI cost and limit; the page layout may have changed"
-                .to_string(),
-        )
-    })?;
 
-    Ok(UsageReport {
+    let report = UsageReport {
         plan: extract_plan(&candidates),
-        ai_cost,
-        account_balance_usd: extract_first_decimal_after_label(&candidates, ACCOUNT_BALANCE_LABEL),
-        next_renewal: extract_text_after_label(&candidates, NEXT_RENEWAL_LABEL)
+        ai_cost: extract_ai_cost(&candidates),
+        account_balance_usd: extract_first_decimal_after_label(
+            &candidates,
+            &ACCOUNT_BALANCE_LABELS,
+        ),
+        next_renewal: extract_text_after_label(&candidates, &NEXT_RENEWAL_LABELS)
             .and_then(|text| extract_iso_date(&text)),
         usage_period: extract_usage_period(&candidates),
         daily_usage: parse_daily_usage(&document),
-    })
+    };
+
+    if report.ai_cost.is_none()
+        && report.account_balance_usd.is_none()
+        && report.next_renewal.is_none()
+        && report.daily_usage.is_empty()
+    {
+        return Err(KagiError::Parse(
+            "Kagi billing page did not contain recognized usage details; the page layout may have changed"
+                .to_string(),
+        ));
+    }
+
+    Ok(report)
 }
 
 /// Collects short, normalized visible-text candidates from the page.
@@ -207,8 +217,7 @@ fn text_candidates(document: &Html) -> Vec<String> {
 /// aggregate into one ancestor candidate.
 fn extract_ai_cost(candidates: &[String]) -> Option<AiCostUsage> {
     candidates.iter().find_map(|candidate| {
-        let tail = slice_after_label(candidate, AI_COST_LABEL)
-            .or_else(|| slice_after_label(candidate, AI_USAGE_LABEL))?;
+        let tail = slice_after_label(candidate, &AI_COST_LABELS)?;
         let values = decimal_values(tail);
         if values.len() < 2 {
             return None;
@@ -221,25 +230,28 @@ fn extract_ai_cost(candidates: &[String]) -> Option<AiCostUsage> {
 }
 
 /// Extracts the first decimal value following a case-insensitive label.
-fn extract_first_decimal_after_label(candidates: &[String], label: &str) -> Option<f64> {
+fn extract_first_decimal_after_label(candidates: &[String], labels: &[&str]) -> Option<f64> {
     candidates.iter().find_map(|candidate| {
-        slice_after_label(candidate, label).and_then(|tail| decimal_values(tail).into_iter().next())
+        slice_after_label(candidate, labels)
+            .and_then(|tail| decimal_values(tail).into_iter().next())
     })
 }
 
 /// Extracts non-empty text following a case-insensitive label.
-fn extract_text_after_label(candidates: &[String], label: &str) -> Option<String> {
+fn extract_text_after_label(candidates: &[String], labels: &[&str]) -> Option<String> {
     candidates.iter().find_map(|candidate| {
-        let tail = slice_after_label(candidate, label)?.trim();
+        let tail = slice_after_label(candidate, labels)?.trim();
         (!tail.is_empty()).then_some(tail.to_string())
     })
 }
 
-/// Returns the portion of text after a case-insensitive ASCII label.
-fn slice_after_label<'a>(text: &'a str, label: &str) -> Option<&'a str> {
+/// Returns the portion of text after the first matching case-insensitive label.
+fn slice_after_label<'a>(text: &'a str, labels: &[&str]) -> Option<&'a str> {
     let lower = text.to_ascii_lowercase();
-    let offset = lower.find(label)?;
-    Some(&text[offset + label.len()..])
+    labels.iter().find_map(|label| {
+        let offset = lower.find(label)?;
+        Some(&text[offset + label.len()..])
+    })
 }
 
 /// Extracts the plan name from a monthly or yearly price description.
@@ -534,10 +546,10 @@ mod tests {
         assert_eq!(report.plan.as_deref(), Some("Ultimate"));
         assert_eq!(
             report.ai_cost,
-            AiCostUsage {
+            Some(AiCostUsage {
                 used_usd: 0.0,
                 limit_usd: 25.0,
-            }
+            })
         );
         assert_eq!(report.account_balance_usd, Some(5.0));
         assert_eq!(report.next_renewal.as_deref(), Some("2026-01-28"));
@@ -589,16 +601,48 @@ mod tests {
         assert_eq!(parse_decimal_token("1.234.567"), Some(1_234_567.0));
     }
 
-    /// Verifies missing required cost values produce a layout-change error.
+    /// Regression: Starter plans omit AI cost, and billing labels follow the
+    /// account language.
     #[test]
-    fn reports_layout_changes_when_cost_pair_is_missing() {
+    fn parses_localized_starter_plan_without_ai_cost() {
+        let html = r#"
+        <html><body>
+          <span>Starter</span>
+          <div class="billing_box_count_box">
+            <div class="billing_box_count_title">Søk</div>
+            <div class="billing_box_count_num">3/300</div>
+          </div>
+          <div class="billing_box_count_box">
+            <div class="billing_box_count_title">Assistant-interaksjoner</div>
+            <div class="billing_box_count_num"><span>8</span>/300</div>
+          </div>
+          <div class="billing_box_count_box">
+            <div class="billing_box_count_title">Saldo</div>
+            <div class="billing_box_count_num">$0.07</div>
+          </div>
+          <span>Neste fornyelse er <b>2026-09-19</b></span>
+        </body></html>
+        "#;
+
+        let report = parse_usage_html(html).expect("localized Starter usage should parse");
+
+        assert_eq!(report.ai_cost, None);
+        assert_eq!(report.account_balance_usd, Some(0.07));
+        assert_eq!(report.next_renewal.as_deref(), Some("2026-09-19"));
+        assert!(report.daily_usage.is_empty());
+
+        let json = serde_json::to_value(&report).expect("usage report should serialize");
+        assert!(json["ai_cost"].is_null());
+        assert!(!format_pretty(&report).contains("AI cost:"));
+    }
+
+    /// Keeps changed or unrelated HTML from looking like a valid empty report.
+    #[test]
+    fn rejects_pages_without_recognized_billing_details() {
         let error = parse_usage_html("<html><body>Billing Details</body></html>")
-            .expect_err("missing cost pair should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("did not contain the current AI cost and limit")
-        );
+            .expect_err("unrecognized billing page should fail");
+
+        assert!(error.to_string().contains("recognized usage details"));
     }
 
     /// Regression: the live billing page renders the newer `AI usage (USD)`
@@ -623,8 +667,9 @@ mod tests {
         "#;
 
         let report = parse_usage_html(html).expect("current layout should parse");
-        assert_eq!(report.ai_cost.used_usd, 12.76);
-        assert_eq!(report.ai_cost.limit_usd, 20.0);
+        let ai_cost = report.ai_cost.expect("AI cost should be present");
+        assert_eq!(ai_cost.used_usd, 12.76);
+        assert_eq!(ai_cost.limit_usd, 20.0);
         assert_eq!(report.plan, None);
         assert_eq!(report.account_balance_usd, None);
         assert_eq!(report.next_renewal, None);
