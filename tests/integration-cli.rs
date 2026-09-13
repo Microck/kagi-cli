@@ -645,9 +645,7 @@ fn lens_settings_html_fixture() -> &'static str {
       <input type="hidden" name="lens_id" value="22524">
       <input type="hidden" name="active_index" value="2">
       <a class="lens_title" href="/settings/update_lens?id=22524"><div>Rust Docs</div></a>
-      <div class="lens_edit_lens">
-        <a aria-label="Edit lens" href="/settings/update_lens?id=22524">Edit</a>
-      </div>
+      <a aria-label="Rediger linse" href="/settings/update_lens?id=22524">Rediger</a>
     </form>
     "#
 }

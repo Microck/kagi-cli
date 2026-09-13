@@ -277,7 +277,8 @@ pub fn parse_lens_list(html: &str) -> Result<Vec<LensSummary>, KagiError> {
     let item_selector = selector("form.__lens_item")?;
     let name_selector = selector(".lens_title div")?;
     let description_selector = selector(".lens_desc")?;
-    let edit_selector = selector(r#".lens_edit_lens a[aria-label="Edit lens"]"#)?;
+    // The route identifies this control across page layouts and account languages.
+    let edit_selector = selector(r#"a[href^="/settings/update_lens?id="]"#)?;
 
     let mut lenses = Vec::new();
 
@@ -779,6 +780,27 @@ mod tests {
         assert_eq!(lenses[0].position, Some(0));
         assert_eq!(lenses[1].description.as_deref(), Some("Forum discussions"));
         assert_eq!(lenses[1].toggle_field, "next_index");
+    }
+
+    /// Regression: Kagi no longer wraps edit links in `.lens_edit_lens`, and
+    /// the accessible label follows the account language.
+    #[test]
+    fn parses_lens_edit_link_from_its_route() {
+        let html = r#"
+        <form class="__lens_item" action="/lenses/move" method="POST">
+          <input type="hidden" name="lens_id" value="4248">
+          <input type="hidden" name="active_index" value="0">
+          <div class="lens_title"><div>Norske kilder</div></div>
+          <a aria-label="Rediger linse"
+             class="btn-icon m-n4"
+             href="/settings/update_lens?id=4248">Rediger</a>
+        </form>
+        "#;
+
+        let lenses = parse_lens_list(html).expect("localized lens list should parse");
+
+        assert_eq!(lenses.len(), 1);
+        assert_eq!(lenses[0].edit_url, "/settings/update_lens?id=4248");
     }
 
     #[test]

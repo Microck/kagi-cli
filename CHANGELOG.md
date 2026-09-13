@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Fixed
+
+- `kagi lens list` and related lens commands now parse the current edit links in every account language (#185).
+- `kagi usage` now supports plans without AI cost tracking and reads balance and renewal details from Norwegian billing pages (#186).
+
 ## [0.20.0]
 
 ### Added

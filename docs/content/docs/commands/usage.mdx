@@ -26,8 +26,8 @@ account configuration before the billing request is sent.
 The default JSON response contains:
 
 - `plan` when Kagi exposes the current plan name
-- `ai_cost.used_usd`
-- `ai_cost.limit_usd`
+- `ai_cost.used_usd` and `ai_cost.limit_usd` when the plan includes AI cost
+  tracking; otherwise `ai_cost` is `null`
 - `account_balance_usd` when present
 - `next_renewal` when present
 - `usage_period` for the displayed calendar month
