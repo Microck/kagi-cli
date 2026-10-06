@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `kagi mail send` submits plain-text email through Kagi Mail's SMTP endpoint, with separate environment-only credentials and required verified STARTTLS.
+
 ## [0.20.1]
 
 ### Fixed

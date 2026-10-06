@@ -527,12 +527,12 @@ fn vscode_user_mcp_config_path() -> PathBuf {
 
     #[cfg(target_os = "windows")]
     {
-        return env::var_os("APPDATA")
+        env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(home_dir)
             .join("Code")
             .join("User")
-            .join("mcp.json");
+            .join("mcp.json")
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -560,7 +560,7 @@ fn claude_desktop_config_path() -> Result<PathBuf, KagiError> {
         let appdata = env::var_os("APPDATA")
             .map(PathBuf::from)
             .ok_or_else(|| KagiError::Config("APPDATA is not set".to_string()))?;
-        return Ok(appdata.join("Claude").join("claude_desktop_config.json"));
+        Ok(appdata.join("Claude").join("claude_desktop_config.json"))
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -603,10 +603,10 @@ fn roo_code_config_candidates() -> Result<Vec<PathBuf>, KagiError> {
         let appdata = env::var_os("APPDATA")
             .map(PathBuf::from)
             .ok_or_else(|| KagiError::Config("APPDATA is not set".to_string()))?;
-        return Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
+        Ok(["Code", "Cursor", "Windsurf", "VSCodium"]
             .iter()
             .map(|name| appdata.join(name).join(&relative))
-            .collect());
+            .collect())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]

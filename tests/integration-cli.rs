@@ -92,6 +92,8 @@ fn isolate_command_home(command: &mut Command, cwd: &Path) {
         .env("HOME", cwd)
         .env("XDG_CONFIG_HOME", cwd.join(".config"))
         .env("XDG_DATA_HOME", cwd.join(".local").join("share"));
+    #[cfg(target_os = "windows")]
+    command.env("APPDATA", cwd.join(".appdata"));
 }
 
 /// Path to the kagi config file for a sandboxed run, matching the isolated
@@ -117,7 +119,12 @@ fn vscode_user_dir(cwd: &Path) -> PathBuf {
             .join("User")
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        cwd.join(".appdata").join("Code").join("User")
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         cwd.join(".config").join("Code").join("User")
     }
@@ -1594,7 +1601,7 @@ fn mcp_install_dry_run_does_not_require_client_cli() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("MCP setup plan"));
     assert!(stdout.contains("Codex CLI (ok): write"));
-    assert!(stdout.contains(".codex/config.toml"));
+    assert!(stdout.replace('\\', "/").contains(".codex/config.toml"));
 }
 
 #[test]

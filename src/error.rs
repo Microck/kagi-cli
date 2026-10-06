@@ -25,6 +25,10 @@ pub enum KagiError {
     #[error("authentication error: {0}")]
     MailAuth(String),
 
+    /// SMTP submission failed; retrying could duplicate a message.
+    #[error("mail send error: {0}")]
+    MailSend(String),
+
     /// A data parsing or deserialization failure.
     #[error("parse error: {0}")]
     Parse(String),

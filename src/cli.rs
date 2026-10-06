@@ -323,7 +323,7 @@ pub enum Commands {
     /// Inspect account plan, AI allowance, renewal, and calendar-month usage
     #[command(visible_alias = "billing")]
     Usage(UsageArgs),
-    /// Search and read Kagi Mail
+    /// Search, read, or explicitly send Kagi Mail
     Mail(crate::mail::MailCommand),
     /// Summarize a URL or text with Kagi's public API or subscriber web Summarizer
     Summarize(SummarizeArgs),

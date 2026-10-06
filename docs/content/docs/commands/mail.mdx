@@ -1,13 +1,14 @@
 ---
 title: mail
-description: Search and read Kagi Mail from the terminal.
+description: Search, read, and send Kagi Mail from the terminal.
 ---
 
 `kagi mail` lists mailboxes, searches messages, and reads messages or threads
-through the mail MCP. These operations do not send, delete, move, or mark mail
-as read. Responses are not stored in local history or the response cache.
+through the read-only mail MCP. These operations do not send, delete, move, or
+mark mail as read. `kagi mail send` submits plain-text mail through SMTP instead.
+Messages and responses are not stored in local history or the response cache.
 
-## Setup
+## Read-only MCP setup
 
 Add the MCP endpoint and OAuth client ID supplied by your mail service to your
 private `~/.config/kagi-cli/config.toml`:
@@ -68,18 +69,51 @@ YYYY-MM-DD or RFC 3339. `--after` is inclusive and `--before` is exclusive.
 oldest first. `--new-text-only` drops quoted reply history. Attachment metadata
 is included when available; attachment download is not exposed by the MCP.
 
+## Send mail
+
+`kagi mail send` requires all four flags: `--from`, `--to`, `--subject`, and
+`--body`. Use one bare email address for each of `--from` and `--to`, without
+display names. The subject must not contain control characters.
+
+```bash
+kagi mail send \
+  --from sender@example.com \
+  --to recipient@example.com \
+  --subject "Meeting notes" \
+  --body "The meeting starts at 10."
+```
+
+Supply SMTP credentials only through the environment variables
+`KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD`. There are no credential
+flags or saved-config credentials for sending. Do not put credentials on the
+command line.
+
+Sending uses `mail.kagimail.com:587` with required, certificate-verified STARTTLS.
+It never falls back to plaintext or unverified TLS. Mail is plain-text only;
+HTML and attachments are not supported.
+
+The read-only MCP OAuth token is separate and is never reused for SMTP.
+`kagi mail login`, saved profiles, and `KAGI_MAIL_ACCESS_TOKEN` do not supply
+sending credentials.
+
+Successful submission returns `{"status":"submitted"}`. SMTP acceptance does
+not prove recipient delivery. If submission fails, delivery may be unknown;
+check your mailbox before retrying to avoid duplicate mail. SMTP errors do not
+echo credentials, message content, or remote response text. Authentication
+rejections identify the SMTP environment variables, not the MCP login flow.
+
 ## Output and errors
 
 All commands default to `--format json`. Use `compact` for minified JSON,
 `toon` for agent context, or `pretty` for plain terminal text. The format flag
-works before or after the mail subcommand. JSON/TOON retain the server's tool
-result, including IDs, URLs, notes, and truncation flags, without the MCP wrapper.
-Empty `emails` or `mailboxes` arrays may be `null`, as returned by the service.
-Pretty output shows message IDs and thread IDs for the next command.
+works before or after the mail subcommand. For MCP reads, JSON/TOON retain the
+server's tool result, including IDs, URLs, notes, and truncation flags, without
+the MCP wrapper. Empty `emails` or `mailboxes` arrays may be `null`, as returned
+by the service. Pretty output shows message IDs and thread IDs for the next command.
 
 Success exits 0, argument parsing errors exit 2, and runtime failures exit 1. Runtime
 errors go to stderr and support the global `--error-format json`. Authentication
-failures suggest `kagi mail status` and `kagi mail login`. Temporary token-service
+failures for MCP reads suggest `kagi mail status` and `kagi mail login`. Temporary token-service
 failures during login or refresh, including HTTP 429 and server errors, remain
 retryable and leave saved tokens intact. Error diagnostics do not echo remote
 response bodies, credentials, or private endpoints. Login removes control
