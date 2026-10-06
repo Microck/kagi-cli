@@ -440,8 +440,8 @@ fn parse_decimal_token(token: &str) -> Option<f64> {
             .chars()
             .any(|character| matches!(character, '.' | ',') && character != separator);
 
-        if (1..=3).contains(&fractional_digits)
-            && !(has_prior_same_separator && !has_other_separator)
+        if (has_other_separator || !has_prior_same_separator)
+            && (1..=3).contains(&fractional_digits)
         {
             compact
                 .char_indices()
