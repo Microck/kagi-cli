@@ -1,4 +1,4 @@
-//! Mail commands and the small Streamable HTTP MCP client they share.
+//! Mail commands: read-only MCP operations and explicit SMTP submission.
 
 use clap::{Args, Subcommand, ValueEnum};
 use reqwest::{Client, Response, Url, header::HeaderValue};
@@ -8,7 +8,7 @@ use crate::{error::KagiError, mail_auth};
 
 #[derive(Debug, Args)]
 #[command(
-    after_help = "Examples:\n  kagi mail login\n  kagi mail boxes\n  kagi mail search --mailbox Inbox --unread\n  kagi mail search \"contract renewal\" --semantic\n  kagi mail read MESSAGE_ID --format pretty"
+    after_help = "Examples:\n  kagi mail login\n  kagi mail boxes\n  kagi mail search --mailbox Inbox --unread\n  kagi mail search \"contract renewal\" --semantic\n  kagi mail read MESSAGE_ID --format pretty\n  kagi mail send --from sender@example.com --to recipient@example.com --subject Hi --body \"Hello\""
 )]
 pub struct MailCommand {
     #[command(subcommand)]
@@ -41,6 +41,8 @@ pub enum MailSubcommand {
     Search(MailSearchArgs),
     /// Read one message or every message in a thread
     Read(MailReadArgs),
+    /// Send a plain-text email using separate SMTP environment credentials
+    Send(crate::mail_send::MailSendArgs),
 }
 
 #[derive(Debug, Args)]
@@ -156,6 +158,7 @@ pub async fn run(args: MailCommand, profile: Option<&str>) -> Result<(), KagiErr
         MailSubcommand::Login => mail_auth::login(profile).await?,
         MailSubcommand::Status => mail_auth::MailConfig::load(profile)?.status(),
         MailSubcommand::Logout => mail_auth::logout(profile)?,
+        MailSubcommand::Send(send) => crate::mail_send::send(send).await?,
         command => {
             let (tool, arguments) = match command {
                 MailSubcommand::Boxes => ("list_mailboxes", json!({})),

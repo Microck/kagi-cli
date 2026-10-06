@@ -8,12 +8,13 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -63,12 +64,13 @@ impl MailService {
             while !thread_stop.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
                         stream
                             .set_read_timeout(Some(Duration::from_secs(5)))
                             .unwrap();
                         let request = read_request(&stream);
                         let reply = serve(&thread_url, &request, mode);
-                        thread_requests.lock().unwrap().push(request);
+                        thread_requests.lock().push(request);
                         if reply.content_type == "text/event-stream" {
                             write!(stream, "HTTP/1.1 {}\r\nContent-Type: text/event-stream\r\nConnection: close\r\n{}Transfer-Encoding: chunked\r\n\r\n", reply.status, reply.headers).unwrap();
                             for chunk in reply.body.as_bytes().chunks(7) {
@@ -113,7 +115,6 @@ impl MailService {
     fn calls(&self) -> Vec<Value> {
         self.requests
             .lock()
-            .unwrap()
             .iter()
             .filter_map(|r| serde_json::from_str::<Value>(&r.body).ok())
             .filter(|v| v["method"] == "tools/call")
@@ -337,6 +338,8 @@ fn run(args: &[&str], directory: &Path, env: &[(&str, String)]) -> Output {
         "KAGI_MAIL_ENDPOINT",
         "KAGI_MAIL_CLIENT_ID",
         "KAGI_MAIL_ACCESS_TOKEN",
+        "KAGI_MAIL_SMTP_USERNAME",
+        "KAGI_MAIL_SMTP_PASSWORD",
         "KAGI_API_KEY",
         "KAGI_API_TOKEN",
         "KAGI_SESSION_TOKEN",
@@ -600,7 +603,6 @@ fn refresh_rotates_tokens_and_preserves_other_credentials() {
         service
             .requests
             .lock()
-            .unwrap()
             .iter()
             .filter(|r| r.path == "/token")
             .count(),
@@ -805,14 +807,7 @@ fn refresh_rejects_a_different_issuer_without_sending_tokens() {
         error["suggested_commands"],
         json!(["kagi mail status", "kagi mail login"])
     );
-    assert!(
-        !service
-            .requests
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|r| r.path == "/token")
-    );
+    assert!(!service.requests.lock().iter().any(|r| r.path == "/token"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), config);
 }
 
@@ -888,7 +883,6 @@ fn login_without_expiry_refreshes_before_reading_mail() {
     let grants: Vec<_> = service
         .requests
         .lock()
-        .unwrap()
         .iter()
         .filter(|request| request.path == "/token")
         .map(|request| form(&request.body)["grant_type"].clone())
@@ -931,4 +925,108 @@ fn malformed_config_and_insecure_urls_do_not_echo_private_values() {
         assert!(!String::from_utf8_lossy(&output.stderr).contains("PRIVATE"));
         assert!(!String::from_utf8_lossy(&output.stderr).contains("private.example"));
     }
+}
+
+#[test]
+fn send_requires_every_message_flag_and_rejects_unsupported_options() {
+    let dir = TempDir::new().unwrap();
+    let fields = [
+        ["--from", "sender@example.com"],
+        ["--to", "recipient@example.com"],
+        ["--subject", "PRIVATE-SUBJECT"],
+        ["--body", "PRIVATE-BODY"],
+    ];
+    for omitted in 0..fields.len() {
+        let mut args = vec!["mail", "send"];
+        for (index, field) in fields.iter().enumerate() {
+            if index != omitted {
+                args.extend(field);
+            }
+        }
+        let output = run(&args, dir.path(), &[]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("PRIVATE"));
+    }
+    for flag in ["--cc", "--bcc", "--attach", "--reply", "--smtp-password"] {
+        let mut args = vec!["mail", "send"];
+        for field in &fields {
+            args.extend(field);
+        }
+        args.extend([flag, "PRIVATE"]);
+        let output = run(&args, dir.path(), &[]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
+fn send_validates_before_credentials_and_never_loads_or_persists_mcp_tokens() {
+    let dir = TempDir::new().unwrap();
+    let service = MailService::start(Mode::default());
+    // A malformed config must not be parsed by send, even with --profile.
+    let config = "[mail]\naccess_token = PRIVATE-SAVED-OAUTH\n";
+    let config_path = dir.path().join("config.toml");
+    std::fs::write(&config_path, config).unwrap();
+    let args = [
+        "--profile",
+        "unconfigured",
+        "mail",
+        "send",
+        "--from",
+        "sender@example.com",
+        "--to",
+        "recipient@example.com",
+        "--subject",
+        "PRIVATE-SUBJECT",
+        "--body",
+        "PRIVATE-BODY",
+        "--error-format",
+        "json",
+    ];
+    for supplied in [
+        None,
+        Some(("KAGI_MAIL_SMTP_USERNAME", "PRIVATE-USERNAME")),
+        Some(("KAGI_MAIL_SMTP_PASSWORD", "PRIVATE-PASSWORD")),
+        Some(("KAGI_MAIL_SMTP_USERNAME", "   ")),
+    ] {
+        let mut env = service.env();
+        env.push(("RUST_LOG", "trace".into()));
+        if let Some((key, value)) = supplied {
+            env.push((key, value.into()));
+        }
+        let output = run(&args, dir.path(), &env);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!stderr.contains("PRIVATE"));
+        assert!(!stderr.contains("fixture-access"));
+        let error: Value = serde_json::from_str(&stderr).unwrap();
+        assert_eq!(error["code"], "missing_credentials");
+        assert_eq!(
+            error["required_auth"],
+            "KAGI_MAIL_SMTP_USERNAME and KAGI_MAIL_SMTP_PASSWORD"
+        );
+        assert_eq!(
+            error["suggested_commands"],
+            json!(["kagi mail send --help"])
+        );
+        assert_eq!(error["retryable"], false);
+    }
+    for (index, value, flag) in [
+        (5, "PRIVATE-invalid-sender", "--from"),
+        (7, "PRIVATE-invalid-recipient", "--to"),
+        (9, "PRIVATE\r\nBcc: other@example.com", "--subject"),
+    ] {
+        let mut invalid_args = args;
+        invalid_args[index] = value;
+        let output = run(&invalid_args, dir.path(), &service.env());
+        assert_eq!(output.status.code(), Some(1));
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["code"], "configuration_error");
+        assert!(error["message"].as_str().unwrap().contains(flag));
+        assert!(!error["message"].as_str().unwrap().contains("PRIVATE"));
+    }
+    assert!(service.requests.lock().is_empty());
+    assert_eq!(std::fs::read_to_string(config_path).unwrap(), config);
 }

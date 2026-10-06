@@ -149,11 +149,31 @@ kagi mail read MESSAGE_ID --format pretty
 kagi mail read --thread THREAD_ID --new-text-only
 ```
 
-Mail uses its own OAuth credentials. It supports `--profile`, JSON by default,
-and `--format compact|toon|pretty`. The MCP exposes read operations only;
-messages are not added to the local history or response cache.
+Read-only MCP access uses separate OAuth credentials and supports `--profile`.
+Mail defaults to JSON and supports `--format compact|toon|pretty`. Messages are
+not added to the local history or response cache.
+
+To send plain-text mail, supply SMTP credentials only through the environment
+variables `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD`, then run:
+
+```bash
+kagi mail send \
+  --from sender@example.com \
+  --to recipient@example.com \
+  --subject "Meeting notes" \
+  --body "The meeting starts at 10."
+```
+
+All four flags, `--from`, `--to`, `--subject`, and `--body`, are required.
+Sending uses `mail.kagimail.com:587` with required, certificate-verified STARTTLS,
+with no plaintext or unverified TLS fallback. HTML and attachments are not
+supported. SMTP credentials are env-only, not command-line flags or saved
+config. The read-only MCP OAuth token is separate and is never reused for
+sending; `kagi mail login` does not supply SMTP credentials. SMTP errors do not
+echo credentials, message content, or remote response text.
+
 See the [mail command reference](docs/content/docs/commands/mail.mdx) for setup,
-filters, and token handling.
+filters, sending, and token handling.
 
 ## auth model
 
@@ -163,6 +183,7 @@ filters, and token handling.
 | `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
 | `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
 | saved mail OAuth tokens or `KAGI_MAIL_ACCESS_TOKEN` | `mail boxes`, `mail search`, and `mail read` |
+| `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD` | `mail send` only, through SMTP |
 | none | `news`, `smallweb`, `auth status`, `mail status`, `--help` |
 
 example config:
@@ -211,7 +232,7 @@ for the full command-to-token matrix, use the [`auth-matrix`](https://kagi.micr.
 | `kagi skills` | list and load embedded, version-matched agent skills with `skills get kagi-usage` as the agent starting point |
 | `kagi batch` | run multiple searches in parallel with JSON, TOON, compact, pretty, markdown, or csv output and shared filters |
 | `kagi auth` | launch the auth wizard, or inspect, validate, and save credentials |
-| `kagi mail` | list mailboxes, search mail, and read messages or threads with separate OAuth login |
+| `kagi mail` | list mailboxes, search and read mail with separate OAuth login, or send plain-text mail through SMTP |
 | `kagi completion` | generate or install shell completions for bash, zsh, fish, or PowerShell |
 | `kagi summarize` | use the paid public summarizer API or the subscriber summarizer with `--subscriber` |
 | `kagi extract` | extract a page's full content as markdown through the current paid API, using `KAGI_API_KEY` directly |
