@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+### Breaking
+
+- `kagi assistant` and `kagi ask-page` JSON output no longer has `meta.version`, `meta.trace`, `message.reply_html`, or `message.trace_id`, because Kagi's v2 Assistant API returns markdown only. `message.id` is now the assistant turn id.
+- `kagi assistant --assistant <built-in> --model <model>` is now an error, because built-in assistants always use their own model.
+
+### Fixed
+
+- `kagi assistant` and `kagi ask-page` work again after Kagi moved Assistant to its v2 API; prompts no longer fail with `HTTP 405 Method Not Allowed`.
+- `kagi assistant --assistant` with a built-in assistant such as `Code` now selects it as a model, as the web app does.
+- Assistant citation markers are rewritten to `[^1]`, `[^2]`, ... to match `references_markdown`.
+
 ## [0.20.1]
 
 ### Fixed

@@ -172,17 +172,14 @@ Single-URL extract prints markdown by default, or the full Extract API envelope 
 
 ```json
 {
-  "meta": {
-    "version": "202603091651.stage.c128588",
-    "trace": "trace-123"
-  },
+  "meta": {},
   "thread": {
     "id": "thread-1",
     "title": "Greeting",
     "created_at": "2026-03-16T06:19:07Z"
   },
   "message": {
-    "id": "msg-1",
+    "id": "turn-1",
     "thread_id": "thread-1",
     "created_at": "2026-03-16T06:19:07Z",
     "state": "done",
@@ -201,6 +198,8 @@ Single-URL extract prints markdown by default, or the full Extract API envelope 
 `kagi assistant --stream` writes incremental markdown deltas to stdout and flushes after each update. `kagi assistant --stream --stream-output json` writes the same stream as newline-delimited compact JSON events with an `md_delta` field plus the current `meta`, `thread`, and `message` snapshot.
 
 The final stream event and completed messages returned by `kagi assistant thread get` include `message.usage` when Kagi supplies token and cost data. `prompt_tokens` maps to Kagi's input tokens, `completion_tokens` maps to output tokens, and `total_tokens` is their sum when the thread API does not return a total.
+
+Kagi's v2 Assistant API returns markdown only, so `kagi assistant` and `kagi ask-page` omit `meta.version`, `meta.trace`, `message.reply_html`, and `message.trace_id`. `message.id` is the assistant turn id.
 
 `kagi assistant models` reads the account-scoped Assistant catalog and returns every base model independently of saved custom assistants:
 
@@ -377,10 +376,7 @@ The final stream event and completed messages returned by `kagi assistant thread
 
 ```json
 {
-  "meta": {
-    "version": "202603171911.stage.707e740",
-    "trace": "trace-123"
-  },
+  "meta": {},
   "source": {
     "url": "https://rust-lang.org/",
     "question": "What is this page about?"
