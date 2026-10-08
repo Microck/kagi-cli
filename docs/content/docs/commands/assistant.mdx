@@ -143,7 +143,7 @@ Possible values:
 
 #### `--model <MODEL>`
 
-Override the model slug for a single prompt.
+Override the model slug for a single prompt. This option cannot be combined with `--assistant <built-in>` because built-in assistants always use their own model.
 
 ```bash
 kagi assistant --model gpt-5-4-nano "reply with only the model name"
