@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.21.1]
+
+### Fixed
+
+- `kagi search` now extracts published dates from result cards instead of leaving them in snippets (#199).
+
 ## [0.21.0]
 
 ### Breaking
