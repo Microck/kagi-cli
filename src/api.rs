@@ -728,6 +728,7 @@ where
         CurrentAssistantPromptParser::new(
             conversation,
             started.branch_uuid,
+            started.assistant_turn_uuid,
             query,
             request.model.clone(),
             selected_profile,
@@ -5130,6 +5131,7 @@ impl CurrentAssistantPromptParser {
     fn new(
         conversation: CurrentAssistantConversation,
         branch_id: String,
+        turn_id: String,
         prompt: String,
         model_name: Option<String>,
         selected_profile: Option<Value>,
@@ -5153,7 +5155,7 @@ impl CurrentAssistantPromptParser {
             folder_ids: conversation.folder_uuid.into_iter().collect(),
         };
         let message = AssistantMessage {
-            id: String::new(),
+            id: turn_id,
             thread_id: thread.id.clone(),
             created_at: utc_timestamp(&conversation.updated_at),
             branch_list: Vec::new(),
@@ -7106,6 +7108,7 @@ mod tests {
         let _env_guard = lock_env();
         let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
         let mut streamed = String::new();
+        let mut streamed_ids = Vec::new();
         let response = execute_assistant_prompt_stream(
             &AssistantPromptRequest {
                 query: "Which Rust is stable?".to_string(),
@@ -7120,6 +7123,7 @@ mod tests {
             "test-session",
             |event| {
                 streamed.push_str(&event.md_delta);
+                streamed_ids.push(event.message.id.clone());
                 Ok(())
             },
         )
@@ -7130,6 +7134,7 @@ mod tests {
         let markdown = "Checking.\n\nStable is 1.99 [^1][^2]. Beta is 1.100 [^1] [^unknown].";
         assert_eq!(response.message.markdown.as_deref(), Some(markdown));
         assert_eq!(streamed, markdown);
+        assert!(streamed_ids.iter().all(|id| id == "turn-1"));
         assert_eq!(
             response.message.references_markdown.as_deref(),
             Some(concat!(
