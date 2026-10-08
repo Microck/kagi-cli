@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -61,7 +61,7 @@ const KAGI_NEWS_CATEGORIES_METADATA_PATH: &str = "/api/categories/metadata";
 const KAGI_NEWS_BATCH_CATEGORIES_PATH: &str = "/api/batches";
 const NEWS_FILTER_PRESETS_JSON: &str = include_str!("../data/news-filter-presets.json");
 const DEBUG_BODY_PREVIEW_LIMIT: usize = 256;
-const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/conversations";
+const KAGI_ASSISTANT_CONVERSATIONS_PATH: &str = "/api/v2/conversations";
 const KAGI_ASSISTANT_INIT_PATH: &str = "/api/init";
 const KAGI_ASSISTANTS_PATH: &str = "/api/assistants";
 const KAGI_ASSISTANT_CUSTOM_EDITOR_PATH: &str = "/assistant/custom-assistants";
@@ -636,7 +636,16 @@ where
     let (profile_id, selected_profile) = if let Some(selector) = request.profile_id.as_deref() {
         let assistants = execute_custom_assistant_list(token).await?;
         let assistant = resolve_custom_assistant_ref(&assistants, selector, false)?;
-        (Some(assistant.id.clone()), Some(json!(assistant)))
+        if assistant.built_in && request.model.is_some() {
+            return Err(KagiError::Config(format!(
+                "--model cannot be combined with built-in assistant '{}'; it always uses its own model ({})",
+                assistant.name, assistant.model
+            )));
+        }
+        (
+            Some((assistant.id.clone(), assistant.built_in)),
+            Some(json!(assistant)),
+        )
     } else {
         (
             None,
@@ -646,26 +655,30 @@ where
                 .map(|model| json!({ "model_name": model })),
         )
     };
-    let (_conversation, branch) =
-        prepare_current_assistant_conversation(thread_id.as_deref(), request, token).await?;
+    let existing = match thread_id.as_deref() {
+        Some(thread_id) => Some(open_current_assistant_conversation(thread_id, token).await?),
+        None => None,
+    };
     let attachment_uuids = upload_current_assistant_attachments(attachments, token).await?;
 
     let mut payload = Map::new();
-    payload.insert("message".to_string(), Value::String(query.clone()));
+    payload.insert("content".to_string(), Value::String(query.clone()));
     if !attachment_uuids.is_empty() {
         payload.insert(
             "attachment_uuids".to_string(),
             Value::Array(attachment_uuids.into_iter().map(Value::String).collect()),
         );
     }
-    if let Some(profile_id) = profile_id {
-        payload.insert("profile_uuid".to_string(), Value::String(profile_id));
+    if let Some((profile_id, built_in)) = profile_id {
+        // v2 rejects built-in ids such as `assistant:code` as `profile_uuid`.
+        let key = if built_in { "model" } else { "profile_uuid" };
+        payload.insert(key.to_string(), Value::String(profile_id));
     }
     if let Some(model) = request.model.as_deref() {
-        payload.insert("model_name".to_string(), Value::String(model.to_string()));
+        payload.insert("model".to_string(), Value::String(model.to_string()));
     }
     if let Some(lens_id) = request.lens_id {
-        payload.insert("lens_id".to_string(), Value::from(lens_id));
+        payload.insert("lens_id".to_string(), Value::String(lens_id.to_string()));
     }
     if let Some(internet_access) = request.internet_access {
         payload.insert("enable_search".to_string(), Value::Bool(internet_access));
@@ -674,25 +687,35 @@ where
         payload.insert("personalization".to_string(), Value::Bool(personalizations));
     }
 
+    let path = match &existing {
+        Some((_, branch)) => format!("/api/v2/branches/{}/respond", branch.uuid),
+        None => KAGI_ASSISTANT_CONVERSATIONS_PATH.to_string(),
+    };
     let client = http::client_assistant_stream()?;
     let response = client
-        .post(http::kagi_assistant_url(&format!(
-            "/api/branches/{}/messages",
-            branch.uuid
-        )))
+        .post(http::kagi_assistant_url(&path))
         .header(header::COOKIE, format!("kagi_session={token}"))
+        .header(header::ACCEPT, "application/json")
         .header(header::CONTENT_TYPE, "application/json")
         .json(&Value::Object(payload))
         .send()
         .await
         .map_err(map_transport_error)?;
-    let sent: CurrentAssistantPromptMessageResponse =
+    let started: CurrentAssistantTurnStartResponse =
         read_current_assistant_json_response(response, "Assistant prompt").await?;
+    let conversation = match (started.conversation, existing) {
+        (Some(conversation), _) | (None, Some((conversation, _))) => conversation,
+        (None, None) => {
+            return Err(KagiError::Parse(
+                "Assistant prompt response did not include a conversation".to_string(),
+            ));
+        }
+    };
 
     let response = client
         .get(http::kagi_assistant_url(&format!(
-            "/api/branches/{}/stream",
-            sent.branch.uuid
+            "/api/v2/turns/{}/stream",
+            started.assistant_turn_uuid
         )))
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::ACCEPT, "text/event-stream")
@@ -702,57 +725,39 @@ where
 
     handle_current_assistant_prompt_stream(
         response,
-        sent.conversation,
-        sent.branch,
-        sent.user_message,
-        query,
-        selected_profile,
+        CurrentAssistantPromptParser::new(
+            conversation,
+            started.branch_uuid,
+            started.assistant_turn_uuid,
+            query,
+            request.model.clone(),
+            selected_profile,
+        ),
         on_event,
     )
     .await
 }
 
-async fn prepare_current_assistant_conversation(
-    thread_id: Option<&str>,
-    request: &AssistantPromptRequest,
+async fn open_current_assistant_conversation(
+    thread_id: &str,
     token: &str,
 ) -> Result<(CurrentAssistantConversation, CurrentAssistantBranch), KagiError> {
-    let client = http::client_assistant_stream()?;
-    if let Some(thread_id) = thread_id {
-        validate_current_assistant_path_id("assistant thread id", thread_id)?;
-        let response = client
-            .get(http::kagi_assistant_url(&format!(
-                "/api/conversations/{thread_id}/init"
-            )))
-            .header(header::COOKIE, format!("kagi_session={token}"))
-            .header(header::ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(map_transport_error)?;
-        let initialized: CurrentAssistantConversationInitResponse =
-            read_current_assistant_json_response(response, "Assistant conversation init").await?;
-        let branch = initialized.selected_branch().ok_or_else(|| {
-            KagiError::Parse("Assistant conversation did not include an active branch".to_string())
-        })?;
-        return Ok((initialized.conversation, branch));
-    }
-
-    let mut payload = Map::new();
-    if let Some(model) = request.model.as_deref() {
-        payload.insert("model_name".to_string(), Value::String(model.to_string()));
-    }
-    let response = client
-        .post(http::kagi_assistant_url(KAGI_ASSISTANT_CONVERSATIONS_PATH))
+    validate_current_assistant_path_id("assistant thread id", thread_id)?;
+    let response = http::client_assistant_stream()?
+        .get(http::kagi_assistant_url(&format!(
+            "/api/conversations/{thread_id}/init"
+        )))
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::ACCEPT, "application/json")
-        .header(header::CONTENT_TYPE, "application/json")
-        .json(&Value::Object(payload))
         .send()
         .await
         .map_err(map_transport_error)?;
-    let created: CurrentAssistantConversationCreateResponse =
-        read_current_assistant_json_response(response, "Assistant conversation create").await?;
-    Ok((created.conversation, created.default_branch))
+    let initialized: CurrentAssistantConversationInitResponse =
+        read_current_assistant_json_response(response, "Assistant conversation init").await?;
+    let branch = initialized.selected_branch().ok_or_else(|| {
+        KagiError::Parse("Assistant conversation did not include an active branch".to_string())
+    })?;
+    Ok((initialized.conversation, branch))
 }
 
 async fn upload_current_assistant_attachments(
@@ -786,11 +791,7 @@ async fn upload_current_assistant_attachments(
 
 async fn handle_current_assistant_prompt_stream<F>(
     response: reqwest::Response,
-    conversation: CurrentAssistantConversation,
-    branch: CurrentAssistantBranch,
-    user_message: CurrentAssistantMessage,
-    prompt: String,
-    selected_profile: Option<Value>,
+    mut parser: CurrentAssistantPromptParser,
     on_event: &mut F,
 ) -> Result<AssistantPromptResponse, KagiError>
 where
@@ -811,13 +812,6 @@ where
         )));
     }
 
-    let mut parser = CurrentAssistantPromptParser::new(
-        conversation,
-        branch,
-        user_message,
-        prompt,
-        selected_profile,
-    );
     let mut pending = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -5068,16 +5062,11 @@ impl CurrentAssistantModelCatalog {
 }
 
 #[derive(Debug, Deserialize)]
-struct CurrentAssistantConversationCreateResponse {
-    conversation: CurrentAssistantConversation,
-    default_branch: CurrentAssistantBranch,
-}
-
-#[derive(Debug, Deserialize)]
-struct CurrentAssistantPromptMessageResponse {
-    conversation: CurrentAssistantConversation,
-    branch: CurrentAssistantBranch,
-    user_message: CurrentAssistantMessage,
+struct CurrentAssistantTurnStartResponse {
+    branch_uuid: String,
+    assistant_turn_uuid: String,
+    #[serde(default)]
+    conversation: Option<CurrentAssistantConversation>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5086,72 +5075,89 @@ struct CurrentAssistantUploadResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct CurrentAssistantPromptStreamFrame {
+struct CurrentAssistantTurnStreamFrame {
     #[serde(default)]
-    text: Option<String>,
+    event: Option<CurrentAssistantTurnEvent>,
     #[serde(default)]
-    html_content: Option<String>,
-    #[serde(default)]
-    conversation_title: Option<String>,
-    #[serde(default)]
-    assistant_message_uuid: Option<String>,
-    #[serde(default)]
-    trace_id: Option<String>,
-    #[serde(default)]
-    references: Vec<Value>,
-    #[serde(default)]
-    usage: Option<CurrentAssistantUsage>,
-    #[serde(default)]
-    is_final: bool,
+    title: Option<String>,
     #[serde(default)]
     error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantTurnEvent {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    turn_id: Option<String>,
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    node_id: Option<String>,
+    #[serde(default)]
+    payload: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantTurnCompletedPayload {
+    #[serde(default)]
+    usage: Option<CurrentAssistantTurnUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentAssistantTurnUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: Number,
+    model_version: String,
 }
 
 struct CurrentAssistantPromptParser {
     meta: AssistantMeta,
     thread: AssistantThread,
     message: AssistantMessage,
-    previous_markdown: String,
-    received_final: bool,
+    /// Ids of `kind=text` nodes; thinking and tool-call nodes are not part of the answer.
+    text_nodes: HashSet<String>,
+    last_text_node: Option<String>,
+    references: HashMap<String, Value>,
+    /// Reference ids in order of first citation; position + 1 is the footnote number.
+    cited: Vec<String>,
+    /// Answer text not rendered yet because it ends in an incomplete citation marker.
+    pending: String,
+    completed: bool,
 }
 
 impl CurrentAssistantPromptParser {
     fn new(
         conversation: CurrentAssistantConversation,
-        branch: CurrentAssistantBranch,
-        user_message: CurrentAssistantMessage,
+        branch_id: String,
+        turn_id: String,
         prompt: String,
+        model_name: Option<String>,
         selected_profile: Option<Value>,
     ) -> Self {
-        let profile = match (
-            selected_profile,
-            current_assistant_message_profile(&user_message),
-        ) {
-            (Some(Value::Object(mut selected)), Some(Value::Object(current))) => {
-                selected.extend(current);
-                Some(Value::Object(selected))
-            }
-            (Some(selected), _) => Some(selected),
-            (None, current) => current,
+        let mut profile = match selected_profile {
+            Some(Value::Object(fields)) => fields,
+            _ => Map::new(),
         };
-        let created_at = user_message
-            .created_at
-            .unwrap_or_else(|| conversation.created_at.clone());
+        if let Some(model_name) = model_name.or(conversation.model_name) {
+            profile.insert("model_name".to_string(), Value::String(model_name));
+        }
         let thread = AssistantThread {
             id: conversation.uuid.clone(),
             title: conversation.title,
-            ack: conversation.updated_at,
-            created_at: conversation.created_at,
+            ack: utc_timestamp(&conversation.updated_at),
+            created_at: utc_timestamp(&conversation.created_at),
             expires_at: String::new(),
             saved: conversation.is_saved,
             shared: conversation.is_shared,
-            branch_id: branch.uuid,
+            branch_id,
             folder_ids: conversation.folder_uuid.into_iter().collect(),
         };
         let message = AssistantMessage {
-            id: String::new(),
+            id: turn_id,
             thread_id: thread.id.clone(),
-            created_at,
+            created_at: utc_timestamp(&conversation.updated_at),
             branch_list: Vec::new(),
             state: "streaming".to_string(),
             prompt,
@@ -5161,7 +5167,7 @@ impl CurrentAssistantPromptParser {
             references_markdown: None,
             metadata_html: None,
             documents: Vec::new(),
-            profile,
+            profile: (!profile.is_empty()).then_some(Value::Object(profile)),
             trace_id: None,
             usage: None,
         };
@@ -5169,9 +5175,90 @@ impl CurrentAssistantPromptParser {
             meta: AssistantMeta::default(),
             thread,
             message,
-            previous_markdown: String::new(),
-            received_final: false,
+            text_nodes: HashSet::new(),
+            last_text_node: None,
+            references: HashMap::new(),
+            cited: Vec::new(),
+            pending: String::new(),
+            completed: false,
         }
+    }
+
+    fn apply_event(&mut self, event: CurrentAssistantTurnEvent) -> Result<(), KagiError> {
+        let payload = event.payload;
+        match event.kind.as_str() {
+            "node.created" => {
+                if let Some(node_id) = event.node_id
+                    && payload.get("kind").and_then(Value::as_str) == Some("text")
+                {
+                    self.text_nodes.insert(node_id);
+                }
+            }
+            "node.delta" => {
+                if let (Some(node_id), Some(delta)) =
+                    (event.node_id, payload.get("delta").and_then(Value::as_str))
+                    && self.text_nodes.contains(&node_id)
+                {
+                    let markdown = self.message.markdown.get_or_insert_default();
+                    let started = !markdown.is_empty() || !self.pending.is_empty();
+                    if started && self.last_text_node.as_ref() != Some(&node_id) {
+                        self.pending.push_str("\n\n");
+                    }
+                    // Some models start the answer with a space.
+                    self.pending
+                        .push_str(if started { delta } else { delta.trim_start() });
+                    self.last_text_node = Some(node_id);
+                }
+            }
+            "reference.added" => {
+                if let Some(ref_id) = payload.get("ref_id").and_then(Value::as_str) {
+                    self.references.insert(ref_id.to_string(), payload.clone());
+                }
+            }
+            "turn.started" => {
+                if let Some(timestamp) = event.timestamp {
+                    self.message.created_at = utc_timestamp(&timestamp);
+                }
+            }
+            "turn.completed" => {
+                if let Some(turn_id) = event.turn_id {
+                    self.message.id = turn_id;
+                }
+                let completed: CurrentAssistantTurnCompletedPayload =
+                    serde_json::from_value(payload).map_err(|error| {
+                        KagiError::Parse(format!("failed to parse Assistant turn usage: {error}"))
+                    })?;
+                if let Some(usage) = completed.usage {
+                    self.message.usage = Some(AssistantUsage {
+                        prompt_tokens: usage.input_tokens,
+                        completion_tokens: usage.output_tokens,
+                        total_tokens: usage.input_tokens + usage.output_tokens,
+                        cost_usd: usage.cost_usd,
+                    });
+                    if let Value::Object(profile) =
+                        self.message.profile.get_or_insert_with(|| json!({}))
+                    {
+                        profile.insert(
+                            "model_version".to_string(),
+                            Value::String(usage.model_version),
+                        );
+                    }
+                }
+                self.completed = true;
+            }
+            "turn.failed" | "turn.cancelled" => {
+                let code = payload
+                    .get("error_code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error");
+                return Err(KagiError::Config(format!(
+                    "Kagi Assistant turn {}: {code}",
+                    event.kind.trim_start_matches("turn.")
+                )));
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn process_sse_frame(
@@ -5187,7 +5274,7 @@ impl CurrentAssistantPromptParser {
         if payload.is_empty() || payload == "[DONE]" {
             return Ok(None);
         }
-        let frame: CurrentAssistantPromptStreamFrame =
+        let frame: CurrentAssistantTurnStreamFrame =
             serde_json::from_str(&payload).map_err(|error| {
                 KagiError::Parse(format!(
                     "failed to parse Assistant prompt stream frame: {error}"
@@ -5196,45 +5283,42 @@ impl CurrentAssistantPromptParser {
         if let Some(error) = frame.error.filter(|error| !error.trim().is_empty()) {
             return Err(KagiError::Config(error));
         }
-        if let Some(title) = frame.conversation_title {
+        if let Some(title) = frame.title {
             self.thread.title = title;
         }
-        if let Some(trace_id) = frame.trace_id {
-            self.meta.trace = Some(trace_id.clone());
-            self.message.trace_id = Some(trace_id);
-        }
-        if let Some(message_id) = frame.assistant_message_uuid {
-            self.message.id = message_id;
-        }
-        if let Some(html) = frame.html_content {
-            self.message.reply_html = Some(html);
-        }
-        if !frame.references.is_empty() {
-            self.message.references_markdown =
-                current_assistant_references_markdown(&frame.references);
-        }
-        if let Some(usage) = frame.usage {
-            self.message.usage = Some(usage.into());
-        }
-        if let Some(markdown) = frame.text {
-            self.message.markdown = Some(markdown);
-        }
-        self.received_final |= frame.is_final;
-        self.message.state = if self.received_final {
-            "done".to_string()
-        } else {
-            "streaming".to_string()
+        let Some(event) = frame.event.filter(|_| !self.completed) else {
+            return Ok(None);
         };
+        self.apply_event(event)?;
 
-        let markdown = self.message.markdown.as_deref().unwrap_or("");
-        let md_delta = markdown
-            .strip_prefix(&self.previous_markdown)
-            .unwrap_or(markdown)
-            .to_string();
-        let has_update =
-            !md_delta.is_empty() || frame.is_final || self.message.reply_html.is_some();
-        self.previous_markdown = markdown.to_string();
-        if !has_update {
+        let (md_delta, rendered) = number_citation_markers(
+            &self.pending,
+            &self.references,
+            &mut self.cited,
+            self.completed,
+        );
+        self.pending.drain(..rendered);
+        self.message
+            .markdown
+            .get_or_insert_default()
+            .push_str(&md_delta);
+        if self.completed {
+            self.message.state = "done".to_string();
+            let cited_references = self
+                .cited
+                .iter()
+                .enumerate()
+                .filter_map(|(position, ref_id)| {
+                    let mut reference = self.references.get(ref_id)?.clone();
+                    if let Value::Object(fields) = &mut reference {
+                        fields.insert("index".to_string(), Value::from(position + 1));
+                    }
+                    Some(reference)
+                })
+                .collect::<Vec<_>>();
+            self.message.references_markdown =
+                current_assistant_references_markdown(&cited_references);
+        } else if md_delta.is_empty() {
             return Ok(None);
         }
         Ok(Some(AssistantPromptStreamEvent {
@@ -5246,7 +5330,7 @@ impl CurrentAssistantPromptParser {
     }
 
     fn finish(self) -> Result<AssistantPromptResponse, KagiError> {
-        if !self.received_final {
+        if !self.completed {
             return Err(KagiError::Parse(
                 "Assistant prompt stream ended before a final response".to_string(),
             ));
@@ -5257,6 +5341,62 @@ impl CurrentAssistantPromptParser {
             message: self.message,
         })
     }
+}
+
+/// Appends the `Z` that v2's naive UTC timestamps lack.
+fn utc_timestamp(timestamp: &str) -> String {
+    let has_offset = timestamp
+        .rsplit_once('T')
+        .is_some_and(|(_, time)| time.ends_with('Z') || time.contains(['+', '-']));
+    if has_offset || !timestamp.contains('T') {
+        timestamp.to_string()
+    } else {
+        format!("{timestamp}Z")
+    }
+}
+
+/// Rewrites `[^ref_id]` and `[^ref_id#range]` markers of known references to `[^N]` in order of
+/// first citation. Until `complete`, stops before an unterminated trailing marker and returns the
+/// number of bytes of `text` it rendered.
+fn number_citation_markers(
+    text: &str,
+    references: &HashMap<String, Value>,
+    cited: &mut Vec<String>,
+    complete: bool,
+) -> (String, usize) {
+    let mut output = String::with_capacity(text.len());
+    let mut position = 0;
+    while let Some(offset) = text[position..].find("[^") {
+        let start = position + offset;
+        output.push_str(&text[position..start]);
+        position = start;
+        let Some(end) = text[start..].find(']').map(|end| start + end + 1) else {
+            if !complete {
+                return (output, start);
+            }
+            break;
+        };
+        let marker = &text[start..end];
+        let ref_id = marker[2..marker.len() - 1]
+            .split('#')
+            .next()
+            .unwrap_or_default();
+        if references.contains_key(ref_id) {
+            let number = match cited.iter().position(|id| id == ref_id) {
+                Some(index) => index + 1,
+                None => {
+                    cited.push(ref_id.to_string());
+                    cited.len()
+                }
+            };
+            output.push_str(&format!("[^{number}]"));
+        } else {
+            output.push_str(marker);
+        }
+        position = end;
+    }
+    output.push_str(&text[position..]);
+    (output, text.len())
 }
 
 impl CurrentAssistantConversationInitResponse {
@@ -5321,6 +5461,8 @@ struct CurrentAssistantConversation {
     is_shared: bool,
     #[serde(default)]
     folder_uuid: Option<String>,
+    #[serde(default)]
+    model_name: Option<String>,
 }
 
 impl CurrentAssistantConversation {
@@ -5363,25 +5505,6 @@ struct CurrentAssistantMessage {
     output_tokens: Option<u64>,
     #[serde(default)]
     cost_usd: Option<Number>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CurrentAssistantUsage {
-    input_tokens: u64,
-    output_tokens: u64,
-    total_tokens: u64,
-    cost_usd: Number,
-}
-
-impl From<CurrentAssistantUsage> for AssistantUsage {
-    fn from(usage: CurrentAssistantUsage) -> Self {
-        Self {
-            prompt_tokens: usage.input_tokens,
-            completion_tokens: usage.output_tokens,
-            total_tokens: usage.total_tokens,
-            cost_usd: usage.cost_usd,
-        }
-    }
 }
 
 fn current_assistant_messages_to_legacy_turns(
@@ -5834,13 +5957,13 @@ mod tests {
         translate_subscription_error_message, validate_translate_request,
     };
     use crate::api::{
-        execute_assistant_prompt, execute_assistant_thread_delete, execute_assistant_thread_export,
-        execute_assistant_thread_get, execute_assistant_thread_list,
-        execute_custom_assistant_create, execute_custom_assistant_delete,
-        execute_custom_assistant_get, execute_custom_assistant_list,
-        execute_custom_assistant_update, execute_custom_bang_create, execute_custom_bang_delete,
-        execute_custom_bang_get, execute_custom_bang_update, execute_lens_create,
-        execute_lens_delete, execute_lens_set_enabled, execute_lens_update,
+        execute_assistant_prompt, execute_assistant_prompt_stream, execute_assistant_thread_delete,
+        execute_assistant_thread_export, execute_assistant_thread_get,
+        execute_assistant_thread_list, execute_custom_assistant_create,
+        execute_custom_assistant_delete, execute_custom_assistant_get,
+        execute_custom_assistant_list, execute_custom_assistant_update, execute_custom_bang_create,
+        execute_custom_bang_delete, execute_custom_bang_get, execute_custom_bang_update,
+        execute_lens_create, execute_lens_delete, execute_lens_set_enabled, execute_lens_update,
         execute_redirect_create, execute_redirect_delete, execute_redirect_list,
         execute_redirect_set_enabled, execute_redirect_update,
     };
@@ -6687,7 +6810,7 @@ mod tests {
 
         let server = MockServer::start();
         let conversation = server.mock(|when, then| {
-            when.method(POST).path("/api/conversations");
+            when.method(POST).path("/api/v2/conversations");
             then.status(500);
         });
         let missing = PathBuf::from("/tmp/definitely-missing-kagi-assistant-attachment.txt");
@@ -6725,59 +6848,27 @@ mod tests {
         use httpmock::MockServer;
 
         let server = MockServer::start();
-        let _conversation = server.mock(|when, then| {
-            when.method(POST).path("/api/conversations");
-            then.status(200).json_body(json!({
-                "conversation": {
-                    "uuid": "thread-1",
-                    "title": "Upload test",
-                    "created_at": "2026-04-24T00:00:00Z",
-                    "updated_at": "2026-04-24T00:00:00Z",
-                    "is_saved": false,
-                    "is_shared": false
-                },
-                "default_branch": {"uuid": "branch-1", "is_default": true}
-            }));
-        });
         let _upload = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/upload")
                 .body_includes("attached-note");
             then.status(200).json_body(json!({"uuid": "attachment-1"}));
         });
-        let _message = server.mock(|when, then| {
+        let _conversation = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/branches/branch-1/messages")
+                .path("/api/v2/conversations")
                 .body_includes("attachment-1")
+                .body_includes("\"model\":\"gpt-5-mini\"")
                 .body_includes("Reply with exactly: attached-note");
-            then.status(200).json_body(json!({
-                "conversation": {
-                    "uuid": "thread-1",
-                    "title": "Upload test",
-                    "created_at": "2026-04-24T00:00:00Z",
-                    "updated_at": "2026-04-24T00:00:00Z",
-                    "is_saved": false,
-                    "is_shared": false
-                },
-                "branch": {"uuid": "branch-1", "is_default": true},
-                "user_message": {
-                    "uuid": "user-1",
-                    "role": "user",
-                    "content": "Reply with exactly: attached-note",
-                    "created_at": "2026-04-24T00:00:00Z"
-                }
-            }));
+            then.status(200)
+                .json_body(v2_turn_start_json("thread-1", "branch-1", "turn-1"));
         });
         let _stream = server.mock(|when, then| {
             when.method(httpmock::Method::GET)
-                .path("/api/branches/branch-1/stream");
+                .path("/api/v2/turns/turn-1/stream");
             then.status(200)
                 .header("content-type", "text/event-stream")
-                .body(concat!(
-                    "data: {\"text\":\"attached-note\",\"html_content\":\"<p>attached-note</p>\",",
-                    "\"assistant_message_uuid\":\"msg-1\",\"is_final\":true}\n\n",
-                    "data: [DONE]\n\n"
-                ));
+                .body(v2_text_turn_frames("turn-1", "attached-note"));
         });
         let tempdir = TempDir::new().expect("tempdir");
         let attachment_path = tempdir.path().join("note.txt");
@@ -6821,51 +6912,20 @@ mod tests {
 
         let server = MockServer::start();
         let _conversation = server.mock(|when, then| {
-            when.method(POST).path("/api/conversations");
-            then.status(200).json_body(json!({
-                "conversation": {
-                    "uuid": "thread-delayed",
-                    "title": "Delayed test",
-                    "created_at": "2026-05-01T00:00:00Z",
-                    "updated_at": "2026-05-01T00:00:00Z",
-                    "is_saved": false,
-                    "is_shared": false
-                },
-                "default_branch": {"uuid": "branch-delayed", "is_default": true}
-            }));
-        });
-        let _message = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/branches/branch-delayed/messages");
-            then.status(200).json_body(json!({
-                "conversation": {
-                    "uuid": "thread-delayed",
-                    "title": "Delayed test",
-                    "created_at": "2026-05-01T00:00:00Z",
-                    "updated_at": "2026-05-01T00:00:00Z",
-                    "is_saved": false,
-                    "is_shared": false
-                },
-                "branch": {"uuid": "branch-delayed", "is_default": true},
-                "user_message": {
-                    "uuid": "user-delayed",
-                    "role": "user",
-                    "content": "Hello",
-                    "created_at": "2026-05-01T00:00:00Z"
-                }
-            }));
+            when.method(POST).path("/api/v2/conversations");
+            then.status(200).json_body(v2_turn_start_json(
+                "thread-delayed",
+                "branch-delayed",
+                "turn-delayed",
+            ));
         });
         let _stream = server.mock(|when, then| {
             when.method(httpmock::Method::GET)
-                .path("/api/branches/branch-delayed/stream");
+                .path("/api/v2/turns/turn-delayed/stream");
             then.status(200)
                 .header("content-type", "text/event-stream")
                 .delay(Duration::from_millis(200))
-                .body(concat!(
-                    "data: {\"text\":\"delayed-ok\",",
-                    "\"assistant_message_uuid\":\"msg-delayed\",\"is_final\":true}\n\n",
-                    "data: [DONE]\n\n"
-                ));
+                .body(v2_text_turn_frames("turn-delayed", "delayed-ok"));
         });
         let _env_guard = lock_env();
         let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
@@ -6887,6 +6947,213 @@ mod tests {
 
         assert_eq!(response.thread.id, "thread-delayed");
         assert_eq!(response.message.markdown.as_deref(), Some("delayed-ok"));
+    }
+
+    fn v2_turn_start_json(thread_id: &str, branch_id: &str, turn_id: &str) -> Value {
+        json!({
+            "conversation_uuid": thread_id,
+            "branch_uuid": branch_id,
+            "assistant_turn_uuid": turn_id,
+            "user_turn_uuid": "user-turn",
+            "conversation": {
+                "uuid": thread_id,
+                "title": "New chat",
+                "model_name": "ki_quick",
+                "created_at": "2026-10-08T00:00:00Z",
+                "updated_at": "2026-10-08T00:00:00Z",
+                "total_tokens": 0,
+                "is_owner": true
+            }
+        })
+    }
+
+    fn v2_turn_event(turn_id: &str, kind: &str, node_id: Option<&str>, payload: Value) -> String {
+        format!(
+            "id: 1-0\ndata: {}\n\n",
+            json!({"event": {
+                "turn_id": turn_id,
+                "timestamp": "2026-10-08T14:59:20.951973",
+                "source": "assistant",
+                "type": kind,
+                "node_id": node_id,
+                "payload": payload
+            }})
+        )
+    }
+
+    fn v2_text_turn_frames(turn_id: &str, text: &str) -> String {
+        [
+            v2_turn_event(
+                turn_id,
+                "turn.started",
+                None,
+                json!({"root_node_id": "msg"}),
+            ),
+            v2_turn_event(
+                turn_id,
+                "node.created",
+                Some("text"),
+                json!({"kind": "text", "format": "markdown", "status": "running"}),
+            ),
+            v2_turn_event(turn_id, "node.delta", Some("text"), json!({"delta": text})),
+            v2_turn_event(
+                turn_id,
+                "turn.completed",
+                None,
+                json!({"root_node_id": "msg"}),
+            ),
+            "data: {\"is_final\": true}\n\n".to_string(),
+        ]
+        .concat()
+    }
+
+    fn v2_reference(ref_id: &str, title: &str) -> Value {
+        json!({
+            "ref_id": ref_id,
+            "url": format!("https://example.com/{ref_id}"),
+            "title": title,
+            "reference_kind": "search",
+            "origin_node_id": "call-1"
+        })
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn assistant_prompt_follows_up_on_thread_and_numbers_citations() {
+        use httpmock::Method::{GET, POST};
+        use httpmock::MockServer;
+
+        let server = MockServer::start();
+        let _init = server.mock(|when, then| {
+            when.method(GET).path("/api/conversations/thread-1/init");
+            then.status(200).json_body(json!({
+                "conversation": {
+                    "uuid": "thread-1",
+                    "title": "Rust releases",
+                    "model_name": "ki_quick",
+                    "created_at": "2026-10-08T00:00:00.123456",
+                    "updated_at": "2026-10-08T00:00:00.123456"
+                },
+                "active_branch": {"uuid": "branch-1", "is_default": true},
+                "branches": [{"uuid": "branch-1", "is_default": true}],
+                "messages": {"items": [], "has_more": false}
+            }));
+        });
+        let respond = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v2/branches/branch-1/respond")
+                .body_includes("\"content\":\"Which Rust is stable?\"")
+                .body_includes("\"lens_id\":\"2\"");
+            then.status(200).json_body(json!({
+                "conversation_uuid": "thread-1",
+                "branch_uuid": "branch-1",
+                "assistant_turn_uuid": "turn-1",
+                "user_turn_uuid": "user-turn-1"
+            }));
+        });
+        let event = |kind: &str, node_id: Option<&str>, payload: Value| {
+            v2_turn_event("turn-1", kind, node_id, payload)
+        };
+        // As seen live: thinking nodes stream their own deltas, and citation markers arrive split
+        // across deltas, with and without a `#range` suffix.
+        let frames = [
+            event("turn.started", None, json!({"root_node_id": "msg"})),
+            event("reference.added", None, v2_reference("aa11bb", "Unused")),
+            event("reference.added", None, v2_reference("10d972", "Rust 1.99")),
+            event(
+                "reference.added",
+                None,
+                v2_reference("1e74e2", "releases.rs"),
+            ),
+            event("node.created", Some("text-1"), json!({"kind": "text"})),
+            event("node.delta", Some("text-1"), json!({"delta": " Checking."})),
+            event(
+                "node.created",
+                Some("thinking"),
+                json!({"kind": "activity", "type": "thinking", "content": "The"}),
+            ),
+            event("node.delta", Some("thinking"), json!({"delta": " user"})),
+            event("node.created", Some("text-2"), json!({"kind": "text"})),
+            event(
+                "node.delta",
+                Some("text-2"),
+                json!({"delta": "Stable is 1.99 [^1e74e2][^10d"}),
+            ),
+            event(
+                "node.delta",
+                Some("text-2"),
+                json!({"delta": "972#1]. Beta is 1.100 [^1e74e2#2-3] [^unknown]."}),
+            ),
+            "data: {\"title\": \"Rust stable version\"}\n\n".to_string(),
+            event(
+                "turn.completed",
+                None,
+                json!({"usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "cost_usd": 0.0001,
+                    "model_version": "deepseek-v4p1-flash"
+                }}),
+            ),
+            "data: {\"is_final\": true}\n\n".to_string(),
+        ]
+        .concat();
+        let _stream = server.mock(|when, then| {
+            when.method(GET).path("/api/v2/turns/turn-1/stream");
+            then.status(200)
+                .header("content-type", "text/event-stream")
+                .body(frames);
+        });
+
+        let _env_guard = lock_env();
+        let _base_url_env = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
+        let mut streamed = String::new();
+        let mut streamed_ids = Vec::new();
+        let response = execute_assistant_prompt_stream(
+            &AssistantPromptRequest {
+                query: "Which Rust is stable?".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                attachments: Vec::new(),
+                profile_id: None,
+                model: None,
+                lens_id: Some(2),
+                internet_access: None,
+                personalizations: None,
+            },
+            "test-session",
+            |event| {
+                streamed.push_str(&event.md_delta);
+                streamed_ids.push(event.message.id.clone());
+                Ok(())
+            },
+        )
+        .await
+        .expect("follow-up prompt should succeed");
+
+        respond.assert_calls(1);
+        let markdown = "Checking.\n\nStable is 1.99 [^1][^2]. Beta is 1.100 [^1] [^unknown].";
+        assert_eq!(response.message.markdown.as_deref(), Some(markdown));
+        assert_eq!(streamed, markdown);
+        assert!(streamed_ids.iter().all(|id| id == "turn-1"));
+        assert_eq!(
+            response.message.references_markdown.as_deref(),
+            Some(concat!(
+                "[^1]: [releases.rs](https://example.com/1e74e2)\n",
+                "[^2]: [Rust 1.99](https://example.com/10d972)"
+            ))
+        );
+        assert_eq!(response.thread.title, "Rust stable version");
+        assert_eq!(response.message.id, "turn-1");
+        assert_eq!(response.message.state, "done");
+        assert_eq!(response.message.created_at, "2026-10-08T14:59:20.951973Z");
+        assert_eq!(
+            response.message.profile,
+            Some(json!({"model_name": "ki_quick", "model_version": "deepseek-v4p1-flash"}))
+        );
+        assert_eq!(
+            response.message.usage.map(|usage| usage.total_tokens),
+            Some(15)
+        );
     }
 
     #[test]
