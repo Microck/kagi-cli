@@ -2304,6 +2304,7 @@ fn format_template_response(response: &SearchResponse, template: &str) -> String
                 .replace("{{title}}", &result.title)
                 .replace("{{url}}", &result.url)
                 .replace("{{snippet}}", &result.snippet)
+                .replace("{{published}}", result.published.as_deref().unwrap_or(""))
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -2377,6 +2378,9 @@ fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String 
                 result.url,
                 reset_color
             );
+            if let Some(date) = published_date(result.published.as_deref()) {
+                section.push_str(&format!("\n   {date}"));
+            }
             if !result.snippet.trim().is_empty() {
                 section.push_str(&format!("\n\n   {}", result.snippet.trim()));
             }
@@ -2401,6 +2405,9 @@ fn format_markdown_response(response: &SearchResponse) -> String {
         .enumerate()
         .map(|(index, result)| {
             let mut section = format!("## {}. [{}]({})\n\n", index + 1, result.title, result.url);
+            if let Some(date) = published_date(result.published.as_deref()) {
+                section.push_str(&format!("*{date}*\n\n"));
+            }
             if !result.snippet.trim().is_empty() {
                 section.push_str(&format!("{}\n\n", result.snippet.trim()));
             }
@@ -2475,19 +2482,32 @@ fn escape_csv_field(field: &str) -> String {
 
 fn format_csv_response(response: &SearchResponse) -> String {
     if response.data.is_empty() {
-        return "title,url,snippet".to_string();
+        return "title,url,snippet,published".to_string();
     }
 
-    let mut output = String::from("title,url,snippet\n");
+    let mut output = String::from("title,url,snippet,published\n");
 
     for result in &response.data {
         let title = escape_csv_field(&result.title);
         let url = escape_csv_field(&result.url);
         let snippet = escape_csv_field(&result.snippet);
-        output.push_str(&format!("{title},{url},{snippet}\n"));
+        let published = escape_csv_field(result.published.as_deref().unwrap_or(""));
+        output.push_str(&format!("{title},{url},{snippet},{published}\n"));
     }
 
     output
+}
+
+/// Returns `published` for display, shortening an ISO timestamp to its date (`2026-10-04`).
+fn published_date(published: Option<&str>) -> Option<&str> {
+    let published = published?.trim();
+    if published.is_empty() {
+        return None;
+    }
+    match published.get(..10) {
+        Some(date) if date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-' => Some(date),
+        _ => Some(published),
+    }
 }
 
 fn build_news_search_request(args: &SearchArgs) -> search::NewsSearchRequest {
@@ -5877,8 +5897,8 @@ mod tests {
         RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
         format_assistant_markdown, format_assistant_pretty, format_batch_failure_message,
         format_csv_response, format_markdown_response, format_pretty_response,
-        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
-        should_fallback_to_session,
+        format_template_response, is_bare_auth_invocation_from, parse_context_memory_json,
+        print_assistant_response, should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -5957,6 +5977,58 @@ mod tests {
         let output = format_pretty_response(&response, false);
 
         assert_eq!(output, "No results found.");
+    }
+
+    #[test]
+    fn shows_published_date_in_every_output_format() {
+        let result = |title: &str, published: Option<&str>| SearchResult {
+            t: 0,
+            rank: None,
+            title: title.to_string(),
+            url: format!("https://{}.example", title.to_lowercase()),
+            snippet: format!("{title} snippet"),
+            published: published.map(str::to_string),
+        };
+        let response = SearchResponse {
+            data: vec![
+                result("Dated", Some("2026-10-04T00:00:00Z")),
+                result("Undated", None),
+            ],
+            related_searches: Vec::new(),
+        };
+
+        let pretty = format_pretty_response(&response, false);
+        assert!(
+            pretty.contains("https://dated.example\n   2026-10-04\n\n   Dated snippet"),
+            "{pretty}"
+        );
+        assert!(
+            pretty.contains("https://undated.example\n\n   Undated snippet"),
+            "{pretty}"
+        );
+
+        let markdown = format_markdown_response(&response);
+        assert!(
+            markdown.contains("(https://dated.example)\n\n*2026-10-04*\n\nDated snippet"),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("(https://undated.example)\n\nUndated snippet"),
+            "{markdown}"
+        );
+
+        let csv = format_csv_response(&response);
+        assert_eq!(
+            csv,
+            concat!(
+                "title,url,snippet,published\n",
+                "Dated,https://dated.example,Dated snippet,2026-10-04T00:00:00Z\n",
+                "Undated,https://undated.example,Undated snippet,\n"
+            )
+        );
+
+        let template = format_template_response(&response, "{{title}}|{{published}}");
+        assert_eq!(template, "Dated|2026-10-04T00:00:00Z\nUndated|");
     }
 
     #[test]
@@ -6221,7 +6293,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "title,url,snippet\nRust Programming Language,https://www.rust-lang.org,A language empowering everyone to build reliable and efficient software.\n"
+            "title,url,snippet,published\nRust Programming Language,https://www.rust-lang.org,A language empowering everyone to build reliable and efficient software.,\n"
         );
     }
 
@@ -6243,7 +6315,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "title,url,snippet\n\"Rust, \"\"The Language\"\"\",\"https://example.com/a,b\",\"line 1\nline 2\"\n"
+            "title,url,snippet,published\n\"Rust, \"\"The Language\"\"\",\"https://example.com/a,b\",\"line 1\nline 2\",\n"
         );
     }
 

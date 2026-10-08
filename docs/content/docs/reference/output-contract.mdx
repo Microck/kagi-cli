@@ -33,6 +33,8 @@ This page documents the current CLI output behavior as implemented in the repo.
 }
 ```
 
+With a session token, `published` is the day shown on the result page (`YYYY-MM-DDT00:00:00Z`), or `null` when the page shows no date or a relative one such as "Yesterday", which stays in `snippet`. With `KAGI_API_KEY`, it is the timestamp Kagi's Search API returns.
+
 ### `kagi search --news`
 
 The News tab vertical returns a different shape -- clusters of articles:
@@ -448,9 +450,12 @@ Kagi's v2 Assistant API returns markdown only, so `kagi assistant` and `kagi ask
 ```text
 1. Result Title
    https://example.com
+   2026-03-16
 
    Description...
 ```
+
+The date line appears when the result has a `published` value.
 
 If the result set is empty, the CLI prints:
 

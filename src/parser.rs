@@ -35,19 +35,31 @@ pub fn parse_search_results(html: &str) -> Result<Vec<SearchResult>, KagiError> 
     let title_link_selector = selector(".__sri_title_link")?;
     let grouped_title_link_selector = selector(".__srgi-title a")?;
     let snippet_selector = selector(".__sri-desc")?;
+    let time_selector = selector(".__sri-time")?;
+    let summarize_link_selector = selector(".summarize-link")?;
 
     let mut results = Vec::new();
 
     for element in document.select(&search_result_selector) {
-        if let Some(result) = extract_result(&element, &title_link_selector, &snippet_selector) {
+        if let Some(result) = extract_result(
+            &element,
+            &title_link_selector,
+            &snippet_selector,
+            &time_selector,
+            &summarize_link_selector,
+        ) {
             results.push(result);
         }
     }
 
     for element in document.select(&grouped_result_selector) {
-        if let Some(result) =
-            extract_result(&element, &grouped_title_link_selector, &snippet_selector)
-        {
+        if let Some(result) = extract_result(
+            &element,
+            &grouped_title_link_selector,
+            &snippet_selector,
+            &time_selector,
+            &summarize_link_selector,
+        ) {
             results.push(result);
         }
     }
@@ -543,14 +555,34 @@ fn extract_result(
     element: &scraper::element_ref::ElementRef<'_>,
     title_selector: &Selector,
     snippet_selector: &Selector,
+    time_selector: &Selector,
+    summarize_link_selector: &Selector,
 ) -> Option<SearchResult> {
     let title_link = element.select(title_selector).next()?;
     let title = title_link.text().collect::<String>().trim().to_string();
     let url = title_link.value().attr("href")?.trim().to_string();
-    let snippet = element
-        .select(snippet_selector)
-        .next()
-        .map(|node| node.text().collect::<String>().trim().to_string())
+    let desc = element.select(snippet_selector).next();
+    let time = desc.and_then(|node| node.select(time_selector).next());
+    let published = time.and_then(|node| parse_result_date(&node.text().collect::<String>()));
+    let snippet = desc
+        .map(|node| {
+            let mut skipped = node
+                .select(summarize_link_selector)
+                .map(|link| link.id())
+                .collect::<Vec<_>>();
+            // A relative date such as "Yesterday" stays in the snippet.
+            skipped.extend(time.filter(|_| published.is_some()).map(|time| time.id()));
+            let text = node
+                .descendants()
+                .filter(|child| {
+                    !child
+                        .ancestors()
+                        .any(|parent| skipped.contains(&parent.id()))
+                })
+                .filter_map(|child| child.value().as_text().map(|text| &**text))
+                .collect::<String>();
+            collapse_whitespace(&text)
+        })
         .unwrap_or_default();
 
     if title.is_empty() || url.is_empty() {
@@ -563,8 +595,26 @@ fn extract_result(
         title,
         url,
         snippet,
-        published: None,
+        published,
     })
+}
+
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Converts a result date such as `Oct 4, 2026` to `2026-10-04T00:00:00Z`; relative dates such
+/// as `Yesterday` return `None`.
+fn parse_result_date(text: &str) -> Option<String> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let mut parts = text.split_whitespace();
+    let month_name = parts.next()?;
+    let month = MONTHS.iter().position(|name| *name == month_name)? + 1;
+    let day = parts.next()?.strip_suffix(',')?.parse::<u32>().ok()?;
+    let year = parts.next()?.parse::<u32>().ok()?;
+    Some(format!("{year:04}-{month:02}-{day:02}T00:00:00Z"))
 }
 
 fn selector(value: &str) -> Result<Selector, KagiError> {
@@ -656,14 +706,26 @@ mod tests {
         <html><body>
           <div class="search-result">
             <a class="__sri_title_link" href="https://example.com/one">One Result</a>
-            <div class="__sri-desc">First snippet</div>
+            <div class="_0_DESC __sri-desc"> <div> <span class="__sri-time">    Oct 4, 2026   </span>
+              First   snippet.   <a class="_0_summarize_page summarize-link" href="/summarizer?url=one">Summarize</a> </div> </div>
+          </div>
+          <div class="search-result">
+            <a class="__sri_title_link" href="https://example.com/undated">Undated Result</a>
+            <div class="__sri-desc">No date here.</div>
+          </div>
+          <div class="search-result">
+            <a class="__sri_title_link" href="https://example.com/relative">Relative Result</a>
+            <div class="__sri-desc"><div><span class="__sri-time"> Yesterday </span> Recent.</div></div>
           </div>
           <div class="sr-group">
             <div class="__srgi">
               <div class="__srgi-title">
                 <a href="https://example.com/two">Grouped Result</a>
               </div>
-              <div class="__sri-desc">Second snippet</div>
+              <div class="__sri-desc"><div>
+                <span class="__sri-time"> Mar 3, 2024 </span> Second
+                snippet <a class="_0_summarize_page summarize-link" href="/summarizer?url=x">Summarize</a>
+              </div></div>
             </div>
           </div>
         </body></html>
@@ -671,15 +733,47 @@ mod tests {
 
         let results = parse_search_results(html).expect("parser should succeed");
 
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].t, 0);
-        assert_eq!(results[0].title, "One Result");
-        assert_eq!(results[0].url, "https://example.com/one");
-        assert_eq!(results[0].snippet, "First snippet");
-        assert_eq!(results[1].t, 0);
-        assert_eq!(results[1].title, "Grouped Result");
-        assert_eq!(results[1].url, "https://example.com/two");
-        assert_eq!(results[1].snippet, "Second snippet");
+        let summary = results
+            .iter()
+            .map(|result| {
+                (
+                    result.title.as_str(),
+                    result.url.as_str(),
+                    result.snippet.as_str(),
+                    result.published.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            summary,
+            [
+                (
+                    "One Result",
+                    "https://example.com/one",
+                    "First snippet.",
+                    Some("2026-10-04T00:00:00Z")
+                ),
+                (
+                    "Undated Result",
+                    "https://example.com/undated",
+                    "No date here.",
+                    None
+                ),
+                (
+                    "Relative Result",
+                    "https://example.com/relative",
+                    "Yesterday Recent.",
+                    None
+                ),
+                (
+                    "Grouped Result",
+                    "https://example.com/two",
+                    "Second snippet",
+                    Some("2024-03-03T00:00:00Z")
+                ),
+            ]
+        );
+        assert!(results.iter().all(|result| result.t == 0));
     }
 
     #[test]

@@ -78,7 +78,7 @@ Possible values:
 - `compact` - minified JSON
 - `pretty` - terminal-friendly output
 - `markdown` - markdown list output
-- `csv` - CSV table output
+- `csv` - CSV table output with `title,url,snippet,published` columns
 
 ### `--no-color`
 
@@ -179,7 +179,7 @@ kagi search --no-personalized "rust web framework"
 
 ### `--template <TEMPLATE>`
 
-Render each result with a lightweight template instead of a built-in format. Supported placeholders are `{{rank}}`, `{{title}}`, `{{url}}`, and `{{snippet}}`.
+Render each result with a lightweight template instead of a built-in format. Supported placeholders are `{{rank}}`, `{{title}}`, `{{url}}`, `{{snippet}}`, and `{{published}}` (empty when the result has no date).
 
 ```bash
 kagi search "rust crates" --template '{{rank}}. {{title}} - {{url}}'
@@ -243,11 +243,13 @@ The search response shape is unchanged:
       "title": "Rust Programming Language",
       "url": "https://www.rust-lang.org",
       "snippet": "A language empowering everyone to build reliable and efficient software.",
-      "published": null
+      "published": "2026-10-04T00:00:00Z"
     }
   ]
 }
 ```
+
+With a session token, `published` is the day shown on the result page (`YYYY-MM-DDT00:00:00Z`), or `null` when the page shows no date or a relative one such as "Yesterday", which stays in `snippet`. With `KAGI_API_KEY`, it is the timestamp Kagi's Search API returns.
 
 With `--news`, the response shape is different -- clusters of news articles:
 
