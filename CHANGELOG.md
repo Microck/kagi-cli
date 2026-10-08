@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.21.0]
+
 ### Breaking
 
 - `kagi assistant` and `kagi ask-page` JSON output no longer has `meta.version`, `meta.trace`, `message.reply_html`, or `message.trace_id`, because Kagi's v2 Assistant API returns markdown only. `message.id` is now the assistant turn id.
