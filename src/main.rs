@@ -3287,7 +3287,11 @@ impl McpServerConfig {
         let excluded = normalize_names(exclude_tools)?;
         if let Some(included) = &included {
             for name in included {
-                if !self.tool_definitions.iter().any(|tool| tool["name"].as_str() == Some(name.as_str())) {
+                if !self
+                    .tool_definitions
+                    .iter()
+                    .any(|tool| tool["name"].as_str() == Some(name.as_str()))
+                {
                     return Err(KagiError::Config(format!(
                         "MCP tool `{name}` requires --enable-mutating-tools"
                     )));
@@ -3314,7 +3318,9 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
             Ok(value) => Some(value.split(',').map(str::to_string).collect::<Vec<_>>()),
             Err(env::VarError::NotPresent) => None,
             Err(env::VarError::NotUnicode(_)) => {
-                return Err(KagiError::Config("KAGI_MCP_TOOLS must be valid UTF-8".into()));
+                return Err(KagiError::Config(
+                    "KAGI_MCP_TOOLS must be valid UTF-8".into(),
+                ));
             }
         }
     } else {
@@ -3322,7 +3328,10 @@ async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> 
     };
     let tools = args.tools.or(env_tools);
     let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools)
-        .with_tool_filter(tools.as_deref(), args.exclude_tools.as_deref().unwrap_or_default())?;
+        .with_tool_filter(
+            tools.as_deref(),
+            args.exclude_tools.as_deref().unwrap_or_default(),
+        )?;
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =
