@@ -27,6 +27,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
+        "KAGI_MCP_TOOLS",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -63,6 +64,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
+        "KAGI_MCP_TOOLS",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -4204,4 +4206,140 @@ fn concurrent_site_pref_sets_preserve_all_domains() {
             "concurrent update for {domain} must survive"
         );
     }
+}
+
+#[test]
+fn mcp_tool_allowlist_filters_both_protocols_and_deduplicates() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_stable_request(json!(1), "tools/list", json!({})),
+        mcp_request(json!(2), "tools/list", json!({})),
+    ];
+    let stdin = requests.iter().map(|r| format!("{r}\n")).collect::<String>();
+    let output = run_kagi_with_stdin(
+        &["mcp", "--tools", " kagi_search,kagi_quick,kagi_batch_search,kagi_search "],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+    assert_success(&output);
+    for response in mcp_responses(&output.stdout) {
+        let names: Vec<&str> = response["result"]["tools"].as_array().expect("tools")
+            .iter().map(|tool| tool["name"].as_str().expect("name")).collect();
+        assert_eq!(names, ["kagi_batch_search", "kagi_quick", "kagi_search"]);
+    }
+}
+
+#[test]
+fn mcp_tool_exclusions_preserve_remaining_catalog_and_mutation_gate() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!("{}\n", mcp_request(json!(1), "tools/list", json!({})));
+    for mutating in [false, true] {
+        let mut args = vec!["mcp"];
+        if mutating { args.push("--enable-mutating-tools"); }
+        let baseline = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+        assert_success(&baseline);
+        let baseline = mcp_responses(&baseline.stdout);
+        let expected: Vec<Value> = baseline[0]["result"]["tools"].as_array().expect("tools")
+            .iter().filter(|tool| tool["name"] != "kagi_search" && tool["name"] != "kagi_lens_create")
+            .cloned().collect();
+        args.extend(["--exclude-tools", "kagi_search, kagi_lens_create,kagi_search"]);
+        let filtered = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+        assert_success(&filtered);
+        assert_eq!(mcp_responses(&filtered.stdout)[0]["result"]["tools"], json!(expected));
+    }
+}
+
+#[test]
+fn mcp_tool_filters_reject_invalid_names_before_reading_requests() {
+    let tempdir = TempDir::new().expect("tempdir");
+    for flag in ["--tools", "--exclude-tools"] {
+        for (value, message) in [("kagi_serach", "Unknown MCP tool"), ("kagi_search,", "empty names"), (" ", "empty names")] {
+            let output = run_kagi_with_stdin(&["mcp", flag, value], "", &[], tempdir.path());
+            assert!(!output.status.success(), "accepted {flag} {value:?}");
+            assert!(output.stdout.is_empty());
+            assert!(String::from_utf8_lossy(&output.stderr).contains(message));
+        }
+    }
+    let output = run_kagi(&["mcp", "--tools", "kagi_search", "--exclude-tools", "kagi_quick"], &[], tempdir.path());
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
+    for value in ["kagi_serach", "", "kagi_search,,kagi_quick"] {
+        let output = run_kagi_with_stdin(&["mcp"], "", &[("KAGI_MCP_TOOLS", value)], tempdir.path());
+        assert!(!output.status.success(), "accepted env {value:?}");
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
+fn mcp_tool_allowlist_requires_explicit_mutation_permission() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!("{}\n", mcp_stable_request(json!(1), "tools/list", json!({})));
+    let output = run_kagi_with_stdin(&["mcp", "--tools", "kagi_lens_create"], &stdin, &[], tempdir.path());
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires --enable-mutating-tools"));
+    let output = run_kagi_with_stdin(&["mcp", "--enable-mutating-tools", "--tools", "kagi_lens_create"], &stdin, &[], tempdir.path());
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "kagi_lens_create");
+}
+
+#[test]
+fn mcp_tool_environment_allowlist_and_cli_precedence() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!("{}\n", mcp_stable_request(json!(1), "tools/list", json!({})));
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &[("KAGI_MCP_TOOLS", " kagi_quick,kagi_quick ")], tempdir.path());
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "kagi_quick");
+    for flag in ["--tools", "--exclude-tools"] {
+        let output = run_kagi_with_stdin(&["mcp", flag, "kagi_search"], &stdin, &[("KAGI_MCP_TOOLS", "invalid")], tempdir.path());
+        assert_success(&output);
+        let responses = mcp_responses(&output.stdout);
+        let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+        if flag == "--tools" {
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0]["name"], "kagi_search");
+        } else {
+            assert!(tools.len() > 1);
+            assert!(!tools.iter().any(|tool| tool["name"] == "kagi_search"));
+        }
+    }
+}
+
+#[test]
+fn mcp_tool_filters_block_hidden_calls_and_keep_server_alive() {
+    let tempdir = TempDir::new().expect("tempdir");
+    for args in [vec!["mcp", "--tools", "kagi_news_filter_presets"], vec!["mcp", "--exclude-tools", "kagi_search"]] {
+        for draft in [false, true] {
+            let request = if draft { mcp_request } else { mcp_stable_request };
+            let stdin = format!("{}\n{}\n", request(json!(1), "tools/call", json!({"name": "kagi_search", "arguments": {"query": "rust"}})), request(json!(2), "tools/call", json!({"name": "kagi_news_filter_presets", "arguments": {}})));
+            let output = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+            assert_success(&output);
+            let responses = mcp_responses(&output.stdout);
+            assert_eq!(responses.len(), 2);
+            assert_eq!(responses[0]["error"]["code"], -32602);
+            assert_eq!(responses[0]["error"]["message"], "Unknown tool: kagi_search");
+            assert_eq!(responses[1]["result"]["isError"], false);
+            assert!(responses[1]["result"]["structuredContent"].is_object());
+        }
+    }
+}
+
+#[test]
+fn mcp_tool_exclusions_can_produce_an_empty_catalog() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!("{}\n", mcp_stable_request(json!(1), "tools/list", json!({})));
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &[], tempdir.path());
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let names = responses[0]["result"]["tools"].as_array().expect("tools").iter()
+        .map(|tool| tool["name"].as_str().expect("name")).collect::<Vec<_>>().join(",");
+    let output = run_kagi_with_stdin(&["mcp", "--exclude-tools", &names], &stdin, &[], tempdir.path());
+    assert_success(&output);
+    assert_eq!(mcp_responses(&output.stdout)[0]["result"]["tools"], json!([]));
 }

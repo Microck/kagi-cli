@@ -2,6 +2,8 @@
 
 ### Added
 
+- `kagi mcp --tools` and `--exclude-tools` select which tools are exposed; `KAGI_MCP_TOOLS` provides an environment allowlist. Hidden tools cannot be called, and mutating tools still require explicit opt-in (#201).
+
 - Static Linux release binaries for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, with archives, bare binaries, and SHA-256 checksums (#200).
 
 ## [0.21.1]
