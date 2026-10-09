@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Static Linux release binaries for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, with archives, bare binaries, and SHA-256 checksums (#200).
+
 ## [0.21.1]
 
 ### Fixed

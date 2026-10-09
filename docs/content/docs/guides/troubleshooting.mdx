@@ -500,8 +500,9 @@ ldd $(which kagi)
 
 **2. Use musl build (static):**
 ```bash
-# Download musl version instead of gnu
-wget https://github.com/Microck/kagi-cli/releases/download/.../kagi-x86_64-unknown-linux-musl.tar.gz
+# Replace vX.Y.Z with a release tag that includes musl assets.
+# Use aarch64-unknown-linux-musl for ARM64.
+wget https://github.com/Microck/kagi-cli/releases/download/vX.Y.Z/kagi-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz
 ```
 
 **3. Install missing libraries:**
