@@ -15,6 +15,7 @@ MCP specification's `initialize` handshake, `ping`, `tools/list`, and
 
 ```bash
 kagi mcp [--default-output json|toon|pretty|compact|markdown|csv] [--enable-mutating-tools]
+         [--tools NAME,... | --exclude-tools NAME,...]
 kagi mcp install [--target CLIENT]... [--all] [--dry-run]
 kagi mcp setup [--target CLIENT]... [--all] [--dry-run]
 kagi mcp auth [--target CLIENT]... [--all] [--dry-run]
@@ -155,6 +156,46 @@ Expose account and local-state mutation tools only when you want an agent to man
 ```bash
 codex mcp add kagi-admin -- "$(command -v kagi)" mcp --enable-mutating-tools
 ```
+
+## Choose which tools to expose
+
+Expose only the tools your agent needs:
+
+```bash
+kagi mcp --tools kagi_search,kagi_batch_search,kagi_quick
+codex mcp add kagi-search -- "$(command -v kagi)" mcp --tools kagi_search,kagi_quick
+```
+
+Or expose the enabled catalog except selected tools:
+
+```bash
+kagi mcp --exclude-tools kagi_fastgpt,kagi_extract
+```
+
+For clients where changing server arguments is awkward, set the comma-separated
+`KAGI_MCP_TOOLS` environment variable in the server configuration:
+
+```bash
+KAGI_MCP_TOOLS=kagi_search,kagi_batch_search,kagi_quick kagi mcp
+```
+
+`--tools` and `--exclude-tools` cannot be combined. Either flag overrides
+`KAGI_MCP_TOOLS`. Names are case-sensitive; surrounding whitespace is trimmed and
+duplicates are ignored. Unknown or empty names are startup errors. Omitting both
+flags and the environment variable preserves the default catalog.
+
+Filters apply to both stable and draft `tools/list` and `tools/call`. Hidden tools
+cannot be called directly; they return an unknown-tool JSON-RPC error. Excluding
+all enabled tools produces an empty catalog. To include a mutating tool, also pass
+`--enable-mutating-tools`; an allowlist alone does not enable mutations:
+
+```bash
+kagi mcp --enable-mutating-tools --tools kagi_lens_list,kagi_lens_create
+```
+
+Restart your MCP client after changing the filter so it refreshes its tool list.
+The setup commands install plain `kagi mcp`; customize the saved arguments or
+server environment to apply a filter.
 
 ## Tools
 

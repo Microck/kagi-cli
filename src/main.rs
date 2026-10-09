@@ -3254,6 +3254,57 @@ impl McpServerConfig {
         }
     }
 
+    fn with_tool_filter(
+        mut self,
+        tools: Option<&[String]>,
+        exclude_tools: &[String],
+    ) -> Result<Self, KagiError> {
+        if tools.is_none() && exclude_tools.is_empty() {
+            return Ok(self);
+        }
+
+        let all_tools = build_mcp_tool_definitions(true);
+        let normalize_names = |names: &[String]| -> Result<BTreeSet<String>, KagiError> {
+            names
+                .iter()
+                .map(|name| {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        return Err(KagiError::Config(
+                            "MCP tool filters must not contain empty names".into(),
+                        ));
+                    }
+                    if !all_tools.iter().any(|tool| tool["name"].as_str() == Some(name)) {
+                        return Err(KagiError::Config(format!(
+                            "Unknown MCP tool `{name}`. Run `kagi mcp` and call tools/list to inspect available tools"
+                        )));
+                    }
+                    Ok(name.to_string())
+                })
+                .collect()
+        };
+        let included = tools.map(normalize_names).transpose()?;
+        let excluded = normalize_names(exclude_tools)?;
+        if let Some(included) = &included {
+            for name in included {
+                if !self
+                    .tool_definitions
+                    .iter()
+                    .any(|tool| tool["name"].as_str() == Some(name.as_str()))
+                {
+                    return Err(KagiError::Config(format!(
+                        "MCP tool `{name}` requires --enable-mutating-tools"
+                    )));
+                }
+            }
+        }
+        self.tool_definitions.retain(|tool| {
+            let name = tool["name"].as_str().expect("MCP tool has a name");
+            included.as_ref().is_none_or(|names| names.contains(name)) && !excluded.contains(name)
+        });
+        Ok(self)
+    }
+
     fn default_output_or(&self, fallback: OutputFormat) -> OutputFormat {
         self.default_output.clone().unwrap_or(fallback)
     }
@@ -3261,7 +3312,26 @@ impl McpServerConfig {
 
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
-    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools);
+    // Explicit CLI filters override the environment, including --exclude-tools.
+    let env_tools = if args.tools.is_none() && args.exclude_tools.is_none() {
+        match env::var("KAGI_MCP_TOOLS") {
+            Ok(value) => Some(value.split(',').map(str::to_string).collect::<Vec<_>>()),
+            Err(env::VarError::NotPresent) => None,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(KagiError::Config(
+                    "KAGI_MCP_TOOLS must be valid UTF-8".into(),
+                ));
+            }
+        }
+    } else {
+        None
+    };
+    let tools = args.tools.or(env_tools);
+    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools)
+        .with_tool_filter(
+            tools.as_deref(),
+            args.exclude_tools.as_deref().unwrap_or_default(),
+        )?;
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =

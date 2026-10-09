@@ -1444,6 +1444,24 @@ pub struct McpArgs {
     #[arg(long, value_name = "FORMAT", value_enum)]
     pub default_output: Option<OutputFormat>,
 
+    /// Expose only these comma-separated MCP tool names (or use KAGI_MCP_TOOLS)
+    #[arg(
+        long,
+        value_name = "NAME,...",
+        value_delimiter = ',',
+        conflicts_with = "exclude_tools"
+    )]
+    pub tools: Option<Vec<String>>,
+
+    /// Expose all enabled MCP tools except these comma-separated names
+    #[arg(
+        long,
+        value_name = "NAME,...",
+        value_delimiter = ',',
+        conflicts_with = "tools"
+    )]
+    pub exclude_tools: Option<Vec<String>>,
+
     /// Expose MCP tools that mutate Kagi account or local CLI state
     #[arg(long)]
     pub enable_mutating_tools: bool,
