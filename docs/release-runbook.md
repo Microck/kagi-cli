@@ -62,9 +62,12 @@ git push origin vX.Y.Z
 - builds release artifacts for:
   - `x86_64-unknown-linux-gnu`
   - `aarch64-unknown-linux-gnu`
+  - `x86_64-unknown-linux-musl` (static)
+  - `aarch64-unknown-linux-musl` (static, built on a native ARM64 runner)
   - `x86_64-apple-darwin`
   - `aarch64-apple-darwin`
   - `x86_64-pc-windows-msvc`
+- checks musl binaries for dynamic loaders/shared-library dependencies and smoke-tests `--version` and `--help`
 - uploads archives plus raw binaries
 - generates `kagi-vX.Y.Z-checksums.txt`
 - extracts release notes from `CHANGELOG.md`
