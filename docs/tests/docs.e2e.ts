@@ -20,6 +20,12 @@ for(const page of pages())test(`documentation ${page.route}`,async({app,screen,b
   const errors: string[] = [];
   Object.assign(window, { __qaErrors: errors });
   window.addEventListener('error', event => errors.push(event.message));
+  window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+    originalError.apply(console, args);
+  };
  });
  await app.open(page.route);
  await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true,level:1})).toBeVisible();

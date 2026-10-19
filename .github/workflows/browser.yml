@@ -21,6 +21,7 @@ jobs:
         with:
           version: 11.9.0
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:config
       - run: pnpm build
       - run: pnpm exec e2e-web install chromium --with-deps
       - run: pnpm test:e2e
