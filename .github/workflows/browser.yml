@@ -1,0 +1,36 @@
+name: Deterministic documentation browser flows
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec e2e-web install chromium --with-deps
+      - run: pnpm test:e2e
+        env:
+          E2E_TELEMETRY_DISABLED: '1'
+      - name: Preserve failed browser traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: documentation-browser-failure-traces
+          path: docs/.e2e/results/
+          retention-days: 7
+          if-no-files-found: ignore
