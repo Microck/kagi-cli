@@ -15,7 +15,13 @@ function pages(directory=root):{route:string;title:string}[]{
   return [{route:"/"+path.slice(root.length+1).replace(/\.mdx?$/,"").replace(/(^|\/)index$/,""),title}];
  });
 }
-for(const page of pages())test(`documentation ${page.route}`,async({app,screen})=>{
+for(const page of pages())test(`documentation ${page.route}`,async({app,screen,browser})=>{
+ await browser.addInitScript(() => {
+  const errors: string[] = [];
+  Object.assign(window, { __qaErrors: errors });
+  window.addEventListener('error', event => errors.push(event.message));
+ });
  await app.open(page.route);
  await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true})).toBeVisible();
+ expect(await browser.evaluate(() => (window as unknown as {__qaErrors:string[]}).__qaErrors)).toEqual([]);
 });
