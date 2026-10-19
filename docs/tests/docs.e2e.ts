@@ -29,7 +29,7 @@ for(const page of pages())test(`documentation ${page.route}`,async({app,screen,b
  });
  await app.open(page.route);
  await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true,level:1})).toBeVisible();
- await screen.getByRole("button", {name:"Open Search",exact:true}).click();
+ await screen.getByRole("button", {name:/^Search/}).click();
  await expect(screen.getByRole("dialog")).toBeVisible();
  await browser.keyboard.press("Escape");
  await expect(screen.getByRole("dialog")).not.toBeVisible();
