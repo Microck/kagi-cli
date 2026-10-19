@@ -22,6 +22,6 @@ for(const page of pages())test(`documentation ${page.route}`,async({app,screen,b
   window.addEventListener('error', event => errors.push(event.message));
  });
  await app.open(page.route);
- await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true})).toBeVisible();
+ await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true,level:1})).toBeVisible();
  expect(await browser.evaluate(() => (window as unknown as {__qaErrors:string[]}).__qaErrors)).toEqual([]);
 });
