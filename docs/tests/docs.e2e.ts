@@ -29,5 +29,9 @@ for(const page of pages())test(`documentation ${page.route}`,async({app,screen,b
  });
  await app.open(page.route);
  await expect(screen.getByRole("heading",{name:`${page.title} Link to section`,exact:true,level:1})).toBeVisible();
+ await screen.getByRole("button", {name:"Open Search",exact:true}).click();
+ await expect(screen.getByRole("dialog")).toBeVisible();
+ await browser.keyboard.press("Escape");
+ await expect(screen.getByRole("dialog")).not.toBeVisible();
  expect(await browser.evaluate(() => (window as unknown as {__qaErrors:string[]}).__qaErrors)).toEqual([]);
 });
