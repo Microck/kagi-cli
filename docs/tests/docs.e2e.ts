@@ -1,5 +1,5 @@
 import { readFileSync,readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 const root="content/docs";
@@ -12,7 +12,7 @@ function pages(directory=root):{route:string;title:string}[]{
   const title=readFileSync(path,"utf8").match(/^# (.+)$/m)?.[1]
     ?.replace(/[`*_]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
   if(!title)throw new Error(`Missing title: ${path}`);
-  return [{route:"/"+path.slice(root.length+1).replace(/\.mdx?$/,"").replace(/(^|\/)index$/,""),title}];
+  return [{route:"/"+relative(root,path).split(sep).join("/").replace(/\.mdx?$/,"").replace(/(^|\/)index$/,""),title}];
  });
 }
 for(const page of pages())test(`documentation ${page.route}`,async({app,screen,browser})=>{
