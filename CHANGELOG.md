@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.22.1]
+
+### Fixed
+
+- Documentation builds now apply the Fumadocs configuration correctly; all 40 documentation routes have deterministic browser coverage (#211).
+- Updated quinn-proto and rustls to patched dependency versions (#211).
+
 ## [0.22.0]
 
 ### Added
