@@ -17,5 +17,5 @@ function pages(directory=root):{route:string;title:string}[]{
 }
 for(const page of pages())test(`documentation ${page.route}`,async({app,screen})=>{
  await app.open(page.route);
- await expect(screen.getByRole("heading",{name:page.title,exact:false})).toBeVisible();
+ await expect(screen.getByRole("heading",{name:page.title,exact:true})).toBeVisible();
 });
