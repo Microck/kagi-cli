@@ -5,4 +5,4 @@ const config = {
   reactStrictMode: true,
 };
 
-export default createMDX(config);
+export default createMDX()(config);

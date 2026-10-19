@@ -35,3 +35,5 @@ coverage/
 .cache/
 tmp/
 .residue/
+
+docs/.e2e/

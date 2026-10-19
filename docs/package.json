@@ -5,7 +5,9 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "next start"
+    "start": "next start",
+    "test:e2e": "node e2e-runner.mjs",
+    "test:config": "node --test tests/config.test.mjs"
   },
   "dependencies": {
     "@theguild/remark-mermaid": "^0.3.0",
@@ -19,11 +21,13 @@
     "remark-github-blockquote-alert": "^1.2.0"
   },
   "devDependencies": {
+    "@e2e-dev/web": "0.15.2",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/mdx": "^2.0.14",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "e2e": "0.21.2",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.0"
   },
