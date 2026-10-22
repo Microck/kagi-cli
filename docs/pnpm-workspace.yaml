@@ -1,3 +1,6 @@
 allowBuilds:
   esbuild: true
   sharp: true
+# Next.js 15 pins an older PostCSS despite patched compatible 8.x releases.
+overrides:
+  next>postcss: 8.5.26
