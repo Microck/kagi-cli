@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Updated documentation transitive dependencies and the Next.js PostCSS override to resolve high/moderate audit findings without upgrading the documentation framework.
 - Updated certificate verification and root bundles to address RUSTSEC-2026-0382 and RUSTSEC-2026-0381; patched the event-listener thread-safety advisory RUSTSEC-2026-0221.
 - Consolidated eight Rust dependency updates, the Next.js 15.5.27 documentation update, and three GitHub Actions updates (#213).
 
