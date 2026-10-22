@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.22.2]
+
+### Fixed
+
+- Updated certificate verification and root bundles to address RUSTSEC-2026-0382 and RUSTSEC-2026-0381; patched the event-listener thread-safety advisory RUSTSEC-2026-0221.
+- Consolidated eight Rust dependency updates, the Next.js 15.5.27 documentation update, and three GitHub Actions updates (#213).
+
 ## [0.22.1]
 
 ### Fixed
