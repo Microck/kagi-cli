@@ -10,12 +10,14 @@ use crate::http;
 use crate::types::{ImageSearchResponse, ImageSearchResult};
 
 #[derive(Debug, Clone, Serialize)]
+/// Query and optional local cap for a single subscriber image-result page.
 pub struct ImageSearchRequest {
     pub query: String,
     pub limit: Option<usize>,
 }
 
 impl ImageSearchRequest {
+    /// Reject blank queries and unsupported result limits before any network request.
     pub fn validate(&self) -> Result<(), KagiError> {
         if self.query.trim().is_empty() {
             return Err(KagiError::Config("search query cannot be empty".into()));
@@ -29,6 +31,10 @@ impl ImageSearchRequest {
     }
 }
 
+/// Fetch and parse one subscriber image page without paid fallback or redirects.
+///
+/// # Errors
+/// Returns validation, authentication, transport, or response-format errors.
 pub async fn execute(
     request: &ImageSearchRequest,
     token: &str,
@@ -104,10 +110,12 @@ pub async fn execute(
     })
 }
 
+/// Compile an internal selector without exposing page data on failure.
 fn selector(value: &str) -> Result<Selector, KagiError> {
     Selector::parse(value).map_err(|_| KagiError::Parse("invalid image-search selector".into()))
 }
 
+/// Accept only absolute HTTP(S) URLs without credentials or control characters.
 fn http_url(value: Option<&str>) -> Option<String> {
     let value = value?.trim();
     if value.chars().any(char::is_control) {

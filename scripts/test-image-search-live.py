@@ -13,6 +13,7 @@ import tempfile
 
 
 def main():
+    """Check one live CLI request, cached output formats, and a live MCP request."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", default="target/debug/kagi")
     parser.add_argument("--query", default="sea otter")
@@ -28,6 +29,7 @@ def main():
                    KAGI_CACHE_DIR=home + "/cache", RUST_LOG="off")
 
         def run(argv, stdin=None):
+            """Run the isolated CLI and withhold any output containing a credential."""
             result = subprocess.run([binary, *argv], input=stdin, env=env,
                                     capture_output=True, text=True, timeout=60)
             if secret in result.stdout or secret in result.stderr:

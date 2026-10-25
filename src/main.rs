@@ -4284,6 +4284,7 @@ fn lang_only_schema() -> Value {
     )
 }
 
+/// Describe the subscriber-only image search MCP input contract.
 fn image_search_schema() -> Value {
     object_schema(
         serde_json::json!({
@@ -5968,6 +5969,17 @@ fn format_search_response(
     }
 }
 
+/// Keep untrusted image titles as spreadsheet text rather than formulas.
+fn neutralize_image_csv_title(title: &str) -> String {
+    if title.trim_start().starts_with(['=', '+', '-', '@']) || title.starts_with(['\t', '\r', '\n'])
+    {
+        format!("'{title}")
+    } else {
+        title.to_owned()
+    }
+}
+
+/// Render image results without changing the original values in structured output.
 fn format_image_search_response(
     response: &types::ImageSearchResponse,
     format: &OutputFormat,
@@ -6005,7 +6017,7 @@ fn format_image_search_response(
             for item in &response.data {
                 lines.push(
                     [
-                        item.title.clone(),
+                        neutralize_image_csv_title(&item.title),
                         item.image_url.clone(),
                         item.source_url.clone(),
                         item.thumbnail_url.clone().unwrap_or_default(),

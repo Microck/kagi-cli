@@ -253,6 +253,9 @@ Image search returns a separate shape:
 }
 ```
 
+CSV titles with spreadsheet formula prefixes are prefixed with an apostrophe;
+JSON and other structured formats preserve the original title.
+
 Dimensions describe the original image, not its thumbnail. Missing dimensions
 and thumbnails are omitted. The command returns URLs without downloading images;
 thumbnail proxy URLs can expire. Results remain subject to their source licenses.

@@ -4716,3 +4716,50 @@ fn image_search_completed_empty_response_is_success() {
     assert_eq!(body["data"], json!([]));
     images.assert_calls(1);
 }
+
+/// Untrusted titles must remain literal cells when image CSV is opened in a spreadsheet.
+#[test]
+fn image_search_csv_neutralizes_formulas_without_changing_json() {
+    for title in [
+        "=1+1", "+SUM(1)", "-1+1", "@SUM(1)", " =1+1", "\t=1+1", "\r=1+1",
+    ] {
+        let server = MockServer::start();
+        let body = IMAGE_SEARCH_FIXTURE.replace("Otter &amp; friends", title);
+        let images = server.mock(|when, then| {
+            when.path("/images");
+            then.status(200).body(body);
+        });
+        let temp = TempDir::new().unwrap();
+        let env = session_env(&server);
+        let csv = run_kagi(
+            &[
+                "search",
+                "otter",
+                "--images",
+                "--format",
+                "csv",
+                "--local-cache",
+            ],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&csv);
+        let text = String::from_utf8(csv.stdout).unwrap();
+        assert!(
+            text.lines()
+                .nth(1)
+                .unwrap()
+                .starts_with(&format!("'{},", title.trim())),
+            "{text}"
+        );
+        let json = run_kagi(
+            &["search", "otter", "--images", "--local-cache"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&json);
+        let data: Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert_eq!(data["data"][0]["title"], title.trim());
+        images.assert_calls(1);
+    }
+}
