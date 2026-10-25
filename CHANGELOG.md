@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.23.0]
+
+### Added
+
+- Subscriber-only `search --images` and the read-only `kagi_image_search` MCP tool, returning original image URLs, source links, thumbnails, and dimensions with all existing output formats. Includes explicit filter validation and no paid API fallback.
+
 ## [0.22.2]
 
 ### Fixed

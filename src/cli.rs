@@ -501,6 +501,10 @@ pub struct SearchArgs {
     /// rejects --time year and --order trackers (no equivalents in the news vertical).
     #[arg(long)]
     pub news: bool,
+
+    /// Search images using your subscriber session (never the paid API).
+    #[arg(long, conflicts_with = "news")]
+    pub images: bool,
 }
 
 impl SearchArgs {
@@ -514,6 +518,37 @@ impl SearchArgs {
         }
         if self.limit.is_some_and(|limit| limit > 1024) {
             return Err("--limit must be at most 1024. Choose a value from 1 to 1024".to_string());
+        }
+        Ok(())
+    }
+
+    /// Validate the supported image-search options before resolving credentials.
+    ///
+    /// # Errors
+    /// Returns an error for flags whose image-search semantics are not supported.
+    pub fn validate_image_search(&self) -> Result<(), String> {
+        if !self.images {
+            return Ok(());
+        }
+        let unsupported = [
+            (self.news, "--news"),
+            (self.lens.is_some(), "--lens"),
+            (self.snap.is_some(), "--snap"),
+            (self.region.is_some(), "--region"),
+            (self.time.is_some(), "--time"),
+            (self.from_date.is_some(), "--from-date"),
+            (self.to_date.is_some(), "--to-date"),
+            (self.order.is_some(), "--order"),
+            (self.verbatim, "--verbatim"),
+            (self.personalized, "--personalized"),
+            (self.no_personalized, "--no-personalized"),
+            (self.follow.is_some(), "--follow"),
+            (self.template.is_some(), "--template"),
+        ];
+        for (present, flag) in unsupported {
+            if present {
+                return Err(format!("--images cannot be combined with {flag}"));
+            }
         }
         Ok(())
     }
@@ -1980,6 +2015,52 @@ mod tests {
             follow: None,
             limit: None,
             news: false,
+            images: false,
+        }
+    }
+
+    #[test]
+    fn image_search_accepts_output_and_limit() {
+        let cli = Cli::try_parse_from([
+            "kagi", "search", "otters", "--images", "--limit", "5", "--format", "pretty",
+        ])
+        .unwrap();
+        let Some(Commands::Search(args)) = cli.command else {
+            panic!("expected search")
+        };
+        assert!(args.images);
+        assert!(args.validate().is_ok());
+        assert!(args.validate_image_search().is_ok());
+    }
+
+    #[test]
+    fn image_search_conflicts_with_news() {
+        assert!(Cli::try_parse_from(["kagi", "search", "otters", "--images", "--news"]).is_err());
+    }
+
+    #[test]
+    fn image_search_rejects_unsupported_options() {
+        for flags in [
+            vec!["--lens", "1"],
+            vec!["--snap", "wiki"],
+            vec!["--region", "us"],
+            vec!["--time", "day"],
+            vec!["--from-date", "2026-01-01"],
+            vec!["--to-date", "2026-01-02"],
+            vec!["--order", "recency"],
+            vec!["--verbatim"],
+            vec!["--personalized"],
+            vec!["--no-personalized"],
+            vec!["--follow", "1"],
+            vec!["--template", "{{url}}"],
+        ] {
+            let mut argv = vec!["kagi", "search", "otters", "--images"];
+            argv.extend(flags);
+            let cli = Cli::try_parse_from(argv).unwrap();
+            let Some(Commands::Search(args)) = cli.command else {
+                panic!("expected search")
+            };
+            assert!(args.validate_image_search().is_err());
         }
     }
 

@@ -4450,3 +4450,269 @@ fn mcp_tool_exclusions_can_produce_an_empty_catalog() {
         json!([])
     );
 }
+
+// Sanitized result-card structure observed on the subscriber /images endpoint.
+const IMAGE_SEARCH_FIXTURE: &str = include_str!("fixtures/image-search.html");
+
+#[test]
+fn image_search_uses_subscriber_even_with_api_key_and_limits_results() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET)
+            .path("/images")
+            .query_param("q", "otters & snow")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let paid = server.mock(|when, then| {
+        when.path("/api/v1/search");
+        then.status(500);
+    });
+    let temp = TempDir::new().unwrap();
+    let mut env = session_env(&server);
+    env.push(("KAGI_API_KEY", "test-paid-key".into()));
+    let out = run_kagi(
+        &["search", "otters & snow", "--images", "--limit", "1"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert_success(&out);
+    let result: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["query"], "otters & snow");
+    assert_eq!(result["data"].as_array().unwrap().len(), 1);
+    assert_eq!(result["data"][0]["width"], 922);
+    assert_eq!(
+        result["data"][0]["image_url"],
+        "https://images.example/otter.jpg?a=1&b=2"
+    );
+    images.assert_calls(1);
+    paid.assert_calls(0);
+}
+
+#[test]
+fn image_search_renders_all_formats_and_caches() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET).path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    for format in ["json", "compact", "toon", "pretty", "markdown", "csv"] {
+        let out = run_kagi(
+            &[
+                "search",
+                "otter",
+                "--images",
+                "--format",
+                format,
+                "--local-cache",
+            ],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&out);
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(text.contains("Otter & friends"), "{format}: {text}");
+        assert!(text.contains("https://example.org/otter"));
+        if format == "csv" {
+            assert!(text.starts_with("title,image_url,source_url,thumbnail_url,width,height\n"));
+        }
+    }
+    images.assert_calls(1);
+}
+
+#[test]
+fn image_search_missing_session_never_uses_api() {
+    let server = MockServer::start();
+    let paid = server.mock(|when, then| {
+        when.path("/api/v1/search");
+        then.status(200).body("{}");
+    });
+    let temp = TempDir::new().unwrap();
+    let env = test_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("KAGI_SESSION_TOKEN"));
+    paid.assert_calls(0);
+}
+
+#[test]
+fn image_search_rejects_http_failures_challenges_and_malformed_pages() {
+    for (status, body) in [
+        (401, "private server detail"),
+        (403, "private server detail"),
+        (429, "private server detail"),
+        (500, "private server detail"),
+        (200, "<input type=password>"),
+        (200, "<link href='turnstile_page.scss.css'>"),
+        (200, "<html>unexpected markup</html>"),
+    ] {
+        let server = MockServer::start();
+        let images = server.mock(|when, then| {
+            when.method(GET).path("/images");
+            then.status(status).body(body);
+        });
+        let temp = TempDir::new().unwrap();
+        let env = session_env(&server);
+        let out = run_kagi(
+            &["search", "otter", "--images"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert!(!out.status.success(), "{status}: {body}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("private server detail"));
+        assert!(!stderr.contains("test-session"));
+        images.assert_calls(1);
+    }
+}
+
+#[test]
+fn image_search_does_not_follow_redirects_or_leak_cookie() {
+    let server = MockServer::start();
+    let destination = MockServer::start();
+    let leak = destination.mock(|when, then| {
+        when.method(GET);
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(302)
+            .header("location", destination.url("/signin"));
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert!(!out.status.success());
+    images.assert_calls(1);
+    leak.assert_calls(0);
+}
+
+#[test]
+fn image_search_rejects_invalid_inputs_before_network() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    for args in [
+        vec!["search", "otter", "--images", "--limit", "0"],
+        vec!["search", "otter", "--images", "--limit", "1025"],
+        vec!["search", " ", "--images"],
+        vec!["search", "otter", "--images", "--news"],
+        vec!["search", "otter", "--images", "--follow", "1"],
+    ] {
+        let out = run_kagi(&args, &env_refs(&env), temp.path());
+        assert!(!out.status.success());
+    }
+    images.assert_calls(0);
+}
+
+#[test]
+fn mcp_image_search_returns_structured_results_and_validates_limits() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET)
+            .path("/images")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let requests = [
+        mcp_request(json!(1), "tools/list", json!({})),
+        mcp_request(
+            json!(2),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":1}}),
+        ),
+        mcp_request(
+            json!(3),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":0}}),
+        ),
+        mcp_request(
+            json!(4),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":1025}}),
+        ),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap() + "\n")
+        .collect::<String>();
+    let out = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), temp.path());
+    assert_success(&out);
+    let responses = mcp_responses(&out.stdout);
+    let tool = responses[0]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "kagi_image_search")
+        .unwrap();
+    assert_eq!(tool["annotations"]["readOnlyHint"], true);
+    assert_eq!(tool["annotations"]["openWorldHint"], true);
+    let inner: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(inner["data"].as_array().unwrap().len(), 1);
+    assert!(responses[2].get("error").is_some() || responses[2]["result"]["isError"] == true);
+    assert!(responses[3].get("error").is_some() || responses[3]["result"]["isError"] == true);
+    images.assert_calls(1);
+}
+
+#[test]
+fn image_search_cache_is_scoped_to_session() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    for token in ["session-one", "session-two", "session-one"] {
+        let env = vec![
+            ("KAGI_SESSION_TOKEN", token.to_string()),
+            ("KAGI_BASE_URL", server.base_url()),
+        ];
+        let out = run_kagi(
+            &["search", "otter", "--images", "--local-cache"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&out);
+    }
+    images.assert_calls(2);
+}
+
+#[test]
+fn image_search_completed_empty_response_is_success() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images"); then.status(200).body("<div class='_0_img-results'></div><script>scriptStreamCallback(\"images\", \"html\")</script><script>scriptStreamCallback(\"done\", \"text\")</script>");
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert_success(&out);
+    let body: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(body["data"], json!([]));
+    images.assert_calls(1);
+}

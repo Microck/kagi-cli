@@ -39,6 +39,7 @@ depth the user asked for.
 | Direct answer with references | `kagi quick` |
 | Ranked web results | `kagi search` |
 | Search and summarize top pages | `kagi search --follow N` |
+| Image results with original URLs | `kagi search --images` (subscriber session only; no paid API fallback) |
 | Current news stories | `kagi news` or `kagi search --news` |
 | Independent personal sites | `kagi smallweb` |
 | Several independent queries | `kagi batch` |
