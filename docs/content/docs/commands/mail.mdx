@@ -121,7 +121,8 @@ command line.
 Sending uses `mail.kagimail.com:465` with certificate-verified implicit TLS (SSL).
 It never falls back to plaintext or unverified TLS. Mail is plain-text only;
 HTML and attachments are not supported. Each message includes a generated, unique
-`Message-ID` so delivery does not depend on the relay adding one.
+`Message-ID` and `MIME-Version: 1.0` for its UTF-8 plain-text body, so delivery
+does not depend on the relay filling in message headers.
 
 The read-only MCP OAuth token is separate and is never reused for SMTP.
 `kagi mail login`, saved profiles, and `KAGI_MAIL_ACCESS_TOKEN` do not supply

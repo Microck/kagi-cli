@@ -173,6 +173,7 @@ async fn smtp_tls_submission_accepts_only_after_authenticated_data() {
     );
     assert!(trace.body.contains("\r\n..\r\n"));
     let (headers, _) = trace.body.split_once("\r\n\r\n").unwrap();
+    assert!(headers.lines().any(|line| line == "MIME-Version: 1.0"));
     assert_eq!(
         headers
             .lines()

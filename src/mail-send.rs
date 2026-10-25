@@ -5,7 +5,7 @@ use std::{env, fmt, time::Duration};
 use clap::Args;
 use lettre::{
     Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{Mailbox, header::ContentType},
+    message::{Mailbox, SinglePart},
     transport::smtp::{
         AsyncSmtpTransportBuilder,
         authentication::{Credentials, Mechanism},
@@ -61,8 +61,7 @@ impl MailSendArgs {
             .from(Mailbox::new(None, from))
             .to(Mailbox::new(None, to))
             .subject(self.subject)
-            .header(ContentType::TEXT_PLAIN)
-            .body(self.body)
+            .singlepart(SinglePart::plain(self.body))
             .map_err(|_| KagiError::Config("mail send could not construct the message".into()))
     }
 }
@@ -218,12 +217,13 @@ mod tests {
         assert!(headers.contains("To: recipient@example.com\r\n"));
         assert!(headers.contains("Subject: A plain-text message\r\n"));
         assert!(headers.contains("Content-Type: text/plain; charset=utf-8"));
+        assert!(headers.contains("MIME-Version: 1.0\r\n"));
         assert!(!headers.contains("Bcc:"));
         assert!(!headers.contains("Cc:"));
         assert!(!headers.contains("Reply-To:"));
         assert_eq!(
             body,
-            "First line\r\n.\r\nBcc: not-a-header@example.com\r\nLast line"
+            "First line\r\n.\r\nBcc: not-a-header@example.com\r\nLast line\r\n"
         );
     }
 

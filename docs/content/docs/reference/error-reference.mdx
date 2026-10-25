@@ -433,6 +433,25 @@ Batch error: 1 batch query failed (2 succeeded): rust: authentication error: inv
    kagi batch --concurrency 1 < queries.txt
    ```
 
+## SMTP Errors
+
+### `mail_send_error`
+
+- **Code:** `mail_send_error`
+- **Category:** `smtp`
+- **Retryable:** `false`
+
+**Meaning:** SMTP submission or the authentication-only connection check failed.
+Remote SMTP response text is omitted to protect credentials and message content.
+
+**Solution:** Check the recipient mailbox before retrying `kagi mail send`.
+Delivery may be unknown, and retrying can send a duplicate. `kagi mail smtp-check`
+never submits a message, so its connection failures do not imply a pending delivery.
+
+SMTP authentication rejections use `authentication_error` in category `auth`.
+Check `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD`, not MCP OAuth tokens.
+See [mail setup](/commands/mail#smtp-credentials) for the separate SMTP credentials.
+
 ## Network Errors
 
 ### "Network error: request to \{url\} timed out"
