@@ -128,16 +128,16 @@ fn http_url(value: Option<&str>) -> Option<String> {
 /// Contract observed on Kagi /images, 2026-10-25: `_0_image_item` data attributes
 /// contain original dimensions/URLs; img width/height are thumbnail dimensions.
 pub fn parse_results(body: &str) -> Result<Vec<ImageSearchResult>, KagiError> {
-    let lower = body.to_ascii_lowercase();
-    if lower.contains("cf-turnstile")
-        || lower.contains("turnstile_page")
-        || lower.contains("verify you are human")
-    {
+    let document = Html::parse_document(body);
+    // Challenge words may legitimately appear in image titles or source URLs.
+    // Only challenge-specific elements indicate browser verification.
+    if document.select(&selector(
+        "link[href*='turnstile_page'], .cf-turnstile, #challenge-form, script[src*='challenges.cloudflare.com/turnstile']"
+    )?).next().is_some() {
         return Err(KagiError::Auth(
             "Kagi requires browser verification; no image search results were parsed".into(),
         ));
     }
-    let document = Html::parse_document(body);
     if document
         .select(&selector("input[type=password], form[action='/signin']")?)
         .next()
@@ -249,6 +249,23 @@ mod tests {
             parse_results(&FIXTURE.replace("scriptStreamCallback(\"done\", \"text\")", ""))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn verification_words_in_results_are_not_a_challenge() {
+        for title in ["Verify you are human", "cf-turnstile", "turnstile_page"] {
+            let body = FIXTURE.replace("Otter &amp; friends", title);
+            let results = parse_results(&body).unwrap();
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].title, title);
+        }
+        for markup in [
+            "<div class='cf-turnstile'></div>",
+            "<form id='challenge-form'></form>",
+            "<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script>",
+        ] {
+            assert!(matches!(parse_results(markup), Err(KagiError::Auth(_))));
+        }
     }
 
     #[test]
