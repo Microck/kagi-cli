@@ -271,6 +271,12 @@ use search as part of a shell pipeline:
 kagi search "what is mullvad"
 ```
 
+search images with your existing subscriber session (no paid API fallback):
+
+```bash
+kagi search "sea otter" --images --limit 10 --format pretty
+```
+
 switch the same command to terminal-readable output:
 
 ```bash

@@ -40,6 +40,27 @@ pub struct SearchResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A subscriber image-search result. Original image and source page are distinct.
+pub struct ImageSearchResult {
+    pub title: String,
+    pub image_url: String,
+    pub source_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Results from subscriber image search, separate from web results.
+pub struct ImageSearchResponse {
+    pub query: String,
+    pub data: Vec<ImageSearchResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// A single article in the News tab of Kagi search.
 pub struct NewsSearchResult {
     pub title: String,

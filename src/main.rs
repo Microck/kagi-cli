@@ -5,6 +5,7 @@ mod auth_wizard;
 mod cli;
 mod error;
 mod http;
+mod image_search;
 mod local;
 mod mail;
 #[path = "mail-auth.rs"]
@@ -313,6 +314,31 @@ async fn run() -> Result<(), KagiError> {
     })? {
         Commands::Search(args) => {
             args.validate().map_err(KagiError::Config)?;
+
+            if args.images {
+                args.validate_image_search().map_err(KagiError::Config)?;
+                let token = resolve_session_token(profile.as_deref())?;
+                let request = image_search::ImageSearchRequest {
+                    query: args.query,
+                    limit: args.limit,
+                };
+                request.validate()?;
+                let response = cached_json(
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(900),
+                    "image-search",
+                    &(
+                        &request,
+                        profile.as_deref(),
+                        local::cache_key(&[&token]),
+                        http::kagi_url("/images"),
+                    ),
+                    || async { image_search::execute(&request, &token).await },
+                )
+                .await?;
+                println!("{}", format_image_search_response(&response, &args.format)?);
+                return Ok(());
+            }
 
             if args.news {
                 args.validate_news_search().map_err(KagiError::Config)?;
@@ -3693,6 +3719,7 @@ fn mcp_tool_has_structured_content(
         | "kagi_news_chaos"
         | "kagi_news_filter_presets"
         | "kagi_news_search"
+        | "kagi_image_search"
         | "kagi_ask_page"
         | "kagi_translate"
         | "kagi_fastgpt"
@@ -3752,6 +3779,11 @@ fn build_mcp_tool_definitions(enable_mutating_tools: bool) -> Vec<Value> {
             "kagi_news_filter_presets",
             "List built-in Kagi News content-filter presets",
             lang_only_schema(),
+        ),
+        tool_schema(
+            "kagi_image_search",
+            "Search images using a Kagi subscriber session, never the paid API",
+            image_search_schema(),
         ),
         tool_schema(
             "kagi_news_search",
@@ -4081,6 +4113,7 @@ fn mcp_open_world_tool_name(name: &str) -> bool {
             | "kagi_news_chaos"
             | "kagi_news_filter_presets"
             | "kagi_news_search"
+            | "kagi_image_search"
             | "kagi_assistant"
             | "kagi_ask_page"
             | "kagi_translate"
@@ -4248,6 +4281,18 @@ fn lang_only_schema() -> Value {
             "format": output_format_schema()
         }),
         &[],
+    )
+}
+
+/// Describe the subscriber-only image search MCP input contract.
+fn image_search_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1024},
+            "format": output_format_schema()
+        }),
+        &["query"],
     )
 }
 
@@ -4536,6 +4581,18 @@ async fn run_mcp_tool_call(
             &execute_news_filter_presets(mcp_string_or(&arguments, "lang", "default").as_str())?,
             mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
         )?,
+        "kagi_image_search" => {
+            let format =
+                mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?;
+            let request = image_search::ImageSearchRequest {
+                query: mcp_required_string(&arguments, "query")?,
+                limit: mcp_usize(&arguments, "limit")?,
+            };
+            request.validate()?;
+            let token = resolve_session_token(profile)?;
+            let response = image_search::execute(&request, &token).await?;
+            format_image_search_response(&response, &format)?
+        }
         "kagi_news_search" => mcp_news_search(&arguments, profile, config).await?,
         "kagi_assistant_models" => {
             let token = resolve_session_token(profile)?;
@@ -5909,6 +5966,73 @@ fn format_search_response(
         OutputFormat::Markdown => Ok(format_markdown_response(response)),
         OutputFormat::Csv => Ok(format_csv_response(response)),
         OutputFormat::Json => serde_json::to_string_pretty(response).map_err(KagiError::from),
+    }
+}
+
+/// Keep untrusted image titles as spreadsheet text rather than formulas.
+fn neutralize_image_csv_title(title: &str) -> String {
+    if title.trim_start().starts_with(['=', '+', '-', '@']) || title.starts_with(['\t', '\r', '\n'])
+    {
+        format!("'{title}")
+    } else {
+        title.to_owned()
+    }
+}
+
+/// Render image results without changing the original values in structured output.
+fn format_image_search_response(
+    response: &types::ImageSearchResponse,
+    format: &OutputFormat,
+) -> Result<String, KagiError> {
+    match format {
+        OutputFormat::Pretty | OutputFormat::Markdown => {
+            if response.data.is_empty() {
+                return Ok("No image results found.".into());
+            }
+            Ok(response
+                .data
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let title: String = item.title.chars().filter(|c| !c.is_control()).collect();
+                    let size = match (item.width, item.height) {
+                        (Some(w), Some(h)) => format!(" ({w} x {h})"),
+                        _ => String::new(),
+                    };
+                    format!(
+                        "{}. {}{}\n   Image: {}\n   Source: {}",
+                        i + 1,
+                        title,
+                        size,
+                        item.image_url,
+                        item.source_url
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n"))
+        }
+        OutputFormat::Csv => {
+            let mut lines =
+                vec!["title,image_url,source_url,thumbnail_url,width,height".to_string()];
+            for item in &response.data {
+                lines.push(
+                    [
+                        neutralize_image_csv_title(&item.title),
+                        item.image_url.clone(),
+                        item.source_url.clone(),
+                        item.thumbnail_url.clone().unwrap_or_default(),
+                        item.width.map(|n| n.to_string()).unwrap_or_default(),
+                        item.height.map(|n| n.to_string()).unwrap_or_default(),
+                    ]
+                    .iter()
+                    .map(|s| escape_csv_field(s))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                );
+            }
+            Ok(lines.join("\n"))
+        }
+        other => mcp_output(response, other.clone()),
     }
 }
 
