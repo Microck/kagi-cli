@@ -71,6 +71,18 @@ YYYY-MM-DD or RFC 3339. `--after` is inclusive and `--before` is exclusive.
 oldest first. `--new-text-only` drops quoted reply history. Attachment metadata
 is included when available; attachment download is not exposed by the MCP.
 
+## SMTP credentials
+
+In [Kagi Mail External Clients](https://kagimail.com/settings/external-clients),
+create an **App Specific Password** for the client. Set
+`KAGI_MAIL_SMTP_USERNAME` to your full Kagi Mail email address (for example,
+`you@kagimail.com`) and `KAGI_MAIL_SMTP_PASSWORD` to that App Specific Password
+through your shell or secret manager. Do not use your Kagi account password,
+Search session cookie, or MCP OAuth token. Never commit or paste credentials
+into commands, logs, or bug reports.
+
+The endpoint is `mail.kagimail.com:465`, with implicit TLS/SSL, **not STARTTLS**.
+
 ## Check SMTP authentication without sending
 
 With `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD` privately set in the
@@ -80,7 +92,7 @@ environment, run:
 kagi mail smtp-check
 ```
 
-This performs certificate-verified STARTTLS, authentication and SMTP NOOP, then
+This performs certificate-verified implicit TLS (SSL), authentication and SMTP NOOP, then
 closes the connection. It never sends `MAIL FROM`, `RCPT TO`, or `DATA`. Success
 returns `{"status":"authenticated","message_submitted":false}`. It does not
 prove that a particular sender alias or recipient will be accepted. It does not
@@ -106,7 +118,7 @@ Supply SMTP credentials only through the environment variables
 flags or saved-config credentials for sending. Do not put credentials on the
 command line.
 
-Sending uses `mail.kagimail.com:587` with required, certificate-verified STARTTLS.
+Sending uses `mail.kagimail.com:465` with certificate-verified implicit TLS (SSL).
 It never falls back to plaintext or unverified TLS. Mail is plain-text only;
 HTML and attachments are not supported.
 

@@ -17,47 +17,25 @@ enum Outcome {
 }
 
 struct Transcript {
-    cleartext: Vec<String>,
     encrypted: Vec<String>,
     body: String,
 }
 
-/// Serve exactly one local SMTP connection with verified STARTTLS available.
+/// Serve exactly one local SMTP connection using implicit TLS from the first byte.
 async fn server(listener: TcpListener, acceptor: TlsAcceptor, outcome: Outcome) -> Transcript {
     let (stream, _) = listener.accept().await.unwrap();
-    let mut clear = BufReader::new(stream);
-    clear
-        .get_mut()
-        .write_all(b"220 localhost ESMTP\r\n")
-        .await
-        .unwrap();
     let mut transcript = Transcript {
-        cleartext: vec![],
         encrypted: vec![],
         body: String::new(),
     };
-    let mut line = String::new();
-    clear.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("EHLO "));
-    transcript.cleartext.push(line.clone());
-    clear
-        .get_mut()
-        .write_all(b"250-localhost\r\n250-STARTTLS\r\n250 AUTH PLAIN LOGIN\r\n")
-        .await
-        .unwrap();
-    line.clear();
-    clear.read_line(&mut line).await.unwrap();
-    assert_eq!(line, "STARTTLS\r\n");
-    transcript.cleartext.push(line);
-    clear
-        .get_mut()
-        .write_all(b"220 Begin TLS\r\n")
-        .await
-        .unwrap();
-    let Ok(stream) = acceptor.accept(clear.into_inner()).await else {
+    let Ok(stream) = acceptor.accept(stream).await else {
         return transcript;
     };
     let mut tls = BufReader::new(stream);
+    tls.get_mut()
+        .write_all(b"220 localhost ESMTP\r\n")
+        .await
+        .unwrap();
     loop {
         let mut line = String::new();
         match tls.read_line(&mut line).await {
@@ -155,7 +133,7 @@ async fn fixture(
             .add_root_certificate(Certificate::from_der(cert.der().as_ref().to_vec()).unwrap())
             .build()
             .unwrap();
-        builder = builder.tls(Tls::Required(tls));
+        builder = builder.tls(Tls::Wrapper(tls));
     }
     (builder.build::<Tokio1Executor>(), handle)
 }
@@ -180,7 +158,6 @@ async fn smtp_tls_submission_accepts_only_after_authenticated_data() {
         json!({"status":"submitted"})
     );
     let trace = handle.await.unwrap();
-    assert_eq!(trace.cleartext.len(), 2);
     assert!(trace.encrypted.iter().any(|l| l.starts_with("AUTH PLAIN ")));
     assert!(
         trace
@@ -229,7 +206,6 @@ async fn smtp_tls_rejects_untrusted_and_wrong_host_certificates() {
         let (transport, handle) = fixture(Outcome::Accept, trust, name).await;
         assert!(submit(message(), &transport).await.is_err());
         let trace = handle.await.unwrap();
-        assert_eq!(trace.cleartext.len(), 2);
         assert!(trace.encrypted.is_empty());
         assert!(trace.body.is_empty());
     }

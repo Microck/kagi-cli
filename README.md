@@ -156,7 +156,10 @@ not added to the local history or response cache.
 First use `kagi mail smtp-check` to verify SMTP authentication without sending a message.
 
 To send plain-text mail, supply SMTP credentials only through the environment
-variables `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD`, then run:
+variables `KAGI_MAIL_SMTP_USERNAME` (full Kagi Mail email address) and
+`KAGI_MAIL_SMTP_PASSWORD` (an **App Specific Password** from
+[Kagi Mail External Clients](https://kagimail.com/settings/external-clients),
+not your account password or OAuth token), then run:
 
 ```bash
 kagi mail send \
@@ -167,7 +170,7 @@ kagi mail send \
 ```
 
 All four flags, `--from`, `--to`, `--subject`, and `--body`, are required.
-Sending uses `mail.kagimail.com:587` with required, certificate-verified STARTTLS,
+Sending uses `mail.kagimail.com:465` with certificate-verified implicit TLS (SSL),
 with no plaintext or unverified TLS fallback. HTML and attachments are not
 supported. SMTP credentials are env-only, not command-line flags or saved
 config. The read-only MCP OAuth token is separate and is never reused for
@@ -185,7 +188,7 @@ filters, sending, and token handling.
 | `KAGI_API_KEY` | current `/api/v1` Search API and Extract API with `Bearer` auth |
 | `KAGI_API_TOKEN` | legacy `/api/v0` public `summarize`, `fastgpt`, `enrich web`, and `enrich news` with `Bot` auth |
 | saved mail OAuth tokens or `KAGI_MAIL_ACCESS_TOKEN` | `mail boxes`, `mail search`, and `mail read` |
-| `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD` | `mail send` only, through SMTP |
+| `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD` | `mail send` and `mail smtp-check`, through SMTP |
 | none | `news`, `smallweb`, `auth status`, `mail status`, `--help` |
 
 example config:

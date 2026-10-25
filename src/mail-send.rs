@@ -16,13 +16,13 @@ use serde_json::{Value, json};
 use crate::error::KagiError;
 
 const SMTP_HOST: &str = "mail.kagimail.com";
-const SMTP_PORT: u16 = 587;
+const SMTP_PORT: u16 = 465;
 const SMTP_USERNAME: &str = "KAGI_MAIL_SMTP_USERNAME";
 const SMTP_PASSWORD: &str = "KAGI_MAIL_SMTP_PASSWORD";
 
 #[derive(Args)]
 #[command(
-    after_help = "Requires KAGI_MAIL_SMTP_USERNAME and KAGI_MAIL_SMTP_PASSWORD in the environment.\nUses mail.kagimail.com:587 with required, certificate-verified STARTTLS.\nMCP OAuth tokens and saved profiles are never used for sending."
+    after_help = "Requires KAGI_MAIL_SMTP_USERNAME (full email address) and KAGI_MAIL_SMTP_PASSWORD (App Specific Password) in the environment.\nUses mail.kagimail.com:465 with certificate-verified implicit TLS (SSL).\nMCP OAuth tokens and saved profiles are never used for sending."
 )]
 pub struct MailSendArgs {
     /// Sender email address (one bare address, no display name)
@@ -99,9 +99,9 @@ fn transport_builder(
     port: u16,
     credentials: Credentials,
 ) -> Result<AsyncSmtpTransportBuilder, KagiError> {
-    // starttls_relay requires TLS before AUTH/MAIL and verifies the certificate
+    // relay establishes implicit TLS before any SMTP commands and verifies the certificate
     // against host using Mozilla roots. No plaintext or insecure fallback.
-    AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)
+    AsyncSmtpTransport::<Tokio1Executor>::relay(host)
         .map(|builder| {
             builder
                 .port(port)
@@ -109,7 +109,7 @@ fn transport_builder(
                 .authentication(vec![Mechanism::Plain, Mechanism::Login])
                 .timeout(Some(Duration::from_secs(30)))
         })
-        .map_err(|_| KagiError::MailSend("could not initialize verified SMTP STARTTLS".into()))
+        .map_err(|_| KagiError::MailSend("could not initialize verified implicit SMTP TLS".into()))
 }
 
 fn submission_error(error: lettre::transport::smtp::Error) -> KagiError {
@@ -182,7 +182,7 @@ async fn check_transport(
 #[cfg(test)]
 mod tests {
     use std::{
-        io::{BufRead, BufReader, Write},
+        io::{Read, Write},
         net::TcpListener,
         thread,
         time::Instant,
@@ -305,85 +305,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn uses_kagi_implicit_tls_endpoint() {
+        assert_eq!(SMTP_HOST, "mail.kagimail.com");
+        assert_eq!(SMTP_PORT, 465);
+    }
+
     #[tokio::test]
-    async fn refuses_missing_or_rejected_starttls_before_authentication_or_message() {
-        for advertises_starttls in [false, true] {
-            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-            let port = listener.local_addr().unwrap().port();
-            listener.set_nonblocking(true).unwrap();
-            let server = thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(5);
-                let (mut stream, _) = loop {
-                    match listener.accept() {
-                        Ok(connection) => break connection,
-                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            assert!(Instant::now() < deadline, "local SMTP connection timed out");
-                            thread::sleep(Duration::from_millis(10));
-                        }
-                        Err(error) => panic!("local SMTP accept failed: {error}"),
+    async fn refuses_plaintext_server_before_smtp_commands() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        listener.set_nonblocking(true).unwrap();
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "local SMTP connection timed out");
+                        thread::sleep(Duration::from_millis(10));
                     }
-                };
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(5)))
-                    .unwrap();
-                stream.write_all(b"220 localhost ESMTP\r\n").unwrap();
-                let mut reader = BufReader::new(stream);
-                let mut transcript = String::new();
-                loop {
-                    let mut line = String::new();
-                    match reader.read_line(&mut line) {
-                        Ok(0) | Err(_) => break,
-                        Ok(_) => {}
-                    }
-                    transcript.push_str(&line);
-                    if line.starts_with("EHLO ") {
-                        let reply = if advertises_starttls {
-                            "250-localhost\r\n250-STARTTLS\r\n250 AUTH PLAIN LOGIN XOAUTH2\r\n"
-                        } else {
-                            "250-localhost\r\n250 AUTH PLAIN LOGIN XOAUTH2\r\n"
-                        };
-                        reader.get_mut().write_all(reply.as_bytes()).unwrap();
-                    } else if line == "STARTTLS\r\n" {
-                        reader
-                            .get_mut()
-                            .write_all(b"454 PRIVATE-RESPONSE\r\n")
-                            .unwrap();
-                    } else if line == "QUIT\r\n" {
-                        reader.get_mut().write_all(b"221 Bye\r\n").unwrap();
-                        break;
-                    } else {
-                        panic!("sent sensitive SMTP command before TLS: {line:?}");
-                    }
+                    Err(error) => panic!("local SMTP accept failed: {error}"),
                 }
-                transcript
-            });
-            let transport = transport_builder(
-                "127.0.0.1",
-                port,
-                Credentials::new("PRIVATE-USER".into(), "PRIVATE-PASSWORD".into()),
-            )
-            .unwrap()
-            .build::<Tokio1Executor>();
-            let smtp_error = transport.send(args().message().unwrap()).await.unwrap_err();
-            let smtp_error_details = format!("{smtp_error:?}");
-            let error = submission_error(smtp_error);
-            let envelope = crate::error_envelope(&error);
-            assert!(!envelope.retryable);
-            assert!(!envelope.message.contains("PRIVATE"));
-            let transcript = server.join().unwrap();
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            // Capture the initial client record before offering a plaintext greeting.
+            let mut buffer = [0u8; 8192];
+            let n = stream.read(&mut buffer).unwrap();
+            assert!(n > 0);
+            let _ = stream.write_all(b"220 localhost ESMTP\r\n");
+            buffer[..n].to_vec()
+        });
+        let transport = transport_builder(
+            "127.0.0.1",
+            port,
+            Credentials::new("PRIVATE-USER".into(), "PRIVATE-PASSWORD".into()),
+        )
+        .unwrap()
+        .build::<Tokio1Executor>();
+        let error = submission_error(transport.send(args().message().unwrap()).await.unwrap_err());
+        let envelope = crate::error_envelope(&error);
+        assert!(!envelope.retryable);
+        assert!(!envelope.message.contains("PRIVATE"));
+        let wire = server.join().unwrap();
+        assert_eq!(wire[0], 0x16, "first record must be a TLS handshake");
+        for forbidden in [
+            "EHLO ",
+            "STARTTLS",
+            "AUTH ",
+            "MAIL FROM",
+            "RCPT TO",
+            "PRIVATE-USER",
+            "PRIVATE-PASSWORD",
+        ] {
             assert!(
-                transcript.starts_with("EHLO "),
-                "SMTP transcript: {transcript:?}; raw submission error: {smtp_error_details}"
+                !wire
+                    .windows(forbidden.len())
+                    .any(|w| w == forbidden.as_bytes())
             );
-            assert_eq!(transcript.contains("STARTTLS\r\n"), advertises_starttls);
-            assert!(!transcript.contains("AUTH "));
-            assert!(!transcript.contains("MAIL FROM"));
-            assert!(!transcript.contains("RCPT TO"));
-            assert!(!transcript.contains("DATA"));
         }
     }
 }
