@@ -172,6 +172,14 @@ async fn smtp_tls_submission_accepts_only_after_authenticated_data() {
             .any(|l| l.starts_with("RCPT TO:<recipient@example.com>"))
     );
     assert!(trace.body.contains("\r\n..\r\n"));
+    let (headers, _) = trace.body.split_once("\r\n\r\n").unwrap();
+    assert_eq!(
+        headers
+            .lines()
+            .filter(|line| line.starts_with("Message-ID: <") && line.ends_with('>'))
+            .count(),
+        1
+    );
     assert!(
         trace
             .body

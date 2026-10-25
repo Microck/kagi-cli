@@ -55,7 +55,9 @@ impl MailSendArgs {
                 "mail send --subject must not contain control characters".into(),
             ));
         }
+        // Gmail rejects messages without Message-ID even after SMTP accepts them.
         Message::builder()
+            .message_id(None)
             .from(Mailbox::new(None, from))
             .to(Mailbox::new(None, to))
             .subject(self.subject)
@@ -222,6 +224,29 @@ mod tests {
         assert_eq!(
             body,
             "First line\r\n.\r\nBcc: not-a-header@example.com\r\nLast line"
+        );
+    }
+
+    #[test]
+    fn generates_a_unique_message_id_for_every_message() {
+        let first = args().message().unwrap();
+        let second = args().message().unwrap();
+        let first_id = first
+            .headers()
+            .get::<lettre::message::header::MessageId>()
+            .unwrap();
+        let second_id = second
+            .headers()
+            .get::<lettre::message::header::MessageId>()
+            .unwrap();
+        assert_ne!(first_id, second_id);
+        let formatted = String::from_utf8(first.formatted()).unwrap();
+        assert_eq!(
+            formatted
+                .lines()
+                .filter(|line| line.starts_with("Message-ID:"))
+                .count(),
+            1
         );
     }
 
