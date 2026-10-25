@@ -1,3 +1,9 @@
 allowBuilds:
   esbuild: true
   sharp: true
+# Next.js 15 pins an older PostCSS despite patched compatible 8.x releases.
+overrides:
+  next>postcss: 8.5.26
+
+  # Patch the Zod 4 collection-validation advisory without a major upgrade.
+  "zod@>=4 <4.6.6": 4.6.6

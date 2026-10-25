@@ -2,7 +2,62 @@
 
 ### Added
 
-- `kagi mail send` submits plain-text email through Kagi Mail's SMTP endpoint, with separate environment-only credentials and required verified STARTTLS.
+- `kagi mail send` submits plain-text email through Kagi Mail's SMTP endpoint, with separate environment-only credentials and required verified STARTTLS. `kagi mail smtp-check` verifies authentication without submitting mail.
+
+## [0.23.0]
+
+### Added
+
+- Subscriber-only `search --images` and the read-only `kagi_image_search` MCP tool, returning original image URLs, source links, thumbnails, and dimensions with all existing output formats. Includes explicit filter validation and no paid API fallback.
+
+### Fixed
+
+- Patch the documentation site's Next.js and Zod dependencies to resolve newly reported critical/high audit findings without weakening the audit gate.
+
+## [0.22.2]
+
+### Fixed
+
+- Updated documentation transitive dependencies and the Next.js PostCSS override to resolve high/moderate audit findings without upgrading the documentation framework.
+- Updated certificate verification and root bundles to address RUSTSEC-2026-0382 and RUSTSEC-2026-0381; patched the event-listener thread-safety advisory RUSTSEC-2026-0221.
+- Consolidated eight Rust dependency updates, the Next.js 15.5.27 documentation update, and three GitHub Actions updates (#213).
+
+## [0.22.1]
+
+### Fixed
+
+- Documentation builds now apply the Fumadocs configuration correctly; all 40 documentation routes have deterministic browser coverage (#211).
+- Updated quinn-proto and rustls to patched dependency versions (#211).
+
+## [0.22.0]
+
+### Added
+
+- `kagi mcp --tools` and `--exclude-tools` select which tools are exposed; `KAGI_MCP_TOOLS` provides an environment allowlist. Hidden tools cannot be called, and mutating tools still require explicit opt-in (#201).
+- Static Linux release binaries for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, with archives, bare binaries, and SHA-256 checksums (#200).
+
+## [0.21.1]
+
+### Fixed
+
+- `kagi search` now extracts published dates from result cards instead of leaving them in snippets (#199).
+
+## [0.21.0]
+
+### Breaking
+
+- `kagi assistant` and `kagi ask-page` JSON output no longer has `meta.version`, `meta.trace`, `message.reply_html`, or `message.trace_id`, because Kagi's v2 Assistant API returns markdown only. `message.id` is now the assistant turn id.
+- `kagi assistant --assistant <built-in> --model <model>` is now an error, because built-in assistants always use their own model.
+- `kagi search --format csv` and `kagi batch --format csv` gain a fourth column: the header is now `title,url,snippet,published`.
+
+### Fixed
+
+- `kagi assistant` and `kagi ask-page` work again after Kagi moved Assistant to its v2 API; prompts no longer fail with `HTTP 405 Method Not Allowed`.
+- `kagi assistant --assistant` with a built-in assistant such as `Code` now selects it as a model, as the web app does.
+- Assistant citation markers are rewritten to `[^1]`, `[^2]`, ... to match `references_markdown`.
+- `kagi search` snippets no longer include Kagi's "Summarize" link text, and whitespace in snippets is collapsed.
+- `kagi search` with a session token fills `published` with the result's date as `YYYY-MM-DDT00:00:00Z` and removes the date from the snippet. Relative dates such as "Yesterday" stay in the snippet and leave `published` as `null`.
+- `pretty` and `markdown` output print `published` under the URL, `csv` adds the column, and `--template` accepts `{{published}}`, for API-key searches too.
 
 ## [0.20.1]
 

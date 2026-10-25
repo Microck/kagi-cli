@@ -1,0 +1,12 @@
+<!-- Minimal fixture based on /images markup observed 2026-10-25.
+     URLs, titles and proxy values replaced; no account markup or credentials. -->
+<html><body><div class="_0_img-results"></div></body></html>
+<div hidden><div class="_0_img-results flex">
+<div class="item _0_image_item _ext_ub_r" data-width="922" data-height="843" data-host_url="https://example.org/otter" data-content_url="https://images.example/otter.jpg?a=1&amp;b=2" data-title="Otter &amp; friends">
+<a class="_0_img_link_el _0_URL" href="https://proxy.example/original"><img class="_0_img_src" width="467" height="428" src="https://proxy.example/thumb"></a>
+</div>
+<div class="item _0_image_item" data-host_url="https://example.org/second" data-content_url="https://images.example/second.png" data-title="Second" data-width="invalid" data-height="0"></div>
+<div class="item _0_image_item" data-host_url="https://example.org/second" data-content_url="https://images.example/second.png" data-title="Duplicate"></div>
+</div></div>
+<script>scriptStreamCallback("images", "html")</script>
+<div hidden></div><script>scriptStreamCallback("done", "text")</script>

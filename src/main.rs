@@ -5,6 +5,7 @@ mod auth_wizard;
 mod cli;
 mod error;
 mod http;
+mod image_search;
 mod local;
 mod mail;
 #[path = "mail-auth.rs"]
@@ -78,7 +79,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 use tracing::error;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Clone)]
 struct SearchRequestOptions {
@@ -275,13 +276,23 @@ fn extract_http_status(message: &str) -> Option<u16> {
     })
 }
 
+/// Drop SMTP transport traces regardless of more-specific RUST_LOG directives.
+fn public_log_target(target: &str) -> bool {
+    target != "lettre" && !target.starts_with("lettre::")
+}
+
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
+    let fmt = tracing_subscriber::fmt::layer()
         .with_target(false)
         .without_time()
         .with_writer(std::io::stderr)
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            public_log_target(metadata.target())
+        }));
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt)
         .try_init();
 }
 
@@ -321,6 +332,31 @@ async fn run() -> Result<(), KagiError> {
     })? {
         Commands::Search(args) => {
             args.validate().map_err(KagiError::Config)?;
+
+            if args.images {
+                args.validate_image_search().map_err(KagiError::Config)?;
+                let token = resolve_session_token(profile.as_deref())?;
+                let request = image_search::ImageSearchRequest {
+                    query: args.query,
+                    limit: args.limit,
+                };
+                request.validate()?;
+                let response = cached_json(
+                    args.local_cache,
+                    args.cache_ttl.unwrap_or(900),
+                    "image-search",
+                    &(
+                        &request,
+                        profile.as_deref(),
+                        local::cache_key(&[&token]),
+                        http::kagi_url("/images"),
+                    ),
+                    || async { image_search::execute(&request, &token).await },
+                )
+                .await?;
+                println!("{}", format_image_search_response(&response, &args.format)?);
+                return Ok(());
+            }
 
             if args.news {
                 args.validate_news_search().map_err(KagiError::Config)?;
@@ -2312,6 +2348,7 @@ fn format_template_response(response: &SearchResponse, template: &str) -> String
                 .replace("{{title}}", &result.title)
                 .replace("{{url}}", &result.url)
                 .replace("{{snippet}}", &result.snippet)
+                .replace("{{published}}", result.published.as_deref().unwrap_or(""))
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -2385,6 +2422,9 @@ fn format_pretty_response(response: &SearchResponse, use_color: bool) -> String 
                 result.url,
                 reset_color
             );
+            if let Some(date) = published_date(result.published.as_deref()) {
+                section.push_str(&format!("\n   {date}"));
+            }
             if !result.snippet.trim().is_empty() {
                 section.push_str(&format!("\n\n   {}", result.snippet.trim()));
             }
@@ -2409,6 +2449,9 @@ fn format_markdown_response(response: &SearchResponse) -> String {
         .enumerate()
         .map(|(index, result)| {
             let mut section = format!("## {}. [{}]({})\n\n", index + 1, result.title, result.url);
+            if let Some(date) = published_date(result.published.as_deref()) {
+                section.push_str(&format!("*{date}*\n\n"));
+            }
             if !result.snippet.trim().is_empty() {
                 section.push_str(&format!("{}\n\n", result.snippet.trim()));
             }
@@ -2483,19 +2526,32 @@ fn escape_csv_field(field: &str) -> String {
 
 fn format_csv_response(response: &SearchResponse) -> String {
     if response.data.is_empty() {
-        return "title,url,snippet".to_string();
+        return "title,url,snippet,published".to_string();
     }
 
-    let mut output = String::from("title,url,snippet\n");
+    let mut output = String::from("title,url,snippet,published\n");
 
     for result in &response.data {
         let title = escape_csv_field(&result.title);
         let url = escape_csv_field(&result.url);
         let snippet = escape_csv_field(&result.snippet);
-        output.push_str(&format!("{title},{url},{snippet}\n"));
+        let published = escape_csv_field(result.published.as_deref().unwrap_or(""));
+        output.push_str(&format!("{title},{url},{snippet},{published}\n"));
     }
 
     output
+}
+
+/// Returns `published` for display, shortening an ISO timestamp to its date (`2026-10-04`).
+fn published_date(published: Option<&str>) -> Option<&str> {
+    let published = published?.trim();
+    if published.is_empty() {
+        return None;
+    }
+    match published.get(..10) {
+        Some(date) if date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-' => Some(date),
+        _ => Some(published),
+    }
 }
 
 fn build_news_search_request(args: &SearchArgs) -> search::NewsSearchRequest {
@@ -3242,6 +3298,57 @@ impl McpServerConfig {
         }
     }
 
+    fn with_tool_filter(
+        mut self,
+        tools: Option<&[String]>,
+        exclude_tools: &[String],
+    ) -> Result<Self, KagiError> {
+        if tools.is_none() && exclude_tools.is_empty() {
+            return Ok(self);
+        }
+
+        let all_tools = build_mcp_tool_definitions(true);
+        let normalize_names = |names: &[String]| -> Result<BTreeSet<String>, KagiError> {
+            names
+                .iter()
+                .map(|name| {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        return Err(KagiError::Config(
+                            "MCP tool filters must not contain empty names".into(),
+                        ));
+                    }
+                    if !all_tools.iter().any(|tool| tool["name"].as_str() == Some(name)) {
+                        return Err(KagiError::Config(format!(
+                            "Unknown MCP tool `{name}`. Run `kagi mcp` and call tools/list to inspect available tools"
+                        )));
+                    }
+                    Ok(name.to_string())
+                })
+                .collect()
+        };
+        let included = tools.map(normalize_names).transpose()?;
+        let excluded = normalize_names(exclude_tools)?;
+        if let Some(included) = &included {
+            for name in included {
+                if !self
+                    .tool_definitions
+                    .iter()
+                    .any(|tool| tool["name"].as_str() == Some(name.as_str()))
+                {
+                    return Err(KagiError::Config(format!(
+                        "MCP tool `{name}` requires --enable-mutating-tools"
+                    )));
+                }
+            }
+        }
+        self.tool_definitions.retain(|tool| {
+            let name = tool["name"].as_str().expect("MCP tool has a name");
+            included.as_ref().is_none_or(|names| names.contains(name)) && !excluded.contains(name)
+        });
+        Ok(self)
+    }
+
     fn default_output_or(&self, fallback: OutputFormat) -> OutputFormat {
         self.default_output.clone().unwrap_or(fallback)
     }
@@ -3249,7 +3356,26 @@ impl McpServerConfig {
 
 async fn run_mcp(args: McpArgs, profile: Option<&str>) -> Result<(), KagiError> {
     let _json_lines = args.json_lines;
-    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools);
+    // Explicit CLI filters override the environment, including --exclude-tools.
+    let env_tools = if args.tools.is_none() && args.exclude_tools.is_none() {
+        match env::var("KAGI_MCP_TOOLS") {
+            Ok(value) => Some(value.split(',').map(str::to_string).collect::<Vec<_>>()),
+            Err(env::VarError::NotPresent) => None,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(KagiError::Config(
+                    "KAGI_MCP_TOOLS must be valid UTF-8".into(),
+                ));
+            }
+        }
+    } else {
+        None
+    };
+    let tools = args.tools.or(env_tools);
+    let config = McpServerConfig::new(args.default_output, args.enable_mutating_tools)
+        .with_tool_filter(
+            tools.as_deref(),
+            args.exclude_tools.as_deref().unwrap_or_default(),
+        )?;
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line =
@@ -3611,6 +3737,7 @@ fn mcp_tool_has_structured_content(
         | "kagi_news_chaos"
         | "kagi_news_filter_presets"
         | "kagi_news_search"
+        | "kagi_image_search"
         | "kagi_ask_page"
         | "kagi_translate"
         | "kagi_fastgpt"
@@ -3670,6 +3797,11 @@ fn build_mcp_tool_definitions(enable_mutating_tools: bool) -> Vec<Value> {
             "kagi_news_filter_presets",
             "List built-in Kagi News content-filter presets",
             lang_only_schema(),
+        ),
+        tool_schema(
+            "kagi_image_search",
+            "Search images using a Kagi subscriber session, never the paid API",
+            image_search_schema(),
         ),
         tool_schema(
             "kagi_news_search",
@@ -3999,6 +4131,7 @@ fn mcp_open_world_tool_name(name: &str) -> bool {
             | "kagi_news_chaos"
             | "kagi_news_filter_presets"
             | "kagi_news_search"
+            | "kagi_image_search"
             | "kagi_assistant"
             | "kagi_ask_page"
             | "kagi_translate"
@@ -4166,6 +4299,18 @@ fn lang_only_schema() -> Value {
             "format": output_format_schema()
         }),
         &[],
+    )
+}
+
+/// Describe the subscriber-only image search MCP input contract.
+fn image_search_schema() -> Value {
+    object_schema(
+        serde_json::json!({
+            "query": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1024},
+            "format": output_format_schema()
+        }),
+        &["query"],
     )
 }
 
@@ -4454,6 +4599,18 @@ async fn run_mcp_tool_call(
             &execute_news_filter_presets(mcp_string_or(&arguments, "lang", "default").as_str())?,
             mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?,
         )?,
+        "kagi_image_search" => {
+            let format =
+                mcp_output_format(&arguments, &config.default_output_or(OutputFormat::Json))?;
+            let request = image_search::ImageSearchRequest {
+                query: mcp_required_string(&arguments, "query")?,
+                limit: mcp_usize(&arguments, "limit")?,
+            };
+            request.validate()?;
+            let token = resolve_session_token(profile)?;
+            let response = image_search::execute(&request, &token).await?;
+            format_image_search_response(&response, &format)?
+        }
         "kagi_news_search" => mcp_news_search(&arguments, profile, config).await?,
         "kagi_assistant_models" => {
             let token = resolve_session_token(profile)?;
@@ -5830,6 +5987,73 @@ fn format_search_response(
     }
 }
 
+/// Keep untrusted image titles as spreadsheet text rather than formulas.
+fn neutralize_image_csv_title(title: &str) -> String {
+    if title.trim_start().starts_with(['=', '+', '-', '@']) || title.starts_with(['\t', '\r', '\n'])
+    {
+        format!("'{title}")
+    } else {
+        title.to_owned()
+    }
+}
+
+/// Render image results without changing the original values in structured output.
+fn format_image_search_response(
+    response: &types::ImageSearchResponse,
+    format: &OutputFormat,
+) -> Result<String, KagiError> {
+    match format {
+        OutputFormat::Pretty | OutputFormat::Markdown => {
+            if response.data.is_empty() {
+                return Ok("No image results found.".into());
+            }
+            Ok(response
+                .data
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let title: String = item.title.chars().filter(|c| !c.is_control()).collect();
+                    let size = match (item.width, item.height) {
+                        (Some(w), Some(h)) => format!(" ({w} x {h})"),
+                        _ => String::new(),
+                    };
+                    format!(
+                        "{}. {}{}\n   Image: {}\n   Source: {}",
+                        i + 1,
+                        title,
+                        size,
+                        item.image_url,
+                        item.source_url
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n"))
+        }
+        OutputFormat::Csv => {
+            let mut lines =
+                vec!["title,image_url,source_url,thumbnail_url,width,height".to_string()];
+            for item in &response.data {
+                lines.push(
+                    [
+                        neutralize_image_csv_title(&item.title),
+                        item.image_url.clone(),
+                        item.source_url.clone(),
+                        item.thumbnail_url.clone().unwrap_or_default(),
+                        item.width.map(|n| n.to_string()).unwrap_or_default(),
+                        item.height.map(|n| n.to_string()).unwrap_or_default(),
+                    ]
+                    .iter()
+                    .map(|s| escape_csv_field(s))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                );
+            }
+            Ok(lines.join("\n"))
+        }
+        other => mcp_output(response, other.clone()),
+    }
+}
+
 fn format_news_search_response(
     response: &NewsSearchResponse,
     format: &OutputFormat,
@@ -5885,8 +6109,8 @@ mod tests {
         RateLimiter, SearchRequestOptions, bool_flag_choice, build_search_request,
         format_assistant_markdown, format_assistant_pretty, format_batch_failure_message,
         format_csv_response, format_markdown_response, format_pretty_response,
-        is_bare_auth_invocation_from, parse_context_memory_json, print_assistant_response,
-        should_fallback_to_session,
+        format_template_response, is_bare_auth_invocation_from, parse_context_memory_json,
+        print_assistant_response, should_fallback_to_session,
     };
     use crate::cli::{AssistantOutputFormat, SearchOrder, SearchTime};
     use crate::error::KagiError;
@@ -5965,6 +6189,58 @@ mod tests {
         let output = format_pretty_response(&response, false);
 
         assert_eq!(output, "No results found.");
+    }
+
+    #[test]
+    fn shows_published_date_in_every_output_format() {
+        let result = |title: &str, published: Option<&str>| SearchResult {
+            t: 0,
+            rank: None,
+            title: title.to_string(),
+            url: format!("https://{}.example", title.to_lowercase()),
+            snippet: format!("{title} snippet"),
+            published: published.map(str::to_string),
+        };
+        let response = SearchResponse {
+            data: vec![
+                result("Dated", Some("2026-10-04T00:00:00Z")),
+                result("Undated", None),
+            ],
+            related_searches: Vec::new(),
+        };
+
+        let pretty = format_pretty_response(&response, false);
+        assert!(
+            pretty.contains("https://dated.example\n   2026-10-04\n\n   Dated snippet"),
+            "{pretty}"
+        );
+        assert!(
+            pretty.contains("https://undated.example\n\n   Undated snippet"),
+            "{pretty}"
+        );
+
+        let markdown = format_markdown_response(&response);
+        assert!(
+            markdown.contains("(https://dated.example)\n\n*2026-10-04*\n\nDated snippet"),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("(https://undated.example)\n\nUndated snippet"),
+            "{markdown}"
+        );
+
+        let csv = format_csv_response(&response);
+        assert_eq!(
+            csv,
+            concat!(
+                "title,url,snippet,published\n",
+                "Dated,https://dated.example,Dated snippet,2026-10-04T00:00:00Z\n",
+                "Undated,https://undated.example,Undated snippet,\n"
+            )
+        );
+
+        let template = format_template_response(&response, "{{title}}|{{published}}");
+        assert_eq!(template, "Dated|2026-10-04T00:00:00Z\nUndated|");
     }
 
     #[test]
@@ -6229,7 +6505,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "title,url,snippet\nRust Programming Language,https://www.rust-lang.org,A language empowering everyone to build reliable and efficient software.\n"
+            "title,url,snippet,published\nRust Programming Language,https://www.rust-lang.org,A language empowering everyone to build reliable and efficient software.,\n"
         );
     }
 
@@ -6251,7 +6527,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "title,url,snippet\n\"Rust, \"\"The Language\"\"\",\"https://example.com/a,b\",\"line 1\nline 2\"\n"
+            "title,url,snippet,published\n\"Rust, \"\"The Language\"\"\",\"https://example.com/a,b\",\"line 1\nline 2\",\n"
         );
     }
 
@@ -6289,5 +6565,12 @@ mod tests {
             .expect_err("object context memory should fail");
 
         assert!(error.to_string().contains("JSON array"));
+    }
+    #[test]
+    fn smtp_log_targets_are_always_private() {
+        assert!(!super::public_log_target("lettre"));
+        assert!(!super::public_log_target("lettre::transport::smtp::client"));
+        assert!(super::public_log_target("kagi::mail_send"));
+        assert!(super::public_log_target("httpmock"));
     }
 }

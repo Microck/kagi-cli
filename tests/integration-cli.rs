@@ -27,6 +27,7 @@ fn run_kagi(args: &[&str], envs: &[(&str, &str)], cwd: &Path) -> Output {
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
+        "KAGI_MCP_TOOLS",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -63,6 +64,7 @@ fn run_kagi_with_stdin(args: &[&str], stdin: &str, envs: &[(&str, &str)], cwd: &
         "KAGI_NEWS_BASE_URL",
         "KAGI_TRANSLATE_BASE_URL",
         "KAGI_ERROR_FORMAT",
+        "KAGI_MCP_TOOLS",
         "KAGI_CACHE_DIR",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
@@ -450,7 +452,7 @@ fn assistant_prompt_stream_reads_query_from_stdin() {
     );
 
     assert_success(&output);
-    current_prompt.assert_calls(1);
+    current_prompt.create.assert_calls(1);
     assert_eq!(String::from_utf8_lossy(&output.stdout), "dance-ok\n");
 }
 
@@ -494,34 +496,18 @@ fn custom_assistant_json(id: &str, name: &str, model: &str) -> Value {
     })
 }
 
+struct PromptMocks<'a> {
+    create: httpmock::Mock<'a>,
+    respond: httpmock::Mock<'a>,
+}
+
 fn mock_current_assistant_prompt<'a>(
     server: &'a MockServer,
     expected_message: &str,
     first_markdown: Option<&str>,
     final_markdown: &str,
-    expected_profile_id: Option<&str>,
-) -> httpmock::Mock<'a> {
-    server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/conversations")
-            .header("cookie", "kagi_session=test-session")
-            .header("accept", "application/json");
-        then.status(200).json_body(json!({
-            "conversation": {
-                "uuid": "thread-current",
-                "title": "New chat",
-                "created_at": "2026-07-25T00:00:00Z",
-                "updated_at": "2026-07-25T00:00:00Z",
-                "is_saved": false,
-                "is_shared": false,
-                "folder_uuid": null
-            },
-            "default_branch": {
-                "uuid": "branch-current",
-                "is_default": true
-            }
-        }));
-    });
+    expected_body_fragment: Option<&str>,
+) -> PromptMocks<'a> {
     server.mock(|when, then| {
         when.method(GET)
             .path("/api/conversations/thread-current/init")
@@ -551,73 +537,91 @@ fn mock_current_assistant_prompt<'a>(
             }
         }));
     });
-    let expected_profile_fragment = expected_profile_id
-        .map(|profile_id| format!("\"profile_uuid\":\"{profile_id}\""))
-        .unwrap_or_default();
-    let message = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/branches/branch-current/messages")
-            .header("cookie", "kagi_session=test-session")
-            .header("content-type", "application/json")
-            .body_includes(expected_message)
-            .body_includes(&expected_profile_fragment);
-        then.status(200).json_body(json!({
-            "conversation": {
-                "uuid": "thread-current",
-                "title": "New chat",
-                "created_at": "2026-07-25T00:00:00Z",
-                "updated_at": "2026-07-25T00:00:00Z",
-                "is_saved": false,
-                "is_shared": false,
-                "folder_uuid": null
-            },
-            "branch": {
-                "uuid": "branch-current",
-                "is_default": true
-            },
-            "user_message": {
-                "uuid": "user-current",
-                "role": "user",
-                "content": expected_message,
-                "created_at": "2026-07-25T00:00:00Z",
-                "references": [],
-                "attachments": []
-            }
-        }));
-    });
-    let mut frames = String::new();
-    if let Some(first_markdown) = first_markdown {
-        frames.push_str(&format!(
+    let start_turn = |path: &str| {
+        server.mock(|when, then| {
+            when.method(POST)
+                .path(path)
+                .header("cookie", "kagi_session=test-session")
+                .header("content-type", "application/json")
+                .body_includes("\"content\":")
+                .body_includes(expected_message)
+                .body_includes(expected_body_fragment.unwrap_or_default());
+            then.status(200).json_body(json!({
+                "conversation_uuid": "thread-current",
+                "branch_uuid": "branch-current",
+                "assistant_turn_uuid": "turn-current",
+                "user_turn_uuid": "user-turn-current",
+                "conversation": {
+                    "uuid": "thread-current",
+                    "title": "New chat",
+                    "created_at": "2026-07-25T00:00:00Z",
+                    "updated_at": "2026-07-25T00:00:00Z"
+                }
+            }));
+        })
+    };
+    let mocks = PromptMocks {
+        create: start_turn("/api/v2/conversations"),
+        respond: start_turn("/api/v2/branches/branch-current/respond"),
+    };
+    let event = |kind: &str, node_id: Option<&str>, payload: Value| {
+        format!(
             "data: {}\n\n",
-            json!({"text": first_markdown, "is_final": false})
+            json!({"event": {
+                "turn_id": "turn-current",
+                "type": kind,
+                "node_id": node_id,
+                "payload": payload
+            }})
+        )
+    };
+    let mut frames = event("turn.started", None, json!({"root_node_id": "msg-1"}));
+    frames.push_str(&event(
+        "node.created",
+        Some("text-1"),
+        json!({"kind": "text"}),
+    ));
+    let first_markdown = first_markdown.unwrap_or_default();
+    for delta in [
+        first_markdown,
+        final_markdown
+            .strip_prefix(first_markdown)
+            .unwrap_or_default(),
+    ] {
+        frames.push_str(&event(
+            "node.delta",
+            Some("text-1"),
+            json!({"delta": delta}),
         ));
     }
     frames.push_str(&format!(
-        "data: {}\n\ndata: [DONE]\n\n",
+        "data: {}\n\n",
+        json!({"title": "Current Assistant"})
+    ));
+    frames.push_str(&event(
+        "turn.completed",
+        None,
         json!({
-            "text": final_markdown,
-            "html_content": format!("<p>{final_markdown}</p>"),
-            "conversation_title": "Current Assistant",
-            "assistant_message_uuid": "assistant-current",
+            "root_node_id": "msg-1",
             "usage": {
                 "input_tokens": 4314,
                 "output_tokens": 2,
-                "total_tokens": 4316,
-                "cost_usd": 0.006192
-            },
-            "is_final": true
-        })
+                "cost_usd": 0.006192,
+                "model_version": "gpt-5-mini-2026-08-07"
+            }
+        }),
     ));
+    frames.push_str("data: {\"is_final\": true}\n\n");
     server.mock(move |when, then| {
         when.method(GET)
-            .path("/api/branches/branch-current/stream")
+            .path("/api/v2/turns/turn-current/stream")
             .header("cookie", "kagi_session=test-session")
             .header("accept", "text/event-stream");
         then.status(200)
             .header("content-type", "text/event-stream")
             .body(frames);
     });
-    message
+    mocks
 }
 
 fn search_payload(title: &str, url: &str, snippet: &str) -> Value {
@@ -2398,48 +2402,158 @@ fn assistant_stream_can_print_ndjson_updates() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).expect("line should parse as json"))
         .collect::<Vec<_>>();
-    assert_eq!(lines.len(), 2);
+    let streamed = lines
+        .iter()
+        .filter_map(|line| line["md_delta"].as_str())
+        .collect::<String>();
     assert_eq!(lines[0]["md_delta"], "Hel");
-    assert_eq!(lines[1]["md_delta"], "lo");
-    assert_eq!(lines[1]["message"]["state"], "done");
-    assert_eq!(lines[1]["message"]["usage"]["prompt_tokens"], 4314);
-    assert_eq!(lines[1]["message"]["usage"]["completion_tokens"], 2);
-    assert_eq!(lines[1]["message"]["usage"]["total_tokens"], 4316);
-    assert_eq!(lines[1]["message"]["usage"]["cost_usd"], 0.006192);
+    assert_eq!(streamed, "Hello");
+    let done_lines = lines
+        .iter()
+        .filter(|line| line["message"]["state"] == "done")
+        .count();
+    assert_eq!(done_lines, 1, "exactly one update should report done");
+    let last = lines.last().expect("stream should print updates");
+    assert_eq!(last["message"]["state"], "done");
+    assert_eq!(last["message"]["usage"]["prompt_tokens"], 4314);
+    assert_eq!(last["message"]["usage"]["completion_tokens"], 2);
+    assert_eq!(last["message"]["usage"]["total_tokens"], 4316);
+    assert_eq!(last["message"]["usage"]["cost_usd"], 0.006192);
 }
 
 #[test]
 fn assistant_resolves_name_to_profile_uuid() {
+    // Custom assistants are sent as a profile uuid; built-in ones are selected like a model.
+    for (selector, expected_fragment, expected_id, expected_edit_url) in [
+        (
+            "Once",
+            r#""profile_uuid":"profile-once""#,
+            "profile-once",
+            json!("/assistant/custom-assistants/profile-once"),
+        ),
+        (
+            "Code",
+            r#""model":"assistant:code""#,
+            "assistant:code",
+            Value::Null,
+        ),
+    ] {
+        let server = MockServer::start();
+        let message =
+            mock_current_assistant_prompt(&server, "Hello", None, "Hello", Some(expected_fragment));
+        let _profiles = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/init")
+                .header("cookie", "kagi_session=test-session");
+            then.status(200)
+                .json_body(assistant_init_json(json!([custom_assistant_json(
+                    "profile-once",
+                    "Once",
+                    "gpt-5-mini"
+                )])));
+        });
+        let tempdir = TempDir::new().expect("tempdir");
+        let env = session_env(&server);
+        let output = run_kagi(
+            &["assistant", "--assistant", selector, "Hello"],
+            &env_refs(&env),
+            tempdir.path(),
+        );
+
+        assert_success(&output);
+        message.create.assert_calls(1);
+        let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
+        assert_eq!(body["message"]["profile"]["id"], expected_id);
+        assert_eq!(body["message"]["profile"]["name"], selector);
+        assert_eq!(body["message"]["profile"]["edit_url"], expected_edit_url);
+        assert_eq!(
+            body["message"]["profile"]["model_version"],
+            "gpt-5-mini-2026-08-07"
+        );
+    }
+}
+
+#[test]
+fn assistant_rejects_model_override_for_built_in_assistant() {
     let server = MockServer::start();
-    let message =
-        mock_current_assistant_prompt(&server, "Hello", None, "Hello", Some("profile-once"));
+    let message = mock_current_assistant_prompt(&server, "Hello", None, "Hello", None);
     let _profiles = server.mock(|when, then| {
         when.method(GET)
             .path("/api/init")
             .header("cookie", "kagi_session=test-session");
-        then.status(200)
-            .json_body(assistant_init_json(json!([custom_assistant_json(
-                "profile-once",
-                "Once",
-                "gpt-5-mini"
-            )])));
+        then.status(200).json_body(assistant_init_json(json!([])));
     });
     let tempdir = TempDir::new().expect("tempdir");
     let env = session_env(&server);
     let output = run_kagi(
-        &["assistant", "--assistant", "Once", "Hello"],
+        &[
+            "assistant",
+            "--assistant",
+            "Code",
+            "--model",
+            "gpt-5-mini",
+            "Hello",
+        ],
         &env_refs(&env),
         tempdir.path(),
     );
 
-    assert_success(&output);
-    message.assert_calls(1);
-    let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
-    assert_eq!(body["message"]["profile"]["id"], "profile-once");
-    assert_eq!(body["message"]["profile"]["name"], "Once");
-    assert_eq!(
-        body["message"]["profile"]["edit_url"],
-        "/assistant/custom-assistants/profile-once"
+    assert!(!output.status.success(), "expected the combination to fail");
+    message.create.assert_calls(0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--model cannot be combined with built-in assistant 'Code'"),
+        "expected a clear error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn assistant_stream_reports_failed_turn_after_partial_output() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/api/v2/conversations");
+        then.status(200).json_body(json!({
+            "branch_uuid": "branch-current",
+            "assistant_turn_uuid": "turn-current",
+            "conversation": {
+                "uuid": "thread-current",
+                "title": "New chat",
+                "created_at": "2026-07-25T00:00:00Z",
+                "updated_at": "2026-07-25T00:00:00Z"
+            }
+        }));
+    });
+    let frames = [
+        json!({"event": {"type": "node.created", "node_id": "text-1", "payload": {"kind": "text"}}}),
+        json!({"event": {"type": "node.delta", "node_id": "text-1", "payload": {"delta": "Partial answer"}}}),
+        json!({"event": {"type": "turn.failed", "payload": {"error_code": "provider_overloaded"}}}),
+    ]
+    .iter()
+    .map(|frame| format!("data: {frame}\n\n"))
+    .collect::<String>();
+    server.mock(|when, then| {
+        when.method(GET).path("/api/v2/turns/turn-current/stream");
+        then.status(200)
+            .header("content-type", "text/event-stream")
+            .body(frames);
+    });
+    let tempdir = TempDir::new().expect("tempdir");
+    let env = session_env(&server);
+    let output = run_kagi(
+        &["assistant", "--stream", "Hello"],
+        &env_refs(&env),
+        tempdir.path(),
+    );
+
+    assert!(
+        !output.status.success(),
+        "a failed turn should fail the command"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("Partial answer"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("turn failed: provider_overloaded"),
+        "{stderr}"
     );
 }
 
@@ -2462,7 +2576,7 @@ fn assistant_contract_decision_prints_validated_json() {
     );
 
     assert_success(&output);
-    current_prompt.assert_calls(1);
+    current_prompt.create.assert_calls(1);
     let body: Value = serde_json::from_slice(&output.stdout).expect("json output should parse");
     assert_eq!(body["decision"], "ship");
     assert_eq!(body["rationale"], "tests pass");
@@ -2514,7 +2628,9 @@ fn assistant_contract_file_rejects_missing_required_key() {
         !output.status.success(),
         "expected invalid contract output to fail"
     );
-    current_prompt.assert_calls(2);
+    // The repair prompt follows up on the thread the first prompt created.
+    current_prompt.create.assert_calls(1);
+    current_prompt.respond.assert_calls(1);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("assistant contract"),
@@ -2554,7 +2670,13 @@ fn completion_install_detects_fish_and_writes_completion_file() {
 #[test]
 fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     let server = MockServer::start();
-    let message = mock_current_assistant_prompt(&server, "Hi", None, "ok", Some("profile-once"));
+    let message = mock_current_assistant_prompt(
+        &server,
+        "Hi",
+        None,
+        "ok",
+        Some(r#""profile_uuid":"profile-once""#),
+    );
     let create = server.mock(|when, then| {
         when.method(POST)
             .path("/api/assistants")
@@ -2595,7 +2717,7 @@ fn assistant_once_creates_prompts_and_deletes_temporary_profile() {
     assert_eq!(body["message"]["markdown"], "ok");
     create.assert_calls(1);
     list.assert_calls(2);
-    message.assert_calls(1);
+    message.create.assert_calls(1);
     delete.assert_calls(1);
 }
 
@@ -4090,5 +4212,561 @@ fn concurrent_site_pref_sets_preserve_all_domains() {
             "pin",
             "concurrent update for {domain} must survive"
         );
+    }
+}
+
+#[test]
+fn mcp_tool_allowlist_filters_both_protocols_and_deduplicates() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let requests = [
+        mcp_stable_request(json!(1), "tools/list", json!({})),
+        mcp_request(json!(2), "tools/list", json!({})),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|r| format!("{r}\n"))
+        .collect::<String>();
+    let output = run_kagi_with_stdin(
+        &[
+            "mcp",
+            "--tools",
+            " kagi_search,kagi_quick,kagi_batch_search,kagi_search ",
+        ],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+    assert_success(&output);
+    for response in mcp_responses(&output.stdout) {
+        let names: Vec<&str> = response["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .map(|tool| tool["name"].as_str().expect("name"))
+            .collect();
+        assert_eq!(names, ["kagi_batch_search", "kagi_quick", "kagi_search"]);
+    }
+}
+
+#[test]
+fn mcp_tool_exclusions_preserve_remaining_catalog_and_mutation_gate() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!("{}\n", mcp_request(json!(1), "tools/list", json!({})));
+    for mutating in [false, true] {
+        let mut args = vec!["mcp"];
+        if mutating {
+            args.push("--enable-mutating-tools");
+        }
+        let baseline = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+        assert_success(&baseline);
+        let baseline = mcp_responses(&baseline.stdout);
+        let expected: Vec<Value> = baseline[0]["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .filter(|tool| tool["name"] != "kagi_search" && tool["name"] != "kagi_lens_create")
+            .cloned()
+            .collect();
+        args.extend([
+            "--exclude-tools",
+            "kagi_search, kagi_lens_create,kagi_search",
+        ]);
+        let filtered = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+        assert_success(&filtered);
+        assert_eq!(
+            mcp_responses(&filtered.stdout)[0]["result"]["tools"],
+            json!(expected)
+        );
+    }
+}
+
+#[test]
+fn mcp_tool_filters_reject_invalid_names_before_reading_requests() {
+    let tempdir = TempDir::new().expect("tempdir");
+    for flag in ["--tools", "--exclude-tools"] {
+        for (value, message) in [
+            ("kagi_serach", "Unknown MCP tool"),
+            ("kagi_search,", "empty names"),
+            (" ", "empty names"),
+        ] {
+            let output = run_kagi_with_stdin(&["mcp", flag, value], "", &[], tempdir.path());
+            assert!(!output.status.success(), "accepted {flag} {value:?}");
+            assert!(output.stdout.is_empty());
+            assert!(String::from_utf8_lossy(&output.stderr).contains(message));
+        }
+    }
+    let output = run_kagi(
+        &[
+            "mcp",
+            "--tools",
+            "kagi_search",
+            "--exclude-tools",
+            "kagi_quick",
+        ],
+        &[],
+        tempdir.path(),
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
+    for value in ["kagi_serach", "", "kagi_search,,kagi_quick"] {
+        let output =
+            run_kagi_with_stdin(&["mcp"], "", &[("KAGI_MCP_TOOLS", value)], tempdir.path());
+        assert!(!output.status.success(), "accepted env {value:?}");
+        assert!(output.stdout.is_empty());
+    }
+}
+
+#[test]
+fn mcp_tool_allowlist_requires_explicit_mutation_permission() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!(
+        "{}\n",
+        mcp_stable_request(json!(1), "tools/list", json!({}))
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp", "--tools", "kagi_lens_create"],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires --enable-mutating-tools"));
+    let output = run_kagi_with_stdin(
+        &[
+            "mcp",
+            "--enable-mutating-tools",
+            "--tools",
+            "kagi_lens_create",
+        ],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "kagi_lens_create");
+}
+
+#[test]
+fn mcp_tool_environment_allowlist_and_cli_precedence() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!(
+        "{}\n",
+        mcp_stable_request(json!(1), "tools/list", json!({}))
+    );
+    let output = run_kagi_with_stdin(
+        &["mcp"],
+        &stdin,
+        &[("KAGI_MCP_TOOLS", " kagi_quick,kagi_quick ")],
+        tempdir.path(),
+    );
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "kagi_quick");
+    for flag in ["--tools", "--exclude-tools"] {
+        let output = run_kagi_with_stdin(
+            &["mcp", flag, "kagi_search"],
+            &stdin,
+            &[("KAGI_MCP_TOOLS", "invalid")],
+            tempdir.path(),
+        );
+        assert_success(&output);
+        let responses = mcp_responses(&output.stdout);
+        let tools = responses[0]["result"]["tools"].as_array().expect("tools");
+        if flag == "--tools" {
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0]["name"], "kagi_search");
+        } else {
+            assert!(tools.len() > 1);
+            assert!(!tools.iter().any(|tool| tool["name"] == "kagi_search"));
+        }
+    }
+}
+
+#[test]
+fn mcp_tool_filters_block_hidden_calls_and_keep_server_alive() {
+    let tempdir = TempDir::new().expect("tempdir");
+    for args in [
+        vec!["mcp", "--tools", "kagi_news_filter_presets"],
+        vec!["mcp", "--exclude-tools", "kagi_search"],
+    ] {
+        for draft in [false, true] {
+            let request = if draft {
+                mcp_request
+            } else {
+                mcp_stable_request
+            };
+            let stdin = format!(
+                "{}\n{}\n",
+                request(
+                    json!(1),
+                    "tools/call",
+                    json!({"name": "kagi_search", "arguments": {"query": "rust"}})
+                ),
+                request(
+                    json!(2),
+                    "tools/call",
+                    json!({"name": "kagi_news_filter_presets", "arguments": {}})
+                )
+            );
+            let output = run_kagi_with_stdin(&args, &stdin, &[], tempdir.path());
+            assert_success(&output);
+            let responses = mcp_responses(&output.stdout);
+            assert_eq!(responses.len(), 2);
+            assert_eq!(responses[0]["error"]["code"], -32602);
+            assert_eq!(
+                responses[0]["error"]["message"],
+                "Unknown tool: kagi_search"
+            );
+            assert_eq!(responses[1]["result"]["isError"], false);
+            assert!(responses[1]["result"]["structuredContent"].is_object());
+        }
+    }
+}
+
+#[test]
+fn mcp_tool_exclusions_can_produce_an_empty_catalog() {
+    let tempdir = TempDir::new().expect("tempdir");
+    let stdin = format!(
+        "{}\n",
+        mcp_stable_request(json!(1), "tools/list", json!({}))
+    );
+    let output = run_kagi_with_stdin(&["mcp"], &stdin, &[], tempdir.path());
+    assert_success(&output);
+    let responses = mcp_responses(&output.stdout);
+    let names = responses[0]["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .map(|tool| tool["name"].as_str().expect("name"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let output = run_kagi_with_stdin(
+        &["mcp", "--exclude-tools", &names],
+        &stdin,
+        &[],
+        tempdir.path(),
+    );
+    assert_success(&output);
+    assert_eq!(
+        mcp_responses(&output.stdout)[0]["result"]["tools"],
+        json!([])
+    );
+}
+
+// Sanitized result-card structure observed on the subscriber /images endpoint.
+const IMAGE_SEARCH_FIXTURE: &str = include_str!("fixtures/image-search.html");
+
+#[test]
+fn image_search_uses_subscriber_even_with_api_key_and_limits_results() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET)
+            .path("/images")
+            .query_param("q", "otters & snow")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let paid = server.mock(|when, then| {
+        when.path("/api/v1/search");
+        then.status(500);
+    });
+    let temp = TempDir::new().unwrap();
+    let mut env = session_env(&server);
+    env.push(("KAGI_API_KEY", "test-paid-key".into()));
+    let out = run_kagi(
+        &["search", "otters & snow", "--images", "--limit", "1"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert_success(&out);
+    let result: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["query"], "otters & snow");
+    assert_eq!(result["data"].as_array().unwrap().len(), 1);
+    assert_eq!(result["data"][0]["width"], 922);
+    assert_eq!(
+        result["data"][0]["image_url"],
+        "https://images.example/otter.jpg?a=1&b=2"
+    );
+    images.assert_calls(1);
+    paid.assert_calls(0);
+}
+
+#[test]
+fn image_search_renders_all_formats_and_caches() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET).path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    for format in ["json", "compact", "toon", "pretty", "markdown", "csv"] {
+        let out = run_kagi(
+            &[
+                "search",
+                "otter",
+                "--images",
+                "--format",
+                format,
+                "--local-cache",
+            ],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&out);
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(text.contains("Otter & friends"), "{format}: {text}");
+        assert!(text.contains("https://example.org/otter"));
+        if format == "csv" {
+            assert!(text.starts_with("title,image_url,source_url,thumbnail_url,width,height\n"));
+        }
+    }
+    images.assert_calls(1);
+}
+
+#[test]
+fn image_search_missing_session_never_uses_api() {
+    let server = MockServer::start();
+    let paid = server.mock(|when, then| {
+        when.path("/api/v1/search");
+        then.status(200).body("{}");
+    });
+    let temp = TempDir::new().unwrap();
+    let env = test_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("KAGI_SESSION_TOKEN"));
+    paid.assert_calls(0);
+}
+
+#[test]
+fn image_search_rejects_http_failures_challenges_and_malformed_pages() {
+    for (status, body) in [
+        (401, "private server detail"),
+        (403, "private server detail"),
+        (429, "private server detail"),
+        (500, "private server detail"),
+        (200, "<input type=password>"),
+        (200, "<link href='turnstile_page.scss.css'>"),
+        (200, "<html>unexpected markup</html>"),
+    ] {
+        let server = MockServer::start();
+        let images = server.mock(|when, then| {
+            when.method(GET).path("/images");
+            then.status(status).body(body);
+        });
+        let temp = TempDir::new().unwrap();
+        let env = session_env(&server);
+        let out = run_kagi(
+            &["search", "otter", "--images"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert!(!out.status.success(), "{status}: {body}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("private server detail"));
+        assert!(!stderr.contains("test-session"));
+        images.assert_calls(1);
+    }
+}
+
+#[test]
+fn image_search_does_not_follow_redirects_or_leak_cookie() {
+    let server = MockServer::start();
+    let destination = MockServer::start();
+    let leak = destination.mock(|when, then| {
+        when.method(GET);
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(302)
+            .header("location", destination.url("/signin"));
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert!(!out.status.success());
+    images.assert_calls(1);
+    leak.assert_calls(0);
+}
+
+#[test]
+fn image_search_rejects_invalid_inputs_before_network() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    for args in [
+        vec!["search", "otter", "--images", "--limit", "0"],
+        vec!["search", "otter", "--images", "--limit", "1025"],
+        vec!["search", " ", "--images"],
+        vec!["search", "otter", "--images", "--news"],
+        vec!["search", "otter", "--images", "--follow", "1"],
+    ] {
+        let out = run_kagi(&args, &env_refs(&env), temp.path());
+        assert!(!out.status.success());
+    }
+    images.assert_calls(0);
+}
+
+#[test]
+fn mcp_image_search_returns_structured_results_and_validates_limits() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.method(GET)
+            .path("/images")
+            .header("cookie", "kagi_session=test-session");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let requests = [
+        mcp_request(json!(1), "tools/list", json!({})),
+        mcp_request(
+            json!(2),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":1}}),
+        ),
+        mcp_request(
+            json!(3),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":0}}),
+        ),
+        mcp_request(
+            json!(4),
+            "tools/call",
+            json!({"name":"kagi_image_search", "arguments":{"query":"otter", "limit":1025}}),
+        ),
+    ];
+    let stdin = requests
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap() + "\n")
+        .collect::<String>();
+    let out = run_kagi_with_stdin(&["mcp"], &stdin, &env_refs(&env), temp.path());
+    assert_success(&out);
+    let responses = mcp_responses(&out.stdout);
+    let tool = responses[0]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "kagi_image_search")
+        .unwrap();
+    assert_eq!(tool["annotations"]["readOnlyHint"], true);
+    assert_eq!(tool["annotations"]["openWorldHint"], true);
+    let inner: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(inner["data"].as_array().unwrap().len(), 1);
+    assert!(responses[2].get("error").is_some() || responses[2]["result"]["isError"] == true);
+    assert!(responses[3].get("error").is_some() || responses[3]["result"]["isError"] == true);
+    images.assert_calls(1);
+}
+
+#[test]
+fn image_search_cache_is_scoped_to_session() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images");
+        then.status(200).body(IMAGE_SEARCH_FIXTURE);
+    });
+    let temp = TempDir::new().unwrap();
+    for token in ["session-one", "session-two", "session-one"] {
+        let env = vec![
+            ("KAGI_SESSION_TOKEN", token.to_string()),
+            ("KAGI_BASE_URL", server.base_url()),
+        ];
+        let out = run_kagi(
+            &["search", "otter", "--images", "--local-cache"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&out);
+    }
+    images.assert_calls(2);
+}
+
+#[test]
+fn image_search_completed_empty_response_is_success() {
+    let server = MockServer::start();
+    let images = server.mock(|when, then| {
+        when.path("/images"); then.status(200).body("<div class='_0_img-results'></div><script>scriptStreamCallback(\"images\", \"html\")</script><script>scriptStreamCallback(\"done\", \"text\")</script>");
+    });
+    let temp = TempDir::new().unwrap();
+    let env = session_env(&server);
+    let out = run_kagi(
+        &["search", "otter", "--images"],
+        &env_refs(&env),
+        temp.path(),
+    );
+    assert_success(&out);
+    let body: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(body["data"], json!([]));
+    images.assert_calls(1);
+}
+
+/// Untrusted titles must remain literal cells when image CSV is opened in a spreadsheet.
+#[test]
+fn image_search_csv_neutralizes_formulas_without_changing_json() {
+    for title in [
+        "=1+1", "+SUM(1)", "-1+1", "@SUM(1)", " =1+1", "\t=1+1", "\r=1+1",
+    ] {
+        let server = MockServer::start();
+        let body = IMAGE_SEARCH_FIXTURE.replace("Otter &amp; friends", title);
+        let images = server.mock(|when, then| {
+            when.path("/images");
+            then.status(200).body(body);
+        });
+        let temp = TempDir::new().unwrap();
+        let env = session_env(&server);
+        let csv = run_kagi(
+            &[
+                "search",
+                "otter",
+                "--images",
+                "--format",
+                "csv",
+                "--local-cache",
+            ],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&csv);
+        let text = String::from_utf8(csv.stdout).unwrap();
+        assert!(
+            text.lines()
+                .nth(1)
+                .unwrap()
+                .starts_with(&format!("'{},", title.trim())),
+            "{text}"
+        );
+        let json = run_kagi(
+            &["search", "otter", "--images", "--local-cache"],
+            &env_refs(&env),
+            temp.path(),
+        );
+        assert_success(&json);
+        let data: Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert_eq!(data["data"][0]["title"], title.trim());
+        images.assert_calls(1);
     }
 }

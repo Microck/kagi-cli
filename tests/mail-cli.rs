@@ -1030,3 +1030,39 @@ fn send_validates_before_credentials_and_never_loads_or_persists_mcp_tokens() {
     assert!(service.requests.lock().is_empty());
     assert_eq!(std::fs::read_to_string(config_path).unwrap(), config);
 }
+
+/// The authentication-only SMTP command validates credentials without loading MCP state.
+#[test]
+fn smtp_check_requires_separate_credentials_and_rejects_message_arguments() {
+    let dir = TempDir::new().unwrap();
+    let service = MailService::start(Mode::default());
+    let config = "[mail]\naccess_token = PRIVATE-MALFORMED-OAUTH\n";
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, config).unwrap();
+    let output = run(
+        &[
+            "--profile",
+            "missing",
+            "mail",
+            "smtp-check",
+            "--error-format",
+            "json",
+        ],
+        dir.path(),
+        &service.env(),
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["code"], "missing_credentials");
+    assert_eq!(
+        error["required_auth"],
+        "KAGI_MAIL_SMTP_USERNAME and KAGI_MAIL_SMTP_PASSWORD"
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("PRIVATE"));
+    assert!(service.requests.lock().is_empty());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), config);
+    for arg in ["--from", "--to", "--body", "--subject"] {
+        let output = run(&["mail", "smtp-check", arg, "PRIVATE"], dir.path(), &[]);
+        assert_eq!(output.status.code(), Some(2));
+    }
+}

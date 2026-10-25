@@ -78,7 +78,7 @@ Possible values:
 - `compact` - minified JSON
 - `pretty` - terminal-friendly output
 - `markdown` - markdown list output
-- `csv` - CSV table output
+- `csv` - CSV table output with `title,url,snippet,published` columns
 
 ### `--no-color`
 
@@ -179,7 +179,7 @@ kagi search --no-personalized "rust web framework"
 
 ### `--template <TEMPLATE>`
 
-Render each result with a lightweight template instead of a built-in format. Supported placeholders are `{{rank}}`, `{{title}}`, `{{url}}`, and `{{snippet}}`.
+Render each result with a lightweight template instead of a built-in format. Supported placeholders are `{{rank}}`, `{{title}}`, `{{url}}`, `{{snippet}}`, and `{{published}}` (empty when the result has no date).
 
 ```bash
 kagi search "rust crates" --template '{{rank}}. {{title}} - {{url}}'
@@ -226,6 +226,51 @@ Rejected flags with `--news`: `--lens`, `--snap`, `--from-date`, `--to-date`, `-
 
 The JSON shape is `NewsSearchResponse`, distinct from web search. See [Output Format](#output-format) below.
 
+### `--images`
+
+Search the subscriber Images tab using `KAGI_SESSION_TOKEN`. This mode never
+uses `KAGI_API_KEY` and never falls back to a paid API, even with API-first auth.
+
+```bash
+kagi search "sea otter" --images --limit 10
+kagi search "sea otter" --images --format pretty
+kagi search "sea otter" --images --format csv
+```
+
+Image search returns a separate shape:
+
+```json
+{
+  "query": "sea otter",
+  "data": [{
+    "title": "Sea otter",
+    "image_url": "https://images.example/otter.jpg",
+    "source_url": "https://example.org/otter",
+    "thumbnail_url": "https://proxy.example/thumb",
+    "width": 922,
+    "height": 843
+  }]
+}
+```
+
+CSV titles with spreadsheet formula prefixes are prefixed with an apostrophe;
+JSON and other structured formats preserve the original title.
+
+Dimensions describe the original image, not its thumbnail. Missing dimensions
+and thumbnails are omitted. The command returns URLs without downloading images;
+thumbnail proxy URLs can expire. Results remain subject to their source licenses.
+
+Supported flags: `--limit`, `--format` (all six formats), `--no-color`,
+`--local-cache`, and `--cache-ttl`, along with the global `--profile`.
+The limit caps the first returned page locally; pagination is not implemented.
+Web/news-only filters, `--news`, `--follow`, and `--template` are rejected rather
+than silently ignored. Account-level settings are not changed.
+
+Login redirects, verification pages, incomplete streams, and unexpected markup
+produce errors, not misleading empty result sets. The subscriber interface is
+unofficial and can change. MCP clients can use `kagi_image_search` with `query`,
+optional `limit` (1–1024), and `format`.
+
 ## Not Supported as Runtime Flags
 
 `safe_search` is currently an account setting, not a search-time flag in this CLI. Configure it in the Kagi web settings instead of expecting `kagi search` to override it per request.
@@ -243,11 +288,13 @@ The search response shape is unchanged:
       "title": "Rust Programming Language",
       "url": "https://www.rust-lang.org",
       "snippet": "A language empowering everyone to build reliable and efficient software.",
-      "published": null
+      "published": "2026-10-04T00:00:00Z"
     }
   ]
 }
 ```
+
+With a session token, `published` is the day shown on the result page (`YYYY-MM-DDT00:00:00Z`), or `null` when the page shows no date or a relative one such as "Yesterday", which stays in `snippet`. With `KAGI_API_KEY`, it is the timestamp Kagi's Search API returns.
 
 With `--news`, the response shape is different -- clusters of news articles:
 
@@ -382,3 +429,16 @@ kagi search --format markdown "rust ownership"
 - [lens](/commands/lens)
 - [Auth Matrix](/reference/auth-matrix)
 - [API and Product Coverage](/reference/coverage)
+
+### Developer live image-search smoke test
+
+The opt-in `python3 scripts/test-image-search-live.py --binary target/debug/kagi`
+smoke test requires `KAGI_SESSION_TOKEN` already set privately in the environment.
+It makes two subscriber image searches, checks CLI/MCP results and limits, and
+checks the six CLI formats with a temporary cache. It does not save credentials
+or use paid API keys. Do not paste credentials into source files or command lines.
+
+In environments with an already-trusted corporate/cloud proxy CA, build with
+`cargo build --features reqwest/rustls-tls-native-roots` to use the system trust
+store. Never disable certificate verification. This is an opt-in build option,
+not a change to the default release TLS configuration.

@@ -1,6 +1,6 @@
 [package]
 name = "kagi"
-version = "0.20.1"
+version = "0.23.0"
 edition = "2024"
 description = "Agent-native CLI for Kagi subscribers with JSON-first search output"
 license = "MIT"
@@ -31,7 +31,7 @@ ctrlc = "3.5.2"
 reqwest = { version = "0.12.15", default-features = false, features = ["brotli", "deflate", "gzip", "json", "multipart", "rustls-tls", "stream"] }
 futures-util = "0.3.34"
 fs2 = "0.4"
-jsonc-parser = { version = "0.33.1", features = ["serde"] }
+jsonc-parser = { version = "0.34.0", features = ["serde"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "webpki-roots"] }
 scraper = "0.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -45,6 +45,8 @@ mime_guess = "2.0.5"
 toon = "0.1.2"
 
 [dev-dependencies]
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
 httpmock = "0.8.3"
 parking_lot = "0.12.5"
 tempfile = "3.27.0"

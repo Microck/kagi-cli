@@ -221,11 +221,13 @@ For users who want full control over the installation process or need to install
 1. Visit the [GitHub Releases page](https://github.com/Microck/kagi-cli/releases)
 2. Choose the latest release (or a specific version)
 3. Download the appropriate asset for your platform:
-   - macOS Intel: `kagi-x86_64-apple-darwin.tar.gz`
-   - macOS Apple Silicon: `kagi-aarch64-apple-darwin.tar.gz`
-   - Linux x86_64: `kagi-x86_64-unknown-linux-gnu.tar.gz`
-   - Linux ARM64: `kagi-aarch64-unknown-linux-gnu.tar.gz`
-   - Windows x64: `kagi-x86_64-pc-windows-msvc.zip`
+   - macOS Intel: `kagi-vX.Y.Z-x86_64-apple-darwin.tar.gz`
+   - macOS Apple Silicon: `kagi-vX.Y.Z-aarch64-apple-darwin.tar.gz`
+   - Linux x86_64: `kagi-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
+   - Linux ARM64: `kagi-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz`
+   - Linux x86_64 (static, including Alpine/NixOS): `kagi-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz`
+   - Linux ARM64 (static, including Alpine/NixOS): `kagi-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz`
+   - Windows x64: `kagi-vX.Y.Z-x86_64-pc-windows-msvc.zip`
 
 ### Step 2: Extract the Binary
 
@@ -382,11 +384,11 @@ xattr -d com.apple.quarantine $(which kagi)
 - Fedora 32+
 - CentOS/RHEL 8+
 - Arch Linux
-- Other distros (e.g. Alpine): no prebuilt musl binary is published yet, so build from source (see below)
+- Alpine and NixOS: choose the static `*-unknown-linux-musl` release asset for your architecture
 
 **Dependencies:**
 
-The binary is statically linked and has no runtime dependencies beyond the Linux kernel.
+The `*-unknown-linux-musl` binaries are statically linked and do not require glibc or a dynamic loader. The `*-unknown-linux-gnu` binaries require glibc.
 
 **Shell Completion:**
 

@@ -153,6 +153,8 @@ Read-only MCP access uses separate OAuth credentials and supports `--profile`.
 Mail defaults to JSON and supports `--format compact|toon|pretty`. Messages are
 not added to the local history or response cache.
 
+First use `kagi mail smtp-check` to verify SMTP authentication without sending a message.
+
 To send plain-text mail, supply SMTP credentials only through the environment
 variables `KAGI_MAIL_SMTP_USERNAME` and `KAGI_MAIL_SMTP_PASSWORD`, then run:
 
@@ -290,6 +292,12 @@ use search as part of a shell pipeline:
 
 ```bash
 kagi search "what is mullvad"
+```
+
+search images with your existing subscriber session (no paid API fallback):
+
+```bash
+kagi search "sea otter" --images --limit 10 --format pretty
 ```
 
 switch the same command to terminal-readable output:

@@ -129,14 +129,54 @@ fn submission_error(error: lettre::transport::smtp::Error) -> KagiError {
     }
 }
 
+/// Validate and submit one message; never automatically retry an uncertain send.
 pub async fn send(args: MailSendArgs) -> Result<Value, KagiError> {
-    // Validate the whole message before loading credentials or opening a socket.
     let message = args.message()?;
     let credentials = credentials(|name| env::var(name))?;
     let transport = transport_builder(SMTP_HOST, SMTP_PORT, credentials)?.build::<Tokio1Executor>();
-    transport.send(message).await.map_err(submission_error)?;
-    // Acceptance by SMTP is not proof of recipient delivery. Do not echo content.
+    submit(message, &transport).await
+}
+
+/// Bound the entire SMTP submission, not only individual protocol commands.
+async fn submit(
+    message: Message,
+    transport: &AsyncSmtpTransport<Tokio1Executor>,
+) -> Result<Value, KagiError> {
+    tokio::time::timeout(Duration::from_secs(90), transport.send(message))
+        .await
+        .map_err(|_| KagiError::MailSend("SMTP submission timed out; delivery may be unknown. Check your mailbox before retrying to avoid duplicate mail".into()))?
+        .map_err(submission_error)?;
     Ok(json!({"status": "submitted"}))
+}
+
+/// Check verified TLS and SMTP authentication with NOOP, without MAIL/RCPT/DATA.
+pub async fn check() -> Result<Value, KagiError> {
+    let credentials = credentials(|name| env::var(name))?;
+    let transport = transport_builder(SMTP_HOST, SMTP_PORT, credentials)?.build::<Tokio1Executor>();
+    check_transport(&transport).await
+}
+
+/// Run the authentication-only probe with a bounded total deadline.
+async fn check_transport(
+    transport: &AsyncSmtpTransport<Tokio1Executor>,
+) -> Result<Value, KagiError> {
+    let connected = tokio::time::timeout(Duration::from_secs(90), transport.test_connection())
+        .await
+        .map_err(|_| {
+            KagiError::MailSend("SMTP connection check timed out; no message was submitted".into())
+        })?
+        .map_err(|error| match submission_error(error) {
+            auth @ KagiError::Auth(_) => auth,
+            _ => {
+                KagiError::MailSend("SMTP connection check failed; no message was submitted".into())
+            }
+        })?;
+    if !connected {
+        return Err(KagiError::MailSend(
+            "SMTP connection check failed; no message was submitted".into(),
+        ));
+    }
+    Ok(json!({"status": "authenticated", "message_submitted": false}))
 }
 
 #[cfg(test)]
@@ -347,3 +387,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "mail-send-tls-tests.rs"]
+mod tls_tests;

@@ -43,6 +43,8 @@ pub enum MailSubcommand {
     Read(MailReadArgs),
     /// Send a plain-text email using separate SMTP environment credentials
     Send(crate::mail_send::MailSendArgs),
+    /// Verify SMTP TLS and credentials without submitting a message
+    SmtpCheck,
 }
 
 #[derive(Debug, Args)]
@@ -159,6 +161,7 @@ pub async fn run(args: MailCommand, profile: Option<&str>) -> Result<(), KagiErr
         MailSubcommand::Status => mail_auth::MailConfig::load(profile)?.status(),
         MailSubcommand::Logout => mail_auth::logout(profile)?,
         MailSubcommand::Send(send) => crate::mail_send::send(send).await?,
+        MailSubcommand::SmtpCheck => crate::mail_send::check().await?,
         command => {
             let (tool, arguments) = match command {
                 MailSubcommand::Boxes => ("list_mailboxes", json!({})),
