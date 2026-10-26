@@ -354,6 +354,7 @@ fn write_json_locked<T: Serialize>(path: &Path, value: &T) -> Result<(), KagiErr
 fn open_locked_append(path: &Path) -> Result<File, KagiError> {
     let file = fs::OpenOptions::new()
         .create(true)
+        .read(true)
         .append(true)
         .open(path)
         .map_err(|error| {

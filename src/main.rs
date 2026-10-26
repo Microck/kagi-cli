@@ -10,6 +10,8 @@ mod local;
 mod mail;
 #[path = "mail-auth.rs"]
 mod mail_auth;
+#[path = "mail-send.rs"]
+mod mail_send;
 mod mcp_install;
 mod parser;
 mod quick;
@@ -77,7 +79,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 use tracing::error;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Clone)]
 struct SearchRequestOptions {
@@ -175,6 +177,7 @@ fn error_envelope(error: &KagiError) -> ErrorEnvelope {
         KagiError::Auth(message) | KagiError::MailAuth(message) => {
             ("authentication_error", "auth", false, message.as_str())
         }
+        KagiError::MailSend(message) => ("mail_send_error", "smtp", false, message.as_str()),
         KagiError::Parse(message) => ("parse_error", "parse", false, message.as_str()),
         KagiError::Config(message) if message.starts_with("assistant contract") => {
             ("contract_error", "contract", false, message.as_str())
@@ -211,7 +214,9 @@ fn error_envelope(error: &KagiError) -> ErrorEnvelope {
 }
 
 fn required_auth_for_message(message: &str) -> Option<&'static str> {
-    if message.contains("KAGI_MAIL_ACCESS_TOKEN") {
+    if message.contains("KAGI_MAIL_SMTP_USERNAME") || message.contains("KAGI_MAIL_SMTP_PASSWORD") {
+        Some("KAGI_MAIL_SMTP_USERNAME and KAGI_MAIL_SMTP_PASSWORD")
+    } else if message.contains("KAGI_MAIL_ACCESS_TOKEN") {
         Some("KAGI_MAIL_ACCESS_TOKEN")
     } else if message.contains("missing credentials") {
         Some("KAGI_API_KEY or KAGI_SESSION_TOKEN")
@@ -231,6 +236,9 @@ fn suggested_commands_for_error(
     required_auth: Option<&'static str>,
 ) -> Vec<&'static str> {
     match required_auth {
+        Some("KAGI_MAIL_SMTP_USERNAME and KAGI_MAIL_SMTP_PASSWORD") => {
+            vec!["kagi mail send --help"]
+        }
         Some("KAGI_MAIL_ACCESS_TOKEN") => vec!["kagi mail status", "kagi mail login"],
         Some("KAGI_API_KEY") => vec![
             "kagi auth status",
@@ -268,13 +276,23 @@ fn extract_http_status(message: &str) -> Option<u16> {
     })
 }
 
+/// Drop SMTP transport traces regardless of more-specific RUST_LOG directives.
+fn public_log_target(target: &str) -> bool {
+    target != "lettre" && !target.starts_with("lettre::")
+}
+
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
+    let fmt = tracing_subscriber::fmt::layer()
         .with_target(false)
         .without_time()
         .with_writer(std::io::stderr)
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            public_log_target(metadata.target())
+        }));
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt)
         .try_init();
 }
 
@@ -6547,5 +6565,12 @@ mod tests {
             .expect_err("object context memory should fail");
 
         assert!(error.to_string().contains("JSON array"));
+    }
+    #[test]
+    fn smtp_log_targets_are_always_private() {
+        assert!(!super::public_log_target("lettre"));
+        assert!(!super::public_log_target("lettre::transport::smtp::client"));
+        assert!(super::public_log_target("kagi::mail_send"));
+        assert!(super::public_log_target("httpmock"));
     }
 }

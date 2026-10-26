@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `kagi mail send` submits plain-text email through Kagi Mail's SMTP endpoint, with separate environment-only credentials and verified implicit TLS on port 465. `kagi mail smtp-check` verifies authentication without submitting mail.
+
 ## [0.23.0]
 
 ### Added

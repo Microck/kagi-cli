@@ -32,6 +32,7 @@ reqwest = { version = "0.12.15", default-features = false, features = ["brotli",
 futures-util = "0.3.34"
 fs2 = "0.4"
 jsonc-parser = { version = "0.34.0", features = ["serde"] }
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "webpki-roots"] }
 scraper = "0.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
@@ -44,5 +45,8 @@ mime_guess = "2.0.5"
 toon = "0.1.2"
 
 [dev-dependencies]
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
 httpmock = "0.8.3"
+parking_lot = "0.12.5"
 tempfile = "3.27.0"
