@@ -5,6 +5,12 @@ on:
     branches: [main]
 permissions:
   contents: read
+
+# Stop testing superseded revisions without cancelling other PRs or main.
+concurrency:
+  group: browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   browser:
     runs-on: ubuntu-latest
