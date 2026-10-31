@@ -1,0 +1,39 @@
+name: Verify released AUR package
+on:
+  push:
+    branches: ["test/aur-0.24.1-fresh-install"]
+permissions:
+  contents: read
+jobs:
+  fresh-arch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:latest
+    steps:
+      - name: Install official Arch build tools
+        run: pacman -Syu --noconfirm --needed base-devel cargo git
+      - name: Fetch the published AUR revision
+        run: |
+          set -eu
+          useradd --create-home builder
+          git init /home/builder/kagi-cli
+          git -C /home/builder/kagi-cli remote add origin https://aur.archlinux.org/kagi-cli.git
+          git -C /home/builder/kagi-cli fetch --depth=1 origin 6c6f73129bfacc2829c6fb767c4dd1292426415b
+          git -C /home/builder/kagi-cli checkout --detach FETCH_HEAD
+          test "$(git -C /home/builder/kagi-cli rev-parse HEAD)" = 6c6f73129bfacc2829c6fb767c4dd1292426415b
+          grep -Fx 'pkgver=0.24.1' /home/builder/kagi-cli/PKGBUILD
+          grep -F 'commit=4b85de5d4bb42e51cab77a6812737e0dcac53daa' /home/builder/kagi-cli/.SRCINFO
+          chown -R builder:builder /home/builder/kagi-cli
+      - name: Fresh makepkg build and package tests
+        run: su builder -c 'cd /home/builder/kagi-cli && makepkg -Csf --noconfirm'
+      - name: Install and smoke-test the fresh package
+        run: |
+          set -eu
+          package=/home/builder/kagi-cli/kagi-cli-0.24.1-1-x86_64.pkg.tar.zst
+          test -f "$package"
+          sha256sum "$package"
+          pacman -U --noconfirm "$package"
+          mkdir -p /tmp/kagi-fresh-home
+          HOME=/tmp/kagi-fresh-home XDG_CONFIG_HOME=/tmp/kagi-fresh-home/config kagi --version | grep -Fx 'kagi 0.24.1'
+          HOME=/tmp/kagi-fresh-home XDG_CONFIG_HOME=/tmp/kagi-fresh-home/config kagi --help
+          HOME=/tmp/kagi-fresh-home XDG_CONFIG_HOME=/tmp/kagi-fresh-home/config kagi assistant --help
