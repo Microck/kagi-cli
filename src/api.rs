@@ -702,7 +702,7 @@ where
         .await
         .map_err(map_transport_error)?;
     let started: CurrentAssistantTurnStartResponse =
-        read_current_assistant_json_response(response, "Assistant prompt").await?;
+        read_current_assistant_json_response(response, "Assistant prompt", token).await?;
     let conversation = match (started.conversation, existing) {
         (Some(conversation), _) | (None, Some((conversation, _))) => conversation,
         (None, None) => {
@@ -738,6 +738,7 @@ where
     .await
 }
 
+/// Load v2 conversation metadata and its selected branch for a follow-up prompt.
 async fn open_current_assistant_conversation(
     thread_id: &str,
     token: &str,
@@ -745,7 +746,7 @@ async fn open_current_assistant_conversation(
     validate_current_assistant_path_id("assistant thread id", thread_id)?;
     let response = http::client_assistant_stream()?
         .get(http::kagi_assistant_url(&format!(
-            "/api/conversations/{thread_id}/init"
+            "/api/v2/conversations/{thread_id}/init"
         )))
         .header(header::COOKIE, format!("kagi_session={token}"))
         .header(header::ACCEPT, "application/json")
@@ -753,7 +754,8 @@ async fn open_current_assistant_conversation(
         .await
         .map_err(map_transport_error)?;
     let initialized: CurrentAssistantConversationInitResponse =
-        read_current_assistant_json_response(response, "Assistant conversation init").await?;
+        read_current_assistant_json_response(response, "Assistant conversation init", token)
+            .await?;
     let branch = initialized.selected_branch().ok_or_else(|| {
         KagiError::Parse("Assistant conversation did not include an active branch".to_string())
     })?;
@@ -783,7 +785,8 @@ async fn upload_current_assistant_attachments(
             .await
             .map_err(map_transport_error)?;
         let uploaded: CurrentAssistantUploadResponse =
-            read_current_assistant_json_response(response, "Assistant attachment upload").await?;
+            read_current_assistant_json_response(response, "Assistant attachment upload", token)
+                .await?;
         uuids.push(uploaded.uuid);
     }
     Ok(uuids)
@@ -970,7 +973,10 @@ pub async fn execute_assistant_thread_get(
     let messages = fetch_current_assistant_messages(
         token,
         branch.as_ref(),
-        std::mem::take(&mut response.messages),
+        CurrentAssistantMessagesPage {
+            items: std::mem::take(&mut response.turns),
+            has_more: response.turns_has_more,
+        },
     )
     .await?;
 
@@ -3595,6 +3601,7 @@ fn load_assistant_attachment(path: &Path) -> Result<AssistantAttachmentPayload, 
     })
 }
 
+/// Fetch a session-authenticated Assistant JSON resource without exposing the token in diagnostics.
 async fn fetch_current_assistant_json<T>(
     path: &str,
     token: &str,
@@ -3612,7 +3619,7 @@ where
         .await
         .map_err(map_transport_error)?;
 
-    read_current_assistant_json_response(response, surface).await
+    read_current_assistant_json_response(response, surface, token).await
 }
 
 async fn fetch_current_assistant_profiles(
@@ -3622,6 +3629,7 @@ async fn fetch_current_assistant_profiles(
     fetch_current_assistant_json(KAGI_ASSISTANT_INIT_PATH, token, surface).await
 }
 
+/// Send an Assistant mutation and decode its status-aware, session-redacted response.
 async fn send_current_assistant_json<T>(
     method: Method,
     path: &str,
@@ -3643,7 +3651,7 @@ where
         .await
         .map_err(map_transport_error)?;
 
-    read_current_assistant_json_response(response, surface).await
+    read_current_assistant_json_response(response, surface, token).await
 }
 
 async fn delete_current_assistant_resource(
@@ -3706,9 +3714,11 @@ async fn delete_current_assistant_resource(
     )))
 }
 
+/// Decode JSON before inspecting HTML so examples inside conversation text remain valid data.
 async fn read_current_assistant_json_response<T>(
     response: reqwest::Response,
     surface: &str,
+    token: &str,
 ) -> Result<T, KagiError>
 where
     T: DeserializeOwned,
@@ -3717,46 +3727,80 @@ where
     let body = response.text().await.map_err(|error| {
         KagiError::Network(format!("failed to read {surface} response body: {error}"))
     })?;
-
-    if looks_like_html_document(&body) {
-        return Err(KagiError::Auth(
-            "invalid or expired Kagi session token".to_string(),
-        ));
-    }
-
     if status.is_success() {
+        // Conversation JSON may contain complete HTML examples. Parse it before inspecting HTML.
         return serde_json::from_str(&body).map_err(|error| {
-            assistant_json_error(&body, surface).unwrap_or_else(|| {
-                KagiError::Parse(format!("failed to parse {surface} response: {error}"))
-            })
+            let detail = assistant_response_detail(&body, token);
+            if let Some(value) = serde_json::from_str::<Value>(&body).ok()
+                && assistant_error_detail(&value).is_some()
+            {
+                return KagiError::Config(format!(
+                    "Kagi {surface} returned an error: HTTP {status}{detail}"
+                ));
+            }
+            if (error.is_syntax() || error.is_eof()) && looks_like_html_document(&body) {
+                if looks_like_logged_out_page(&body) {
+                    return KagiError::Auth(format!("Kagi {surface} returned a sign-in page: HTTP {status}; run kagi auth to authenticate again"));
+                }
+                return KagiError::Parse(format!(
+                    "Kagi {surface} returned HTML instead of JSON: HTTP {status}{detail}"
+                ));
+            }
+            KagiError::Parse(format!(
+                "failed to parse {surface} response: HTTP {status}; {}",
+                redact_assistant_detail(&error.to_string(), token)
+            ))
         });
     }
-
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+    let detail = assistant_response_detail(&body, token);
+    if status == StatusCode::UNAUTHORIZED {
         return Err(KagiError::Auth(format!(
-            "invalid or expired Kagi session token for {surface}: HTTP {status}{}",
-            assistant_error_suffix(&body)
+            "Kagi {surface} request unauthorized: HTTP {status}{detail}; this response alone does not establish that the session token expired"
         )));
     }
-
     if status.is_client_error() {
         return Err(KagiError::Config(format!(
-            "Kagi {surface} request rejected: HTTP {status}{}",
-            assistant_error_suffix(&body)
+            "Kagi {surface} request rejected: HTTP {status}{detail}"
         )));
     }
-
-    if status.is_server_error() {
-        return Err(KagiError::Network(format!(
-            "Kagi {surface} server error: HTTP {status}{}",
-            assistant_error_suffix(&body)
-        )));
-    }
-
     Err(KagiError::Network(format!(
-        "unexpected Kagi {surface} response status: HTTP {status}{}",
-        assistant_error_suffix(&body)
+        "Kagi {surface} server response: HTTP {status}{detail}"
     )))
+}
+
+/// Redact the supplied credential, collapse whitespace and bound an upstream error description.
+fn redact_assistant_detail(detail: &str, token: &str) -> String {
+    let redacted = if token.is_empty() {
+        detail.to_string()
+    } else {
+        detail.replace(token, "[redacted]")
+    };
+    let compact = redacted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut bounded: String = compact.chars().take(500).collect();
+    if compact.chars().count() > 500 {
+        bounded.push('…');
+    }
+    bounded
+}
+
+/// Extract a useful error message while keeping upstream diagnostics bounded and session-redacted.
+fn assistant_response_detail(body: &str, token: &str) -> String {
+    let detail = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| assistant_error_detail(&value))
+        .unwrap_or_else(|| {
+            if looks_like_html_document(body) {
+                strip_html_to_text(body)
+            } else {
+                body.to_string()
+            }
+        });
+    let detail = redact_assistant_detail(&detail, token);
+    if detail.is_empty() {
+        String::new()
+    } else {
+        format!("; response body: {detail}")
+    }
 }
 
 fn current_assistant_conversations_path(after_id: Option<&str>) -> String {
@@ -3768,8 +3812,9 @@ fn current_assistant_conversations_path(after_id: Option<&str>) -> String {
     path
 }
 
+/// Build the v2 read path, retaining an explicitly selected conversation branch.
 fn current_assistant_conversation_init_path(thread_ref: &AssistantThreadRef) -> String {
-    let mut path = format!("/api/conversations/{}/init", thread_ref.thread_id);
+    let mut path = format!("/api/v2/conversations/{}/init", thread_ref.thread_id);
     if let Some(branch_id) = &thread_ref.branch_id {
         path.push_str("?branch_uuid=");
         path.push_str(branch_id);
@@ -3777,6 +3822,7 @@ fn current_assistant_conversation_init_path(thread_ref: &AssistantThreadRef) -> 
     path
 }
 
+/// Prepend older chronological turn pages, rejecting pagination that repeats its cursor or makes no progress.
 async fn fetch_current_assistant_messages(
     token: &str,
     branch: Option<&CurrentAssistantBranch>,
@@ -3784,6 +3830,7 @@ async fn fetch_current_assistant_messages(
 ) -> Result<Vec<CurrentAssistantMessage>, KagiError> {
     let mut messages = page.items;
     let mut has_more = page.has_more;
+    let mut seen_cursors = HashSet::new();
 
     while has_more {
         let branch = branch.ok_or_else(|| {
@@ -3799,6 +3846,11 @@ async fn fetch_current_assistant_messages(
                     "Assistant conversation has more messages but no message cursor".to_string(),
                 )
             })?;
+        if !seen_cursors.insert(after_id.to_string()) {
+            return Err(KagiError::Parse(
+                "Assistant turn pagination did not advance".to_string(),
+            ));
+        }
         let path = current_assistant_branch_messages_path(&branch.uuid, after_id)?;
         let response = fetch_current_assistant_json::<CurrentAssistantBranchMessagesResponse>(
             &path,
@@ -3807,16 +3859,34 @@ async fn fetch_current_assistant_messages(
         )
         .await?;
 
-        let mut older_messages = response.messages.items;
-        older_messages.reverse();
+        let existing: HashSet<_> = messages
+            .iter()
+            .filter_map(|message| message.uuid.as_deref())
+            .collect();
+        let mut older_messages: Vec<_> = response
+            .turns
+            .into_iter()
+            .filter(|message| {
+                message
+                    .uuid
+                    .as_deref()
+                    .is_none_or(|id| !existing.contains(id))
+            })
+            .collect();
+        if response.has_more && older_messages.is_empty() {
+            return Err(KagiError::Parse(
+                "Assistant turn pagination did not advance".to_string(),
+            ));
+        }
         older_messages.extend(messages);
         messages = older_messages;
-        has_more = response.messages.has_more;
+        has_more = response.has_more;
     }
 
     Ok(messages)
 }
 
+/// Validate branch and cursor identifiers before building the v2 turn-page URL.
 fn current_assistant_branch_messages_path(
     branch_id: &str,
     after_id: &str,
@@ -3824,10 +3894,11 @@ fn current_assistant_branch_messages_path(
     validate_current_assistant_path_id("assistant branch id", branch_id)?;
     validate_current_assistant_path_id("assistant message id", after_id)?;
     Ok(format!(
-        "/api/branches/{branch_id}/messages?limit=100&after_id={after_id}"
+        "/api/v2/branches/{branch_id}/turns?include=lite_events&limit=100&before={after_id}"
     ))
 }
 
+#[cfg(test)]
 fn assistant_json_error(body: &str, surface: &str) -> Option<KagiError> {
     let value = serde_json::from_str::<Value>(body).ok()?;
     assistant_error_detail(&value)
@@ -4919,7 +4990,9 @@ struct CurrentAssistantConversationInitResponse {
     active_branch: Option<CurrentAssistantBranch>,
     #[serde(default)]
     branches: Vec<CurrentAssistantBranch>,
-    messages: CurrentAssistantMessagesPage,
+    turns: Vec<CurrentAssistantMessage>,
+    #[serde(default)]
+    turns_has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5446,7 +5519,8 @@ struct CurrentAssistantMessagesPage {
 
 #[derive(Debug, Deserialize)]
 struct CurrentAssistantBranchMessagesResponse {
-    messages: CurrentAssistantMessagesPage,
+    turns: Vec<CurrentAssistantMessage>,
+    has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5466,12 +5540,13 @@ struct CurrentAssistantConversation {
 }
 
 impl CurrentAssistantConversation {
+    /// Convert conversation metadata to the CLI thread shape with UTC-normalized timestamps.
     fn to_assistant_thread(&self, branch: Option<&CurrentAssistantBranch>) -> AssistantThread {
         AssistantThread {
             id: self.uuid.clone(),
             title: self.title.clone(),
-            ack: self.updated_at.clone(),
-            created_at: self.created_at.clone(),
+            ack: utc_timestamp(&self.updated_at),
+            created_at: utc_timestamp(&self.created_at),
             expires_at: String::new(),
             saved: self.is_saved,
             shared: self.is_shared,
@@ -5495,7 +5570,7 @@ struct CurrentAssistantMessage {
     references: Vec<Value>,
     #[serde(default)]
     attachments: Vec<Value>,
-    #[serde(default)]
+    #[serde(default, alias = "model")]
     model_name: Option<String>,
     #[serde(default)]
     model_version: Option<String>,
@@ -5507,6 +5582,7 @@ struct CurrentAssistantMessage {
     cost_usd: Option<Number>,
 }
 
+/// Pair user and assistant turns while normalizing v2 timestamps, model aliases and reference markers.
 fn current_assistant_messages_to_legacy_turns(
     thread_id: &str,
     messages: Vec<CurrentAssistantMessage>,
@@ -5514,7 +5590,29 @@ fn current_assistant_messages_to_legacy_turns(
     let mut turns = Vec::new();
     let mut pending_user = None;
 
-    for message in messages {
+    for mut message in messages {
+        message.created_at = message
+            .created_at
+            .map(|timestamp| utc_timestamp(&timestamp));
+        for reference in &message.references {
+            if let (Some(id), Some(index)) = (
+                reference.get("ref_id").and_then(Value::as_str),
+                reference.get("index").and_then(Value::as_u64),
+            ) {
+                let marker = format!("[^{id}");
+                message.content = message
+                    .content
+                    .replace(&format!("{marker}]"), &format!("[^{index}]"));
+                while let Some(start) = message.content.find(&format!("{marker}#")) {
+                    let Some(end) = message.content[start..].find(']') else {
+                        break;
+                    };
+                    message
+                        .content
+                        .replace_range(start..start + end + 1, &format!("[^{index}]"));
+                }
+            }
+        }
         if message.role == "user" {
             if let Some(user) = pending_user.take() {
                 turns.push(current_user_message_to_assistant_message(thread_id, user));
@@ -5936,25 +6034,30 @@ pub struct KagiEnvelope<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApiErrorBody, KagiEnvelope, NewsFilterRequest, TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR,
-        TranslateSuggestionContext, apply_news_content_filters, build_ask_page_prompt,
-        build_translate_option_state, build_translate_payload, build_translate_suggestions_payload,
+        ApiErrorBody, CurrentAssistantBranch, CurrentAssistantConversationInitResponse,
+        CurrentAssistantMessage, CurrentAssistantMessagesPage, KagiEnvelope, NewsFilterRequest,
+        TRANSLATE_BOOTSTRAP_MISSING_COOKIE_ERROR, TranslateSuggestionContext,
+        apply_news_content_filters, build_ask_page_prompt, build_translate_option_state,
+        build_translate_payload, build_translate_suggestions_payload,
         build_translate_word_insights_payload, capture_optional_translate_section,
-        effective_translate_source_language, execute_news_filter_presets, extract_set_cookie_value,
-        fake_header_map, finalize_translate_text_response, format_client_error_suffix,
-        format_client_error_suffix_redacting, normalize_ask_page_question, normalize_ask_page_url,
-        normalize_assistant_query, normalize_assistant_thread_id, normalize_assistant_thread_ref,
-        normalize_aux_quality, normalize_custom_bang_trigger, normalize_lens_name,
-        normalize_redirect_rule, normalize_subscriber_summary_input,
-        normalize_subscriber_summary_length, normalize_subscriber_summary_type,
-        parse_assistant_thread_cursor, parse_assistant_thread_delete_stream,
-        parse_assistant_thread_list_stream, parse_assistant_thread_open_stream,
-        parse_content_disposition_filename, parse_subscriber_summarize_stream,
-        parse_translate_detect_value, resolve_custom_assistant_ref, resolve_custom_bang_ref,
-        resolve_lens_ref, resolve_news_category, resolve_redirect_ref, resolve_translate_bootstrap,
-        should_retry_lens_mutation_lookup, should_retry_translate_bootstrap,
-        take_next_assistant_sse_frame, text_contains_news_filter_keyword,
-        translate_subscription_error_message, validate_translate_request,
+        current_assistant_messages_to_legacy_turns, effective_translate_source_language,
+        execute_news_filter_presets, extract_set_cookie_value, fake_header_map,
+        fetch_current_assistant_messages, finalize_translate_text_response,
+        format_client_error_suffix, format_client_error_suffix_redacting,
+        normalize_ask_page_question, normalize_ask_page_url, normalize_assistant_query,
+        normalize_assistant_thread_id, normalize_assistant_thread_ref, normalize_aux_quality,
+        normalize_custom_bang_trigger, normalize_lens_name, normalize_redirect_rule,
+        normalize_subscriber_summary_input, normalize_subscriber_summary_length,
+        normalize_subscriber_summary_type, parse_assistant_thread_cursor,
+        parse_assistant_thread_delete_stream, parse_assistant_thread_list_stream,
+        parse_assistant_thread_open_stream, parse_content_disposition_filename,
+        parse_subscriber_summarize_stream, parse_translate_detect_value,
+        read_current_assistant_json_response, resolve_custom_assistant_ref,
+        resolve_custom_bang_ref, resolve_lens_ref, resolve_news_category, resolve_redirect_ref,
+        resolve_translate_bootstrap, should_retry_lens_mutation_lookup,
+        should_retry_translate_bootstrap, take_next_assistant_sse_frame,
+        text_contains_news_filter_keyword, translate_subscription_error_message,
+        validate_translate_request,
     };
     use crate::api::{
         execute_assistant_prompt, execute_assistant_prompt_stream, execute_assistant_thread_delete,
@@ -6631,7 +6734,7 @@ mod tests {
         });
         let _thread = server.mock(|when, then| {
             when.method(GET)
-                .path("/api/conversations/thread-1/init")
+                .path("/api/v2/conversations/thread-1/init")
                 .header("cookie", "kagi_session=test-session")
                 .header("accept", "application/json")
                 .query_param("branch_uuid", "branch-1");
@@ -6655,39 +6758,17 @@ mod tests {
                         "updated_at": "2026-07-06T20:20:29Z"
                     },
                     "branches": [],
-                    "messages": {
-                        "items": [
-                            {
-                                "uuid": "msg-user",
-                                "role": "user",
-                                "content": "Hello",
-                                "created_at": "2026-07-06T20:19:29Z"
-                            },
-                            {
-                                "uuid": "msg-assistant",
-                                "role": "assistant",
-                                "content": "Hello from the migrated Assistant",
-                                "html_content": "<p>Hello from the migrated Assistant</p>",
-                                "created_at": "2026-07-06T20:20:29Z",
-                                "references": [{
-                                    "index": 1,
-                                    "title": "Kagi",
-                                    "url": "https://kagi.com"
-                                }],
-                                "model_name": "test-model"
-                            }
-                        ],
-                        "has_more": true
-                    }
+                    "turns": [{"uuid": "msg-user", "role": "user", "content": "Hello", "created_at": "2026-07-06T20:19:29Z"}, {"uuid": "msg-assistant", "role": "assistant", "content": "<!DOCTYPE html><html>Example</html>", "html_content": "<p><!DOCTYPE html><html>Example</html></p>", "created_at": "2026-07-06T20:20:29Z", "references": [{"index": 1, "title": "Kagi", "url": "https://kagi.com"}], "model_name": "test-model"}], "turns_has_more": true
                 }));
         });
         let _older_messages = server.mock(|when, then| {
             when.method(GET)
-                .path("/api/branches/branch-1/messages")
+                .path("/api/v2/branches/branch-1/turns")
                 .header("cookie", "kagi_session=test-session")
                 .header("accept", "application/json")
                 .query_param("limit", "100")
-                .query_param("after_id", "msg-user");
+                .query_param("before", "msg-user")
+                .query_param("include", "lite_events");
             then.status(200)
                 .header("content-type", "application/json")
                 .json_body(json!({
@@ -6698,25 +6779,7 @@ mod tests {
                         "message_count": 4,
                         "updated_at": "2026-07-06T20:20:29Z"
                     },
-                    "messages": {
-                        "items": [
-                            {
-                                "uuid": "msg-earlier-assistant",
-                                "role": "assistant",
-                                "content": "Earlier answer",
-                                "html_content": "<p>Earlier answer</p>",
-                                "created_at": "2026-07-06T20:18:29Z",
-                                "references": []
-                            },
-                            {
-                                "uuid": "msg-earlier-user",
-                                "role": "user",
-                                "content": "Earlier question",
-                                "created_at": "2026-07-06T20:17:29Z"
-                            }
-                        ],
-                        "has_more": false
-                    }
+                    "turns": [{"uuid": "msg-earlier-user", "role": "user", "content": "Earlier question", "created_at": "2026-07-06T20:17:29Z"}, {"uuid": "msg-earlier-assistant", "role": "assistant", "content": "Earlier answer", "html_content": "<p>Earlier answer</p>", "created_at": "2026-07-06T20:18:29Z", "references": []}], "has_more": false
                 }));
         });
 
@@ -6741,7 +6804,7 @@ mod tests {
         assert_eq!(response.messages[1].prompt, "Hello");
         assert_eq!(
             response.messages[1].markdown.as_deref(),
-            Some("Hello from the migrated Assistant")
+            Some("<!DOCTYPE html><html>Example</html>")
         );
         assert_eq!(
             response.messages[1].references_markdown.as_deref(),
@@ -7007,6 +7070,197 @@ mod tests {
         .concat()
     }
 
+    #[tokio::test]
+    /// Regress HTML code examples embedded in an otherwise valid JSON response.
+    async fn assistant_json_allows_html_inside_conversation_content() {
+        use httpmock::{Method::GET, MockServer};
+        let server = MockServer::start();
+        let body = json!({"content": "Example: <!DOCTYPE html><html><body>Hello</body></html>"});
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/json");
+            then.status(200).json_body(body.clone());
+        });
+        let response = reqwest::get(server.url("/json")).await.unwrap();
+        let parsed: Value = read_current_assistant_json_response(
+            response,
+            "Assistant conversation init",
+            "test-session",
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed, body);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    /// Verify real HTTP status classification and bounded credential-safe diagnostics.
+    async fn assistant_json_preserves_http_status_and_redacts_bounded_errors() {
+        use httpmock::{Method::GET, MockServer};
+        let server = MockServer::start();
+        for status in [200, 401, 403, 404, 500] {
+            let path = format!("/error/{status}");
+            let mock = server.mock(|when, then| {
+                when.method(GET).path(&path);
+                then.status(status).body(format!(
+                    "<!doctype html><html>secret-session {}",
+                    "x".repeat(900)
+                ));
+            });
+            let response = reqwest::get(server.url(&path)).await.unwrap();
+            let error = read_current_assistant_json_response::<Value>(
+                response,
+                "Assistant conversation init",
+                "secret-session",
+            )
+            .await
+            .unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains(&format!("HTTP {status}")));
+            assert!(!message.contains("secret-session"));
+            assert!(message.len() < 800);
+            match status {
+                200 => assert!(matches!(error, KagiError::Parse(_))),
+                401 => assert!(matches!(error, KagiError::Auth(_))),
+                403 | 404 => assert!(matches!(error, KagiError::Config(_))),
+                _ => assert!(matches!(error, KagiError::Network(_))),
+            }
+            mock.assert();
+        }
+    }
+
+    #[tokio::test]
+    /// Keep valid-JSON schema failures distinct from HTML and authentication failures.
+    async fn assistant_json_schema_error_with_html_is_not_an_auth_error() {
+        use httpmock::{Method::GET, MockServer};
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/schema");
+            then.status(200)
+                .json_body(json!({"conversation": "<html>secret-session</html>"}));
+        });
+        let response = reqwest::get(server.url("/schema")).await.unwrap();
+        let error =
+            read_current_assistant_json_response::<CurrentAssistantConversationInitResponse>(
+                response,
+                "Assistant conversation init",
+                "secret-session",
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, KagiError::Parse(_)));
+        assert!(!error.to_string().contains("secret-session"));
+        assert!(!error.to_string().contains("returned HTML"));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    /// Verify that a repeated upstream page fails instead of looping indefinitely.
+    async fn assistant_turn_pagination_rejects_repeated_page() {
+        use httpmock::{Method::GET, MockServer};
+        let server = MockServer::start();
+        let turn = json!({"uuid":"same-turn", "role":"user", "content":"Hello"});
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v2/branches/branch-1/turns")
+                .query_param("before", "same-turn");
+            then.status(200)
+                .json_body(json!({"turns":[turn.clone()], "has_more":true}));
+        });
+        let _guard = lock_env();
+        let _base = set_env_var("KAGI_ASSISTANT_BASE_URL", &server.base_url());
+        let branch = CurrentAssistantBranch {
+            uuid: "branch-1".into(),
+            is_default: true,
+        };
+        let error = fetch_current_assistant_messages(
+            "test-session",
+            Some(&branch),
+            CurrentAssistantMessagesPage {
+                items: vec![serde_json::from_value(turn).unwrap()],
+                has_more: true,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("pagination did not advance"));
+        mock.assert_calls(1);
+    }
+
+    #[test]
+    /// Verify v2 turn metadata and citation normalization in the stable CLI response.
+    fn assistant_v2_turns_preserve_model_usage_citations_and_utc() {
+        let turn: CurrentAssistantMessage = serde_json::from_value(json!({
+            "uuid":"turn-1", "role":"assistant", "content":"Answer [^ref1#2-3]", "model":"test-model",
+            "created_at":"2026-10-31T00:00:00.123456", "input_tokens":3, "output_tokens":4, "cost_usd":0.01,
+            "references":[{"ref_id":"ref1", "index":1, "title":"Source", "url":"https://example.com"}]
+        })).unwrap();
+        let turns = current_assistant_messages_to_legacy_turns("thread-1", vec![turn]);
+        assert_eq!(turns[0].markdown.as_deref(), Some("Answer [^1]"));
+        assert_eq!(turns[0].created_at, "2026-10-31T00:00:00.123456Z");
+        assert_eq!(
+            turns[0].profile.as_ref().unwrap()["model_name"],
+            "test-model"
+        );
+        assert_eq!(turns[0].usage.as_ref().unwrap().total_tokens, 7);
+        assert_eq!(
+            turns[0].references_markdown.as_deref(),
+            Some("[^1]: [Source](https://example.com)")
+        );
+    }
+
+    /// Recognize actual logged-out HTML only after JSON decoding fails.
+    #[tokio::test]
+    async fn assistant_login_html_is_auth_but_login_html_in_json_is_data() {
+        use httpmock::{Method::GET, MockServer};
+        let server = MockServer::start();
+        let html = format!(
+            "<!doctype html><html>{}</html>",
+            super::KAGI_LOGGED_OUT_MARKERS.join(" ")
+        );
+        server.mock(|when, then| {
+            when.method(GET).path("/login");
+            then.status(200).body(&html);
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/json-login");
+            then.status(200).json_body(json!({"content":html}));
+        });
+        let response = reqwest::get(server.url("/login")).await.unwrap();
+        let error = read_current_assistant_json_response::<Value>(
+            response,
+            "Assistant conversation init",
+            "test-session",
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, KagiError::Auth(_)));
+        assert!(error.to_string().contains("HTTP 200"));
+        assert!(error.to_string().contains("kagi auth"));
+        let response = reqwest::get(server.url("/json-login")).await.unwrap();
+        let value: Value = read_current_assistant_json_response(
+            response,
+            "Assistant conversation init",
+            "test-session",
+        )
+        .await
+        .unwrap();
+        assert_eq!(value["content"], html);
+    }
+
+    /// Keep readable error text when markup alone exceeds the diagnostic budget.
+    #[test]
+    fn assistant_html_diagnostics_keep_text_not_markup() {
+        let html = format!(
+            "<!doctype html><html><div class=\"{}\">Conversation unavailable secret-session</div></html>",
+            "x".repeat(900)
+        );
+        let detail = super::assistant_response_detail(&html, "secret-session");
+        assert!(detail.contains("Conversation unavailable [redacted]"));
+        assert!(!detail.contains("secret-session"));
+        assert!(!detail.contains("<div"));
+        assert!(detail.len() < 100);
+    }
+
     fn v2_reference(ref_id: &str, title: &str) -> Value {
         json!({
             "ref_id": ref_id,
@@ -7025,7 +7279,7 @@ mod tests {
 
         let server = MockServer::start();
         let _init = server.mock(|when, then| {
-            when.method(GET).path("/api/conversations/thread-1/init");
+            when.method(GET).path("/api/v2/conversations/thread-1/init");
             then.status(200).json_body(json!({
                 "conversation": {
                     "uuid": "thread-1",
@@ -7036,7 +7290,7 @@ mod tests {
                 },
                 "active_branch": {"uuid": "branch-1", "is_default": true},
                 "branches": [{"uuid": "branch-1", "is_default": true}],
-                "messages": {"items": [], "has_more": false}
+                "turns": [], "turns_has_more": false
             }));
         });
         let respond = server.mock(|when, then| {
