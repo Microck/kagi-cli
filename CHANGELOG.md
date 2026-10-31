@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+### Fixed
+
+- Read and export Assistant conversations through the current v2 turns API, preserving branch selection, pagination, citations and usage. HTML examples inside valid conversation JSON no longer produce a false expired-session error; request errors retain their HTTP status with bounded, session-redacted diagnostics.
+
+### Changed
+
+- Assistant JSON error output now classifies 403 responses as `configuration`, unexpected HTML in successful responses as `parse`, and server-error HTML as retryable `network` errors. Recognized signed-out pages remain `auth` errors. Scripts branching on `--error-format json` categories or retryability should account for these distinctions.
+
 ## [0.24.0]
 
 ### Added
