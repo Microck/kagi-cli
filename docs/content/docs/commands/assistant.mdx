@@ -198,6 +198,8 @@ kagi assistant thread list | jq -r '.threads[].id'
 
 ### `kagi assistant thread get <THREAD_ID_OR_CHAT_URL>`
 
+Reads the selected conversation branch using the current Assistant turns API, including older pages. HTML examples in replies are preserved. Failed reads retain the HTTP status; a conversation-specific failure does not by itself mean your session expired.
+
 Fetch one thread with its messages. This accepts either the thread ID or a Kagi Assistant chat URL.
 
 ```bash

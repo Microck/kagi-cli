@@ -501,6 +501,7 @@ struct PromptMocks<'a> {
     respond: httpmock::Mock<'a>,
 }
 
+/// Stub v2 initialization, turn creation and streaming for CLI prompt integration tests.
 fn mock_current_assistant_prompt<'a>(
     server: &'a MockServer,
     expected_message: &str,
@@ -510,7 +511,7 @@ fn mock_current_assistant_prompt<'a>(
 ) -> PromptMocks<'a> {
     server.mock(|when, then| {
         when.method(GET)
-            .path("/api/conversations/thread-current/init")
+            .path("/api/v2/conversations/thread-current/init")
             .header("cookie", "kagi_session=test-session")
             .header("accept", "application/json");
         then.status(200).json_body(json!({
@@ -531,10 +532,7 @@ fn mock_current_assistant_prompt<'a>(
                 "uuid": "branch-current",
                 "is_default": true
             }],
-            "messages": {
-                "items": [],
-                "has_more": false
-            }
+            "turns": [], "turns_has_more": false
         }));
     });
     let start_turn = |path: &str| {
@@ -3764,7 +3762,7 @@ fn mcp_assistant_thread_export_json_overrides_default_output() {
     });
     let _thread = server.mock(|when, then| {
         when.method(GET)
-            .path("/api/conversations/thread-1/init")
+            .path("/api/v2/conversations/thread-1/init")
             .header("cookie", "kagi_session=test-session")
             .header("accept", "application/json");
         then.status(200)
@@ -3787,28 +3785,7 @@ fn mcp_assistant_thread_export_json_overrides_default_output() {
                     "updated_at": "2026-03-16T06:20:07Z"
                 },
                 "branches": [],
-                "messages": {
-                    "items": [
-                        {
-                            "uuid": "msg-user",
-                            "role": "user",
-                            "content": "Hello",
-                            "created_at": "2026-03-16T06:19:07Z"
-                        },
-                        {
-                            "uuid": "msg-assistant",
-                            "role": "assistant",
-                            "content": "Hello back",
-                            "html_content": "<p>Hello back</p>",
-                            "created_at": "2026-03-16T06:20:07Z",
-                            "input_tokens": 4314,
-                            "output_tokens": 2,
-                            "cost_usd": 0.006192,
-                            "references": []
-                        }
-                    ],
-                    "has_more": false
-                }
+                "turns": [{"uuid": "msg-user", "role": "user", "content": "Hello", "created_at": "2026-03-16T06:19:07Z"}, {"uuid": "msg-assistant", "role": "assistant", "content": "Hello back", "html_content": "<p>Hello back</p>", "created_at": "2026-03-16T06:20:07Z", "input_tokens": 4314, "output_tokens": 2, "cost_usd": 0.006192, "references": []}], "turns_has_more": false
             }));
     });
 
