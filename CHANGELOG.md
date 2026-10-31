@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.24.1]
+
 ### Fixed
 
 - Read and export Assistant conversations through the current v2 turns API, preserving branch selection, pagination, citations and usage. HTML examples inside valid conversation JSON no longer produce a false expired-session error; request errors retain their HTTP status with bounded, session-redacted diagnostics.
