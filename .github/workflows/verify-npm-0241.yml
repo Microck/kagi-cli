@@ -1,0 +1,23 @@
+name: Verify released npm wrapper
+on:
+  push:
+    branches: ["test/npm-0.24.1-fresh-install"]
+permissions:
+  contents: read
+jobs:
+  fresh-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - name: Install published wrapper in an empty prefix
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/kagi-home" "$RUNNER_TEMP/kagi-prefix"
+          export HOME="$RUNNER_TEMP/kagi-home"
+          npm install --prefix "$RUNNER_TEMP/kagi-prefix" kagi-cli@0.24.1
+          "$RUNNER_TEMP/kagi-prefix/node_modules/.bin/kagi" --version | grep -Fx 'kagi 0.24.1'
+          "$RUNNER_TEMP/kagi-prefix/node_modules/.bin/kagi" --help
+          "$RUNNER_TEMP/kagi-prefix/node_modules/.bin/kagi" assistant --help
