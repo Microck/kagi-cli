@@ -47,6 +47,6 @@ toon = "0.1.2"
 [dev-dependencies]
 rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
-httpmock = "0.8.3"
+httpmock = "0.9.0"
 parking_lot = "0.12.5"
 tempfile = "3.27.0"
