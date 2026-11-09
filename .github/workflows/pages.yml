@@ -1,0 +1,53 @@
+name: Deploy documentation to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+        working-directory: docs
+      - run: corepack pnpm test:config
+        working-directory: docs
+      - run: corepack pnpm build
+        working-directory: docs
+      - name: Verify export
+        working-directory: docs
+        run: |
+          test -s out/index.html
+          test -s out/commands/assistant/index.html
+          node -e 'JSON.parse(require("node:fs").readFileSync("out/api/search", "utf8"))'
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/out
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="flex h-full flex-col antialiased" suppressHydrationWarning>
       <body className="flex min-h-full flex-col">
-        <RootProvider>{children}</RootProvider>
+        <RootProvider search={{ options: { type: 'static' } }}>{children}</RootProvider>
       </body>
     </html>
   );
