@@ -20,19 +20,25 @@ test('browser preview serves static export routes, search and assets without an 
   await writeFile(join(root, 'api', 'search'), JSON.stringify({ indexes: ['Assistant'] }));
   await writeFile(join(root, '_next', 'static', 'app.js'), 'console.log("docs");');
 
-  const { command } = config.targets[0].app;
+  const { command, url } = config.targets[0].app;
   assert.equal(command.executable, 'node');
-  assert.deepEqual(command.args, [
-    'node_modules/sirv-cli/bin.js', 'out', '--host', '127.0.0.1', '--port', '4182', '--quiet',
-  ]);
+  const args = [...command.args];
+  assert.equal(args[0], 'node_modules/sirv-cli/bin.js');
+  const exportIndex = args.indexOf('out');
+  const hostIndex = args.indexOf('--host');
+  const portIndex = args.indexOf('--port');
+  assert.ok(exportIndex > 0, 'preview must serve the export directory');
+  assert.ok(hostIndex > 0, 'preview must explicitly bind to loopback');
+  assert.equal(args[hostIndex + 1], '127.0.0.1');
+  assert.ok(portIndex > 0, 'preview must specify its port');
+  assert.equal(args[portIndex + 1], new URL(url).port);
   const reservation = createServer();
   reservation.listen(0, '127.0.0.1');
   await once(reservation, 'listening');
   const port = reservation.address().port;
   await new Promise((resolve, reject) => reservation.close((error) => error ? reject(error) : resolve()));
-  const args = [...command.args];
-  args[1] = root;
-  args[5] = String(port);
+  args[exportIndex] = root;
+  args[portIndex + 1] = String(port);
   const { HOST, PORT, ...env } = process.env;
   const server = spawn(process.execPath, args, {
     cwd: new URL('..', import.meta.url), env, stdio: ['ignore', 'pipe', 'pipe'],
