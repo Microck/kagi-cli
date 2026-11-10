@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Documentation previews and browser checks now serve the static export, and demo images load without a Next.js image-optimization server.
+
 ## [0.24.1]
 
 ### Fixed
