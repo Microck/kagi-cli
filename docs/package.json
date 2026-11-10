@@ -5,9 +5,9 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "start": "next start",
+    "start": "sirv out --host 127.0.0.1",
     "test:e2e": "node e2e-runner.mjs",
-    "test:config": "node --test tests/config.test.mjs"
+    "test:config": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@theguild/remark-mermaid": "^0.3.0",
@@ -28,6 +28,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "e2e": "0.21.2",
+    "sirv-cli": "3.0.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.8.0"
   },
