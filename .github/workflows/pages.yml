@@ -36,7 +36,7 @@ jobs:
           test -s out/index.html
           test -s out/commands/assistant/index.html
           node -e 'JSON.parse(require("node:fs").readFileSync("out/api/search", "utf8"))'
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/out
   deploy:
