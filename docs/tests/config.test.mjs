@@ -6,6 +6,7 @@ test('Fumadocs wraps the Next configuration rather than the phase string',()=>{
  assert.equal(config.reactStrictMode,true);
  assert.equal(config.output,'export');
  assert.equal(config.trailingSlash,true);
+ assert.equal(config.images.unoptimized,true);
  assert.equal(Object.keys(config).some(key=>/^\d+$/.test(key)),false);
  assert.equal(typeof config.webpack,'function');
 });
